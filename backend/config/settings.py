@@ -154,4 +154,10 @@ DJOSER = {
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",  # Vite default
+    "https://notemanager-au1g.onrender.com"
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://notemanager-backend.onrender.com",
+    "https://notemanager-au1g.onrender.com",
 ]
