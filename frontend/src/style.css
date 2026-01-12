@@ -1,0 +1,144 @@
+html {
+  overflow-y: scroll;          /* la scrollbar resta sempre visibile */
+  scrollbar-gutter: stable;    /* evita variazioni di gutter */
+}
+html, body, #app {
+  height: 100%;
+}
+body {
+  margin: 0;
+  overflow: hidden; /* ✅ il body non deve scrollare */
+}
+/*.scroll-locked {
+  overflow: hidden; 
+}*/
+/*VALORI PER ALLINEAMENTO TIOTLI/BLOCCHI*/
+:root {
+  --block-gutter: 44px;
+  --block-gap: 6px;
+  --block-row-pad-x: 12px;
+  --bar-btn-color:rgba(14, 14, 14, 0.066) ;
+  --bar-h: 42px;
+  --bar-px: 7px;
+  --bar-gap: 10px;
+  --bar-pad: 14px;
+  --bar-btn: 28px;
+  --bar-radius: 8px;
+}
+
+.overlay-scroll-locked .content-scroll,
+.overlay-scroll-locked .sidebar-scroll,
+.overlay-scroll-locked .flyout-scroll {
+  overflow: hidden !important;
+  overscroll-behavior: contain;
+  touch-action: none;
+}
+.overlay-scroll-locked .scrollbar-auto {
+  scrollbar-color: transparent transparent;
+}
+.overlay-scroll-locked .scrollbar-auto::-webkit-scrollbar-thumb {
+  background-color: transparent;
+}
+
+
+
+
+
+
+.scrollbar-auto {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: transparent transparent; /* default: invisibile */
+  scrollbar-gutter: stable;
+}
+
+/* WebKit (Chrome/Edge/Safari) */
+.scrollbar-auto::-webkit-scrollbar {
+  width: 10px;
+}
+
+.scrollbar-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-auto::-webkit-scrollbar-thumb {
+  background-color: transparent; /* default invisibile */
+  border-radius: 999px;
+  border: 3px solid transparent; /* crea thumb “pill” sottile */
+  background-clip: content-box;
+}
+
+.scrollbar-auto.is-scrolling {
+  scrollbar-color: rgba(0,0,0,.35) transparent; /* Firefox: visibile solo durante scroll */
+}
+
+.scrollbar-auto.is-scrolling::-webkit-scrollbar-thumb {
+  background-color: rgba(0,0,0,.30);
+}
+
+
+
+/* icon button senza bordo */
+.icon-ghost {
+  width: var(--bar-btn);
+  height: var(--bar-btn);
+  border-radius: var(--bar-radius);
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+
+  display: grid;
+  place-items: center;
+
+  color: rgba(0,0,0,.55);
+}
+
+.icon-ghost:hover {
+  background: rgba(0,0,0,.06);
+  color: rgba(0,0,0,.85);
+}
+
+.icon-ghost:disabled {
+  opacity: .45;
+  cursor: default;
+}
+.icon-ghost:disabled:hover {
+  background: transparent;
+  color: rgba(0,0,0,.55);
+}
+
+/* button senza bordo */
+.btn-ghost {
+  height: 34px;
+  border-radius: 10px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+
+  padding: 0 10px;
+  text-align: left;
+
+  color: rgba(0,0,0,.75);
+}
+
+.btn-ghost:hover {
+  background: rgba(0,0,0,.06);
+}
+
+.btn-ghost.danger {
+  color: rgba(200,0,0,.75);
+}
+.btn-ghost.danger:hover {
+  background: rgba(255,0,0,.08);
+  color: rgba(180,0,0,.9);
+}
+
+/*.is-hovering-folder {
+    background-color: #e0f2fe !important;
+    transition: background-color 0.2s;
+}*/
+
+.is-hovering-target {
+    background-color: #e0f2fe !important; /* Azzurrino Notion */
+    box-shadow: inset 0 0 0 2px #0ea5e9 !important; /* Bordo interno blu */
+    transition: all 0.2s ease;
+}
