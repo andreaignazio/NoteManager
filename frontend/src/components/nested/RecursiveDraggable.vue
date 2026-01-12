@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import draggable from 'vuedraggable';
-import { posBetween } from '@/domain/position'; // Utility pura, ok importarla qui o passarla come prop
+import { posBetween } from '@/domain/position'; 
 
 defineOptions({ name: 'RecursiveDraggable' });
 
@@ -49,7 +49,7 @@ const onDragChange = (event) => {
     id: element.id,
     parentId: targetParentId,
     position: newPosition,
-    element: element // Passiamo l'intero oggetto se serve
+    element: element 
   });
 };
 
@@ -115,7 +115,7 @@ const onEnd = () => { isDragging.value = false }
   min-height: 0px;
 }
 
-/*.is-draggging :global(.block-item:hover),*/
+
 .is-draggging :deep(.plus)
 
 {

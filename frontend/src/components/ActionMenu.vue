@@ -31,7 +31,6 @@ const menuStyle = ref({ display: 'none' })
 
 
 function computePosition(anchorRect, menuW, menuH) {
-  //console.log("ANCHOR:", anchorRect, "menuW:", menuW, "menuH:", menuH)
   const margin = props.viewportMargin
   const offsetX = props.sideOffsetX ?? 0
   const gap = props.gap ?? 6
@@ -56,7 +55,7 @@ function computePosition(anchorRect, menuW, menuH) {
     left = anchorRect.left - menuW + offsetX
     top  = anchorRect.top + (anchorRect.height - menuH) / 2
 
-    // ⚠️ FIX: fallback corretto a destra
+    //  FIX: fallback corretto a destra
     if (left < margin) {
       left = anchorRect.right + gap + offsetX
     }
@@ -79,8 +78,6 @@ async function updateMenuPosition() {
     menuStyle.value = { display: 'none' }
     return
   }
-
-  // 1) mettilo renderizzabile ma invisibile, fuori schermo
   menuStyle.value = {
     position: 'fixed',
     top: '-9999px',
@@ -91,7 +88,7 @@ async function updateMenuPosition() {
   }
 
   await nextTick()
-  await new Promise(requestAnimationFrame) // aspetta 1 paint (stabilizza le misure)
+  await new Promise(requestAnimationFrame)
 
   const el = menuEl.value
   const menuW = el?.offsetWidth ?? props.minWidth
@@ -99,7 +96,7 @@ async function updateMenuPosition() {
 
   const { top, left } = computePosition(props.anchorRect, menuW, menuH)
 
-  // 2) posizione finale + rendilo visibile
+ 
   menuStyle.value = {
     position: 'fixed',
     top: `${top}px`,
@@ -124,7 +121,7 @@ function onPointerDownCapture(e) {
   if (menu && menu.contains(e.target)) return
 
   const anchor = props.anchorEl?.value ?? props.anchorEl
-  if (anchor && anchor.contains?.(e.target)) return // <-- evita close se clicchi il bottone
+  if (anchor && anchor.contains?.(e.target)) return
 
   emit('close')
   console.log("ActionMenu-HASEMITCLOSE")
@@ -146,19 +143,6 @@ watch(
   () => updateMenuPosition()
 )
 
-/*onMounted(() => {
-  window.addEventListener('keydown', onKeydown, true)
-  window.addEventListener('pointerdown', onPointerDownCapture, true)
-  window.addEventListener('scroll', onScrollOrResize, true)
-  window.addEventListener('resize', onScrollOrResize)
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onKeydown, true)
-  window.removeEventListener('pointerdown', onPointerDownCapture, true)
-  window.removeEventListener('scroll', onScrollOrResize, true)
-  window.removeEventListener('resize', onScrollOrResize)
-})*/
 </script>
 
 <template>

@@ -231,8 +231,7 @@ export const useBlocksStore = defineStore('blocksStore', {
         const blocks = response.data.blocks ?? []
         const normBlocks = blocks.map((b) => normalizeBlock(b))
 
-        // replace blocksById (globale): oggi lo fai così, ok.
-        // (In futuro potremmo farlo per-page, ma per ora restiamo coerenti col tuo store.)
+      
         this.blocksById = normBlocks.reduce((dict, b) => {
           dict[b.id] = b
           return dict
@@ -343,80 +342,74 @@ export const useBlocksStore = defineStore('blocksStore', {
       }
     },
 
-    // Shift+Tab outdent: optimistic local, fetch hard on error
+  
     async outdentBlock(pageId, blockId) {
-  blockId = String(blockId)
-  const block = this.blocksById[blockId]
-  if (!block?.parentId) return
+      blockId = String(blockId)
+      const block = this.blocksById[blockId]
+      if (!block?.parentId) return
 
-  this.ensurePageMap(pageId)
+      this.ensurePageMap(pageId)
 
-  const oldParentId = String(block.parentId)
-  const oldParent = this.blocksById[oldParentId]
-  if (!oldParent) return
+      const oldParentId = String(block.parentId)
+      const oldParent = this.blocksById[oldParentId]
+      if (!oldParent) return
 
-  const newParentId = oldParent.parentId ?? null
-  const oldKey = parentKeyOf(oldParentId)
-  const newKey = parentKeyOf(newParentId)
+      const newParentId = oldParent.parentId ?? null
+      const oldKey = parentKeyOf(oldParentId)
+      const newKey = parentKeyOf(newParentId)
 
-  const siblings = (this.childrenByParentId[pageId][oldKey] ?? []).map(String)
-  const idx = siblings.indexOf(blockId)
-  if (idx === -1) return
+      const siblings = (this.childrenByParentId[pageId][oldKey] ?? []).map(String)
+      const idx = siblings.indexOf(blockId)
+      if (idx === -1) return
 
-  // fratelli successivi → diventano figli del blocco outdented
-  const adoptedChildren = siblings.slice(idx + 1)
+      
+      const adoptedChildren = siblings.slice(idx + 1)
 
-  // calcolo nuova posizione: subito dopo il vecchio parent
-  const parentSiblings = (this.childrenByParentId[pageId][newKey] ?? []).map(String)
-  const parentIdx = parentSiblings.indexOf(oldParentId)
+      const parentSiblings = (this.childrenByParentId[pageId][newKey] ?? []).map(String)
+      const parentIdx = parentSiblings.indexOf(oldParentId)
 
-  // se per qualche motivo non troviamo oldParent tra i siblings del newParent, fallback: fine lista
-  const prevPos = oldParent.position ?? null
-  const nextId = parentIdx >= 0 ? (parentSiblings[parentIdx + 1] ?? null) : null
-  const nextPos = nextId ? this.blocksById[String(nextId)]?.position ?? null : null
-  const newPos = posBetween(prevPos, nextPos)
+      const prevPos = oldParent.position ?? null
+      const nextId = parentIdx >= 0 ? (parentSiblings[parentIdx + 1] ?? null) : null
+      const nextPos = nextId ? this.blocksById[String(nextId)]?.position ?? null : null
+      const newPos = posBetween(prevPos, nextPos)
 
-  // ---------- OPTIMISTIC LOCAL ----------
+      // ---------- OPTIMISTIC LOCAL ----------
 
-  // 1) sposta il blocco (rimuove da oldKey e inserisce in newKey)
-  this.applyMoveLocal(pageId, blockId, {
-    newParentId,
-    newPosition: newPos,
-  })
+      // 1) sposta il blocco (rimuove da oldKey e inserisce in newKey)
+      this.applyMoveLocal(pageId, blockId, {
+        newParentId,
+        newPosition: newPos,
+      })
+      this.childrenByParentId[pageId][oldKey] = siblings.slice(0, idx)
 
-  // 2) IMPORTANT: il vecchio parent mantiene SOLO i fratelli prima del blocco
-  //    (non include blockId, altrimenti sembra una "copia")
-  this.childrenByParentId[pageId][oldKey] = siblings.slice(0, idx)
+      const blockKey = parentKeyOf(blockId)
+      const existingChildren = (this.childrenByParentId[pageId][blockKey] ?? []).map(String)
+      const nextChildren = existingChildren.concat(adoptedChildren)
+      this.childrenByParentId[pageId][blockKey] = nextChildren
 
-  // 3) assegna i fratelli successivi come figli di blockId (appendendo a eventuali figli già esistenti)
-  const blockKey = parentKeyOf(blockId)
-  const existingChildren = (this.childrenByParentId[pageId][blockKey] ?? []).map(String)
-  const nextChildren = existingChildren.concat(adoptedChildren)
-  this.childrenByParentId[pageId][blockKey] = nextChildren
+      for (const cid of adoptedChildren) {
+        const child = this.blocksById[cid]
+        if (child) child.parentId = blockId
+      }
 
-  for (const cid of adoptedChildren) {
-    const child = this.blocksById[cid]
-    if (child) child.parentId = blockId
-  }
+      // ---------- PERSIST ----------
 
-  // ---------- PERSIST ----------
+      try {
+        // patch del blocco outdented
+        await this.patchBlock(blockId, {
+          parent_block: newParentId,
+          position: newPos,
+        })
 
-  try {
-    // patch del blocco outdented
-    await this.patchBlock(blockId, {
-      parent_block: newParentId,
-      position: newPos,
-    })
-
-    // patch dei figli adottati
-    for (const cid of adoptedChildren) {
-      await this.patchBlock(cid, { parent_block: blockId })
-    }
-  } catch (e) {
-    await this.fetchBlocksForPage(pageId) // hard resync
-    throw e
-  }
-},
+        // patch dei figli adottati
+        for (const cid of adoptedChildren) {
+          await this.patchBlock(cid, { parent_block: blockId })
+        }
+      } catch (e) {
+        await this.fetchBlocksForPage(pageId) // hard resync
+        throw e
+      }
+    },
 
     // Delete: optimistic local remove, fetch hard only on error
     async deleteBlock(blockId, pageId) {
@@ -568,7 +561,7 @@ export const useBlocksStore = defineStore('blocksStore', {
     },
 
     // -----------------------------
-    // LEGACY / probably unused (kept commented)
+    // LEGACY 
     // -----------------------------
 
     /*

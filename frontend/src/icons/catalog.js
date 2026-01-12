@@ -55,9 +55,7 @@ import {
   Users,
 } from "lucide-vue-next"
 
-/**
- * Lista icone disponibili
- */
+
 export const ICONS = [
   // ===== Pages / Notes =====
   { id: "lucide:file", label: "File", icon: File, category: "pages" },
@@ -115,18 +113,14 @@ export const ICONS = [
   { id: "lucide:trash-2", label: "Cestino", icon: Trash2, category: "system" },
 ]
 
-/**
- * Mappa id → componente icona
- */
+
 export const ICON_BY_ID = Object.fromEntries(
   ICONS.map(i => [i.id, i.icon])
 )
 
 export const DEFAULT_ICON_ID = "lucide:file"
 
-/**
- * Restituisce il componente icona dato un id
- */
+
 export function getIconComponent(id) {
   if (typeof id !== "string") {
     return ICON_BY_ID[DEFAULT_ICON_ID]

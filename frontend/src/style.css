@@ -9,9 +9,7 @@ body {
   margin: 0;
   overflow: hidden; /* ✅ il body non deve scrollare */
 }
-/*.scroll-locked {
-  overflow: hidden; 
-}*/
+
 /*VALORI PER ALLINEAMENTO TIOTLI/BLOCCHI*/
 :root {
   --block-gutter: 44px;
@@ -77,7 +75,6 @@ body {
 
 
 
-/* icon button senza bordo */
 .icon-ghost {
   width: var(--bar-btn);
   height: var(--bar-btn);
@@ -132,10 +129,6 @@ body {
   color: rgba(180,0,0,.9);
 }
 
-/*.is-hovering-folder {
-    background-color: #e0f2fe !important;
-    transition: background-color 0.2s;
-}*/
 
 .is-hovering-target {
     background-color: #e0f2fe !important; /* Azzurrino Notion */

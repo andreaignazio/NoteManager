@@ -3,7 +3,7 @@ import { computed, nextTick, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useUiStore } from '@/stores/ui'
 import usePagesStore from '@/stores/pages'
-import PageTitlePopover from '@/components/shell/PageTitlePopover.vue'
+
 import PageActionsController from '@/components/PageActionsController.vue'
 import PageTitlePopoverController from '@/components/PageTitlePopoverController.vue'
 import { getIconComponent } from '@/icons/catalog'

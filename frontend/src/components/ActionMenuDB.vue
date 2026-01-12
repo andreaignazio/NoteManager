@@ -4,13 +4,13 @@ import { ref, watch, nextTick, onMounted, onBeforeUnmount, computed, unref } fro
 const props = defineProps({
   open: { type: Boolean, default: false },
 
-  // rettangolo dell'anchor (serializzabile)
+  
   anchorRect: { type: Object, default: null }, // {top,left,right,bottom,width,height}
 
-  // opzionale: usato per NON chiudere quando clicchi sull'anchor (es: bottone ⋯)
+
   anchorEl: { type: [Object, null], default: null }, // HTMLElement | ref
 
-  // items: { type:'item'|'separator', id?, label?, icon?, danger?, disabled?, payload? }
+  
   items: { type: Array, default: () => [] },
 
   activeId: { type: String, default: null },
@@ -22,7 +22,7 @@ const props = defineProps({
   sideOffsetX: { type: Number, default: 0 },
   custom: { type: Boolean, default: false },
 
-  // placements supportati (allineati al tuo ActionMenu)
+
   placement: { type: String, default: 'left' }, // 'right' | 'bottom-start' | 'bottom-end' | 'left'
 })
 
@@ -58,11 +58,11 @@ function computePosition(anchorRect, menuW, menuH) {
     left = anchorRect.right - menuW + offsetX
     top = anchorRect.bottom + gap
   } else {
-    // legacy: left centered
+   
     left = anchorRect.left - menuW + offsetX
     top = anchorRect.top + (anchorRect.height - menuH) / 2
 
-    // fallback a destra se esce
+    
     if (left < margin) left = anchorRect.right + gap + offsetX
   }
 
@@ -81,7 +81,7 @@ async function measureIfNeeded() {
   if (!props.open) return
   if (measured.value) return
 
-  // rendilo misurabile ma invisibile (UNA VOLTA)
+  // rendilo misurabile ma invisibile 
   menuStyle.value = {
     position: 'fixed',
     top: '-9999px',
@@ -160,12 +160,6 @@ watch(
   () => syncPosition(),
   { deep: true }
 )
-
-/*const canRender = computed(() => {
-  if (!open) return false
-  const r = anchorRect
-  return r && Number.isFinite(r.top) && Number.isFinite(r.left)
-})*/
 
 </script>
 

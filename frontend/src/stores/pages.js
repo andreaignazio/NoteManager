@@ -417,200 +417,189 @@ const usePagesStore = defineStore('pagesStore', {
                 await blocksStore.fetchBlocksForPage(newPageId)
 
                 return newPageId
-                },
-    getNextPageIdAfterDelete(pageId) {
-      const id = String(pageId)
-      const p = this.pagesById[id]
-      if (!p) return null
+            },
 
-      const parentId = p.parentId ?? null
-      const key = parentKeyOf(parentId)
-      const sibs = [...(this.childrenByParentId[key] ?? [])].map(String)
-      const idx = sibs.indexOf(id)
-
-      // 1) sorella successiva
-      if (idx !== -1 && idx + 1 < sibs.length) return sibs[idx + 1]
-      // 2) sorella precedente
-      if (idx !== -1 && idx - 1 >= 0) return sibs[idx - 1]
-      // 3) parent
-      if (parentId != null) return String(parentId)
-      // 4) fallback: prima root
-      const rootSibs = [...(this.childrenByParentId[parentKeyOf(null)] ?? [])].map(String)
-      return rootSibs[0] ?? null
-    },
-        async reparentChildrenToParent(pageId) {
-            console.log("reparenting")
-        const id = String(pageId)
-        const p = this.pagesById[id]
-        if (!p) return
-
-        const fromParentKey = parentKeyOf(id)
-        const children = [...(this.childrenByParentId[fromParentKey] ?? [])].map(String)
-        if (!children.length) return
-
-        const newParentId = p.parentId ?? null
-        const toKey = parentKeyOf(newParentId)
-        console.log("toKey:", toKey)
-        const dest = [...(this.childrenByParentId[toKey] ?? [])].map(String)
-
-        // posizione in fondo: tra lastPos e null
-        const lastId = dest.length ? dest[dest.length - 1] : null
-        let prevPos = lastId ? (this.pagesById[lastId]?.position ?? null) : null
-            console.log("prevPos:",prevPos)
-        for (const childId of children) {
-            const child = this.pagesById[childId]
-            //console.log("child:",child)
-            if (!child) continue
-
-            const newPos = posBetween(prevPos, null)
-            prevPos = newPos
-
-            // optimistic local
-            child.parentId = newParentId
-            child.position = newPos
-            console.log("child:",child, "pos:", newPos, "newParent:", newParentId)
-            // aggiorna strutture in memoria
-            // rimuovi da old children list
-            // (ci penserai magari dopo con rebuild, ma facciamolo bene)
-            // NB: usiamo arrays locali e poi riassegniamo
-            // (per reattività pinia)
-            this.childrenByParentId[fromParentKey] = (this.childrenByParentId[fromParentKey] ?? []).filter(x => String(x) !== childId)
-            this.childrenByParentId[toKey] = [...(this.childrenByParentId[toKey] ?? []).map(String), childId]
-
-            // persist
-            await this.patchPage(childId, { parent: newParentId, position: newPos })
-        }
-        },
-        async movePageToParentAppend(pageId, newParentId) {
+            getNextPageIdAfterDelete(pageId) {
             const id = String(pageId)
-            const page = this.pagesById[id]
-            if (!page) return
+            const p = this.pagesById[id]
+            if (!p) return null
 
-            const nextParentId = newParentId == null ? null : String(newParentId)
+            const parentId = p.parentId ?? null
+            const key = parentKeyOf(parentId)
+            const sibs = [...(this.childrenByParentId[key] ?? [])].map(String)
+            const idx = sibs.indexOf(id)
 
-            // ✅ no-op
-            if (String(page.parentId ?? '') === String(nextParentId ?? '')) return
+            // 1) sorella successiva
+            if (idx !== -1 && idx + 1 < sibs.length) return sibs[idx + 1]
+            // 2) sorella precedente
+            if (idx !== -1 && idx - 1 >= 0) return sibs[idx - 1]
+            // 3) parent
+            if (parentId != null) return String(parentId)
+            // 4) fallback: prima root
+            const rootSibs = [...(this.childrenByParentId[parentKeyOf(null)] ?? [])].map(String)
+            return rootSibs[0] ?? null
+            },
+            async reparentChildrenToParent(pageId) {
+                    console.log("reparenting")
+                const id = String(pageId)
+                const p = this.pagesById[id]
+                if (!p) return
 
-            // ✅ block cycles (usa la tua funzione esistente)
-            if (this.wouldCreateCycle_Page?.(id, nextParentId)) return
+                const fromParentKey = parentKeyOf(id)
+                const children = [...(this.childrenByParentId[fromParentKey] ?? [])].map(String)
+                if (!children.length) return
 
-            const oldParentKey = parentKeyOf(page.parentId ?? null)
-            const newParentKey = parentKeyOf(nextParentId)
+                const newParentId = p.parentId ?? null
+                const toKey = parentKeyOf(newParentId)
+                console.log("toKey:", toKey)
+                const dest = [...(this.childrenByParentId[toKey] ?? [])].map(String)
 
-            const oldSibs = [...(this.childrenByParentId[oldParentKey] ?? [])].map(String)
-            const newSibs = [...(this.childrenByParentId[newParentKey] ?? [])].map(String)
+                // posizione in fondo: tra lastPos e null
+                const lastId = dest.length ? dest[dest.length - 1] : null
+                let prevPos = lastId ? (this.pagesById[lastId]?.position ?? null) : null
+                    console.log("prevPos:",prevPos)
+                for (const childId of children) {
+                    const child = this.pagesById[childId]
+                    //console.log("child:",child)
+                    if (!child) continue
 
-            // posizione in fondo
-            const lastId = newSibs.length ? newSibs[newSibs.length - 1] : null
-            const lastPos = lastId ? (this.pagesById[lastId]?.position ?? null) : null
-            const newPos = posBetween(lastPos, null)
+                    const newPos = posBetween(prevPos, null)
+                    prevPos = newPos
 
-            // optimistic: rimuovi da old, appendi a new
-            this.childrenByParentId[oldParentKey] = oldSibs.filter(x => x !== id)
-            this.childrenByParentId[newParentKey] = [...newSibs, id]
+                    // optimistic local
+                    child.parentId = newParentId
+                    child.position = newPos
+                    console.log("child:",child, "pos:", newPos, "newParent:", newParentId)
+                    // aggiorna strutture in memoria
+                    // rimuovi da old children list
+                    // (ci penserai magari dopo con rebuild, ma facciamolo bene)
+                    // NB: usiamo arrays locali e poi riassegniamo
+                    // (per reattività pinia)
+                    this.childrenByParentId[fromParentKey] = (this.childrenByParentId[fromParentKey] ?? []).filter(x => String(x) !== childId)
+                    this.childrenByParentId[toKey] = [...(this.childrenByParentId[toKey] ?? []).map(String), childId]
 
-            page.parentId = nextParentId
-            page.position = newPos
+                    // persist
+                    await this.patchPage(childId, { parent: newParentId, position: newPos })
+                }
+            },
+            async movePageToParentAppend(pageId, newParentId) {
+                const id = String(pageId)
+                const page = this.pagesById[id]
+                if (!page) return
 
-            // persist
-            await this.patchPage(id, { parent: nextParentId, position: newPos })
-        },
-        ensureVisible(pageId) {
-        const id = String(pageId)
-        let cur = this.pagesById[id]
-        if (!cur) return
+                const nextParentId = newParentId == null ? null : String(newParentId)
 
-        // espandi tutti i parent fino a root
-        let parentId = cur.parentId ?? null
-        while (parentId != null) {
-            const pid = String(parentId)
-            this.expandedById[pid] = true
-            const p = this.pagesById[pid]
-            parentId = p?.parentId ?? null
-        }
-        },
+                // ✅ no-op
+                if (String(page.parentId ?? '') === String(nextParentId ?? '')) return
 
-        updatePageLocationOptimistic(pageId, { newParentId, newPosition }) {
-            const page = this.pagesById[pageId];
-            if (!page) return; // Safety check
+                // ✅ block cycles (usa la tua funzione esistente)
+                if (this.wouldCreateCycle_Page?.(id, nextParentId)) return
 
-            // 1. Definiamo le chiavi per la mappa childrenByParentId
-            //    Il backend usa null per root, ma la mappa usa 'root'
-            //const KEY_ROOT = 'root';
-            
-            const oldParentKey = page.parentId || KEY_ROOT;
-            const newParentKey = newParentId || KEY_ROOT;
+                const oldParentKey = parentKeyOf(page.parentId ?? null)
+                const newParentKey = parentKeyOf(nextParentId)
 
-            // 2. Aggiorniamo i metadati della pagina (quello che facevi già)
-            page.parentId = newParentId; 
-            page.position = newPosition;
+                const oldSibs = [...(this.childrenByParentId[oldParentKey] ?? [])].map(String)
+                const newSibs = [...(this.childrenByParentId[newParentKey] ?? [])].map(String)
 
-            // 3. GESTIONE LISTE (childrenByParentId)
-            
-            // A. Rimuovi dalla vecchia lista
-            if (this.childrenByParentId[oldParentKey]) {
-                this.childrenByParentId[oldParentKey] = this.childrenByParentId[oldParentKey]
-                    .filter(id => id !== pageId);
+                // posizione in fondo
+                const lastId = newSibs.length ? newSibs[newSibs.length - 1] : null
+                const lastPos = lastId ? (this.pagesById[lastId]?.position ?? null) : null
+                const newPos = posBetween(lastPos, null)
+
+                // optimistic: rimuovi da old, appendi a new
+                this.childrenByParentId[oldParentKey] = oldSibs.filter(x => x !== id)
+                this.childrenByParentId[newParentKey] = [...newSibs, id]
+
+                page.parentId = nextParentId
+                page.position = newPos
+
+                // persist
+                await this.patchPage(id, { parent: nextParentId, position: newPos })
+            },
+            ensureVisible(pageId) {
+            const id = String(pageId)
+            let cur = this.pagesById[id]
+            if (!cur) return
+
+            // espandi tutti i parent fino a root
+            let parentId = cur.parentId ?? null
+            while (parentId != null) {
+                const pid = String(parentId)
+                this.expandedById[pid] = true
+                const p = this.pagesById[pid]
+                parentId = p?.parentId ?? null
             }
+            },
 
-            // B. Aggiungi alla nuova lista (se non esiste, creala)
-            if (!this.childrenByParentId[newParentKey]) {
-                this.childrenByParentId[newParentKey] = [];
-            }
+            updatePageLocationOptimistic(pageId, { newParentId, newPosition }) {
+                const page = this.pagesById[pageId];
+                if (!page) return; // Safety check
+                const oldParentKey = page.parentId || KEY_ROOT;
+                const newParentKey = newParentId || KEY_ROOT;
+
+             
+                page.parentId = newParentId; 
+                page.position = newPosition;
+
             
-            // Evitiamo duplicati nel caso (raro) di spostamento nella stessa lista
-            if (!this.childrenByParentId[newParentKey].includes(pageId)) {
-                this.childrenByParentId[newParentKey].push(pageId);
-            }
+                if (this.childrenByParentId[oldParentKey]) {
+                    this.childrenByParentId[oldParentKey] = this.childrenByParentId[oldParentKey]
+                        .filter(id => id !== pageId);
+                }
 
-            // 4. RIORDINA LA NUOVA LISTA (Il passaggio cruciale!)
-            //    Dobbiamo ordinare l'array di ID basandoci sulle position aggiornate
-            this.childrenByParentId[newParentKey].sort((idA, idB) => {
-                const posA = this.pagesById[idA]?.position || '';
-                const posB = this.pagesById[idB]?.position || '';
+             
+                if (!this.childrenByParentId[newParentKey]) {
+                    this.childrenByParentId[newParentKey] = [];
+                }
                 
-                // Comparazione stringhe standard (funziona con fractional indexing)
-                if (posA < posB) return -1;
-                if (posA > posB) return 1;
-                return 0;
-            });
+           
+                if (!this.childrenByParentId[newParentKey].includes(pageId)) {
+                    this.childrenByParentId[newParentKey].push(pageId);
+                }
 
-            // Opzionale: Triggerare un aggiornamento manuale se la reattività di Vue fa i capricci con le mappe,
-            // ma di solito riassegnare l'array (.filter) e fare .sort() è sufficiente.
-        },
-        isCircularMove(draggedId, targetParentId, pagesById) {
-            // Se stiamo spostando nella root (null), non può esserci ciclo
-            if (!targetParentId || targetParentId === 'root') return false;
-
-            // Se stiamo cercando di droppare su se stessi (impossibile da UI, ma per sicurezza)
-            if (draggedId === targetParentId) return true;
-
-            // RISALITA DELL'ALBERO:
-            // Partiamo dal nuovo padre e risaliamo tutti i genitori.
-            // Se incontriamo l'ID che stiamo trascinando, è un ciclo!
-            let currentParentId = targetParentId;
             
-            while (currentParentId) {
-                // Trovato! Il nuovo padre è in realtà un figlio (o nipote) dell'elemento trascinato
-                if (currentParentId === draggedId) return true;
+                this.childrenByParentId[newParentKey].sort((idA, idB) => {
+                    const posA = this.pagesById[idA]?.position || '';
+                    const posB = this.pagesById[idB]?.position || '';
+                    
+                    // Comparazione stringhe standard (funziona con fractional indexing)
+                    if (posA < posB) return -1;
+                    if (posA > posB) return 1;
+                    return 0;
+                });
 
-                // Saliamo di un livello
-                const parentNode = pagesById[currentParentId];
+         
+            },
+            isCircularMove(draggedId, targetParentId, pagesById) {
+                // Se stiamo spostando nella root (null), non può esserci ciclo
+                if (!targetParentId || targetParentId === 'root') return false;
+
+                // Se stiamo cercando di droppare su se stessi (impossibile da UI, ma per sicurezza)
+                if (draggedId === targetParentId) return true;
+
+                let currentParentId = targetParentId;
                 
-                // Se non troviamo il nodo (errore dati) o arriviamo a root (null), ci fermiamo
-                if (!parentNode) break;
-                currentParentId = parentNode.parentId;
-            }
+                while (currentParentId) {
+                 
+                    if (currentParentId === draggedId) return true;
 
-            return false;
-        },
-        childrenOf(parentId) {
-            const key = parentId == null ? 'root' : String(parentId)
-            return (this.childrenByParentId[key] ?? [])
-                .map(id => this.pagesById[String(id)])
-                .filter(Boolean)
-                .sort((a, b) => a.position.localeCompare(b.position))
-            }
+                  
+                    const parentNode = pagesById[currentParentId];
+                    
+                    
+                    if (!parentNode) break;
+                    currentParentId = parentNode.parentId;
+                }
+
+                return false;
+            },
+            childrenOf(parentId) {
+                const key = parentId == null ? 'root' : String(parentId)
+                return (this.childrenByParentId[key] ?? [])
+                    .map(id => this.pagesById[String(id)])
+                    .filter(Boolean)
+                    .sort((a, b) => a.position.localeCompare(b.position))
+                }
         
     
     

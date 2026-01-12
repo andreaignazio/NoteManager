@@ -101,18 +101,6 @@ watch(
   },
   { immediate: true }
 )
-/*watch(
-  () => props.pagesMenu?.isOpen,
-  (isOpen) => {
-    isHighlighted.value =
-      !!isOpen && String(props.pagesMenu?.pageId) === String(props.row.page.id)
-  },
-  { immediate: true }
-)*/
-/*const isHighlighted = computed(() =>
-  !!props.pagesMenu?.isOpen &&
-  String(props.pagesMenu.pageId) === String(props.row.page.id)
-)*/
 
 const menuBtn = ref(null)
 onMounted(() => {
@@ -208,8 +196,7 @@ function onOpenMenu() {
       </div>
     </div>
   </div>
-  <!--<p class="debug">POS:{{row.page.position}} ID: {{ row.page.id }}</p>-->
-  <!--<p class="debug">{{ parentKey }}</p>-->
+ 
   </div>
 </template>
 
@@ -219,15 +206,12 @@ function onOpenMenu() {
   }
 
 .drag-handle {
-  width:0px;                /* 👈 collassato */
+  width:0px;               
   opacity: 0;
   margin-right: 0;
   overflow: hidden;
 
- /* transition:
-    width 140ms ease,
-    opacity 120ms ease,
-    margin-right 140ms ease;*/
+
   transition:
     width 200ms ease,
     opacity 120ms ease,
@@ -244,9 +228,7 @@ function onOpenMenu() {
   align-items: center;
   justify-content: center;
 }
-/*.drag-handle:hover{
-   background: rgba(255, 255, 255, 0.192);
-}*/
+
 .drag-handle {
   transition-delay: 40ms;
 }
@@ -330,12 +312,6 @@ function onOpenMenu() {
   opacity: 1;
   pointer-events: auto;
 }
-
-/*.page-item.drop-inside {
-  background: rgb(151, 151, 188);
-  outline: 2px solid var(--accent);
-  border-radius: 8px;
-}*/
 
 /* Inputs / buttons */
 .input {
@@ -443,16 +419,7 @@ function onOpenMenu() {
   display: block;
 }
 
-/*.leading .chevron { display: none; }
-.leading .page-icon { display: inline; }
 
-.page-item:hover .leading.has-children .chevron { display: inline; opacity: 0.6; }
-.page-item:hover .leading.has-children .page-icon { display: none; }
-
-.page-item .leading.has-children.expanded .chevron { display: inline; opacity: 1;}
-.page-item .leading.has-children.expanded .page-icon { display: none;}
-
-.leading.has-children { cursor: pointer; }*/
 .leading .chevron { visibility: hidden; opacity: 0; }
 .leading .page-icon { visibility: visible; opacity: 1; }
 

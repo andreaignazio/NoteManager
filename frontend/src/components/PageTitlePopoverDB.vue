@@ -65,7 +65,7 @@ function onKeydown(e) {
 }
 
 defineExpose({
-  iconAnchorEl: iconEl, // ref<HTMLElement>
+  iconAnchorEl: iconEl, 
   setDraftIcon,
 })
 </script>
@@ -73,7 +73,6 @@ defineExpose({
 <template>
   <div class="popover" @keydown="onKeydown">
     <div class="row">
-      <!-- invece di input: button che fa da anchor + mostra icona -->
       <button
         ref="iconEl"
         class="icon-btn"
@@ -100,7 +99,7 @@ defineExpose({
 </template>
 
 <style scoped>
-/* quasi uguale al tuo, solo rinomino icon-input -> icon-btn */
+
 .popover {
   border-radius: 12px;
   border: 1px solid rgba(0,0,0,.10);

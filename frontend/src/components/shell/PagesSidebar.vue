@@ -11,8 +11,6 @@ import PageActionsController from '@/components/PageActionsController.vue'
 import PageTitlePopoverController from '@/components/PageTitlePopoverController.vue'
 import { useOverlayStore } from '@/stores/overlay'
 
-import NestedList from '@/components/nested/NestedList.vue'
-
 const authStore = useAuthStore()
 const overlay = useOverlayStore()
 const displayName = computed(() => {
@@ -157,9 +155,6 @@ function onRenameFromMenu(){
   pageTitlePopoverRef.value?.open?.()
 }
 
-
-
-
 function onSidebarScroll() {
   //updateMenuRectIfOpen()
   setScrollingOn(sidebarScrollEl.value)
@@ -168,150 +163,6 @@ function onSidebarScroll() {
 // ======== Drag & Drop  ========
 const KEY_ROOT = 'root'
 const parentKeyOf = (parentId) => (parentId == null ? KEY_ROOT : String(parentId))
-
-function computeDropPlan(dragId, intent) {
-  if (!intent?.targetId) return null
-
-  const targetId = String(intent.targetId)
-  const dragPage = pagesStore.pagesById[String(dragId)]
-  const targetPage = pagesStore.pagesById[targetId]
-  if (!dragPage || !targetPage) return null
-
-  if (intent.mode === 'inside') {
-    const targetParentId = targetId
-    const parentKey = parentKeyOf(targetParentId)
-    const siblings = [...(pagesStore.childrenByParentId[parentKey] ?? [])].map(String)
-
-    if (pagesStore.wouldCreateCycle_Page(dragId, targetParentId)) return null
-
-    return {
-      mode: 'inside',
-      targetId,
-      targetParentId,
-      insertIndex: siblings.length,
-    }
-  }
-
-  const targetParentId = targetPage.parentId ?? null
-  const parentKey = parentKeyOf(targetParentId)
-  const siblings = [...(pagesStore.childrenByParentId[parentKey] ?? [])].map(String)
-
-  const targetIndex = siblings.indexOf(targetId)
-  if (targetIndex === -1) return null
-
-  let insertIndex = targetIndex + (intent.mode === 'after' ? 1 : 0)
-
-  const dragParentId = dragPage.parentId ?? null
-  if (String(dragParentId ?? '') === String(targetParentId ?? '')) {
-    const oldIndex = siblings.indexOf(String(dragId))
-    if (oldIndex !== -1 && oldIndex < insertIndex) insertIndex -= 1
-  }
-
-  if (pagesStore.wouldCreateCycle_Page(dragId, targetParentId)) return null
-
-  return {
-    mode: intent.mode,
-    targetId,
-    targetParentId,
-    insertIndex,
-  }
-}
-
-const pageListEl = ref(null)
-let sortable = null
-
-const DRAG_CLASS = 'is-dragging'
-let dropIntent = { mode: 'after', targetId: null }
-
-function computeIntentFromEvent(evt, originalEvent) {
-  const relatedLi = originalEvent?.target?.closest?.('li.page-item')
-  if (!relatedLi) return { mode: 'after', targetId: null }
-
-  const rect = relatedLi.getBoundingClientRect()
-  const relY = (originalEvent.clientY - rect.top) / rect.height
-
-  if (relY > 0.35 && relY < 0.65) return { mode: 'inside', targetId: String(relatedLi.dataset.id) }
-  if (relY <= 0.35) return { mode: 'before', targetId: String(relatedLi.dataset.id) }
-  return { mode: 'after', targetId: String(relatedLi.dataset.id) }
-}
-
-function clearDropHover() {
-  document
-    .querySelectorAll('.drop-inside,.drop-before,.drop-after')
-    .forEach((el) => el.classList.remove('drop-inside', 'drop-before', 'drop-after'))
-}
-
-/*onMounted(() => {
-  // scroll listener per aggiornare rect menu
-  //sidebarScrollEl.value?.addEventListener('scroll', onSidebarScroll, { passive: true })
-
-  sortable = Sortable.create(pageListEl.value, {
-    animation: 150,
-    handle: '.drag-handle',
-    ghostClass: 'drag-ghost',
-    chosenClass: 'drag-chosen',
-    dragClass: 'drag-dragging',
-    fallbackOnBody: true,
-    invertSwap: true,
-    swapThreshold: 0.85,
-    fallbackTolerance: 5,
-
-    onStart: () => {
-      pageListEl.value?.classList.add(DRAG_CLASS)
-    },
-
-    onMove: (evt, originalEvent) => {
-      clearDropHover()
-
-      const dragId = String(evt.dragged?.dataset?.id ?? '')
-      dropIntent = computeIntentFromEvent(evt, originalEvent)
-
-      const plan = computeDropPlan(dragId, dropIntent)
-      if (!plan) return false
-
-      const targetEl = originalEvent?.target?.closest?.('li.page-item')
-      if (plan.mode === 'inside') targetEl?.classList.add('drop-inside')
-      if (plan.mode === 'before') targetEl?.classList.add('drop-before')
-      if (plan.mode === 'after') targetEl?.classList.add('drop-after')
-
-      return false // mai swap
-    },
-
-    onEnd: async (evt) => {
-      try {
-        const dragId = String(evt.item?.dataset?.id ?? '')
-        if (!dragId) return
-
-        const plan = computeDropPlan(dragId, dropIntent)
-        if (!plan) return
-
-        if (plan.mode === 'inside') {
-          await pagesStore.movePageInside(dragId, plan.targetParentId)
-          return
-        }
-
-        await pagesStore.movePageToParentAtIndex(dragId, plan.targetParentId, plan.insertIndex)
-      } finally {
-        clearDropHover()
-        pageListEl.value?.classList.remove(DRAG_CLASS)
-        dropIntent = { mode: 'after', targetId: null }
-      }
-    },
-  })
-})
-
-onUnmounted(() => {
-  sidebarScrollEl.value?.removeEventListener('scroll', onSidebarScroll)
-  sortable?.destroy()
-  sortable = null
-})
-
-
-function getVisibleSiblingIdsFromDOM(evtToEl, parentKey) {
-  return Array.from(evtToEl.children)
-    .filter((li) => li?.dataset?.parent === parentKey)
-    .map((li) => String(li.dataset.id))
-}*/
 
 // Expose per AppShell (resize / click-outside)
 function containsTarget(t) {
@@ -324,7 +175,7 @@ defineExpose({
   containsTarget,
 })
 
-//const overlayTopId = ref(null)
+
   const overlayTopId = computed(()=>overlay.hasAny ? overlay.top?.id : null )
 
   const { childrenByParentId, pagesById, expandedById } = storeToRefs(pagesStore);
@@ -332,11 +183,10 @@ defineExpose({
 
   const sourceTree = computed(() => {
       if (!childrenByParentId.value || !pagesById.value) return [];
-      // ... la tua funzione buildForest rivista ...
       return buildForest(
         childrenByParentId.value, 
         pagesById.value, 
-        expandedById.value // <--- Passiamo la mappa dello store
+        expandedById.value 
     );
   });
 
@@ -355,10 +205,6 @@ defineExpose({
 
           const allChildIds = childrenMap[id] ?? [];
           const hasChildren = allChildIds.length > 0;
-          
-          // CHECK ESPANSIONE:
-          // Controlliamo se l'ID è true nella mappa dello store.
-          // Usiamo !! per forzare un booleano (utile se è undefined)
           const isExpanded = !!expandedMap[id];
 
           const visibleChildren = isExpanded 
@@ -381,7 +227,6 @@ defineExpose({
   
 
    const handleToggleExpand = (pageId) => {
-    // Chiamiamo l'azione dello store invece di modificare un ref locale
     pagesStore.toggleExpandPage(pageId);
   }
  
@@ -503,7 +348,7 @@ onMounted(pagesStore.fetchPages);
   z-index: 1000;
 }
 
-/*:deep(ul.page-list.is-dragging li.page-item) { margin-bottom: 1px; }*/
+
 :deep(.page-item.drop-before),
 :deep(.block-item.drop-before) { margin-top: 10px; }
 
@@ -588,7 +433,7 @@ onMounted(pagesStore.fetchPages);
   margin-top: 12px;
 }
 
-/* List */
+
 .page-list {
   list-style: none;
   padding: 0;
@@ -604,7 +449,7 @@ onMounted(pagesStore.fetchPages);
 .sidebar.menu-open :deep(.menu-anchor),
 .sidebar.menu-open :deep(.menu) { pointer-events: auto; }
 
-/* flyout variant: background pieno */
+
 .sidebar.flyout {
   background: #fff;
 }
@@ -615,25 +460,7 @@ onMounted(pagesStore.fetchPages);
 .sidebar.flyout .sidebar-scroll {
   background: transparent;
 }
-/*
 
-:deep(.drag-dragging) {
-  opacity: 0.95;
-  transform: translateZ(0) scale(1.02);
-  will-change: transform;
-}
-
-
-:deep(.drag-chosen) {
-  opacity: 0.35;
-}
-
-
-:deep(.drag-ghost) {
-  opacity: 0.55;
-  transform: translateZ(0) scale(0.98);
-}
-*/
 :deep(.drag-chosen) {
   transform: scale(1.01);
 }
@@ -656,9 +483,4 @@ onMounted(pagesStore.fetchPages);
   opacity: 1;
 }
 
-/*:deep(.drag-dragging),
-:deep(.drag-chosen) {
-  box-shadow: 0 10px 30px rgba(0,0,0,.12);
-}
-*/
 </style>

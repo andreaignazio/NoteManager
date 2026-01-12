@@ -22,15 +22,8 @@ const userActionMenuRef = ref(null)
 function openUserMenu() {
   const el = identityEl.value
   if (!el) return
-  //userAnchorRect.value = el.getBoundingClientRect().toJSON()
-  //userMenuOpen.value = true
-
   userActionMenuRef.value?.open?.()
   console.log("openuser")
-  /*nextTick(() => {
-    // se vuoi, puoi ricalcolare dopo paint
-    userAnchorRect.value = el.getBoundingClientRect().toJSON()
-  })*/
 }
 
 function closeUserMenu() {

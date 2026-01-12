@@ -14,9 +14,9 @@ const props = defineProps({
   closeDelay: { type: Number, default: 180 },
   zIndex: { type: Number, default: 50 },
 
-  //  allarga la regione “tollerante” che mantiene l’hover
-  hoverPad: { type: Number, default: 18 },      // px attorno al pannello
-  bridgeWidth: { type: Number, default: 26 },   // px corridoio a sinistra
+  
+  hoverPad: { type: Number, default: 18 },      
+  bridgeWidth: { type: Number, default: 26 },  
 
 })
 
@@ -45,8 +45,7 @@ function scheduleClose() {
   clearCloseTimer()
   closeTimer = setTimeout(() => {
     console.log("Active:",props.active)
-    if(!props.active) return //chiusura sospesa se flyout non è layer top
-    //  non chiudere se sto resizand
+    if(!props.active) return 
     if (!hovering.value && !isResizing.value) emit('close')
   }, props.closeDelay)
 }
@@ -201,7 +200,7 @@ const bridgeStyle = computed(() => ({
 
 <template>
   <div v-if="open" class="flyout-root" :style="{ zIndex }">
-    <!-- ✅ Hover pad (tiene aperto il flyout anche se “scivoli” fuori di pochi px) -->
+    <!-- Hover pad -->
     <div
       ref = "hoverPadEl"
       class="flyout-hoverpad"
@@ -273,7 +272,7 @@ const bridgeStyle = computed(() => ({
   box-shadow: 0 10px 30px rgba(0,0,0,.12);
   /*overflow: auto;*/
 
-  /* rounded SOLO a destra */
+ 
   border-top-right-radius: 14px;
   border-bottom-right-radius: 14px;
   border-top-left-radius: 0;
@@ -283,13 +282,13 @@ const bridgeStyle = computed(() => ({
 }
 .flyout-scroll {
   height: 100%;
-  overflow: auto;   /* ✅ qui lo scroll */
+  overflow: auto;  
 }
 
 .flyout-resize-handle {
   position: absolute;
   top: 0;
-  right: -8px;       /* un po’ più largo = più facile prendere */
+  right: -8px;       
   width: 16px;
   height: 100%;
   cursor: col-resize;

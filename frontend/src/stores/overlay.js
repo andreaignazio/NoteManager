@@ -1,4 +1,3 @@
-/// src/stores/overlay.js
 import { defineStore } from 'pinia'
 
 let _installed = false
@@ -83,8 +82,7 @@ export const useOverlayStore = defineStore('overlay', {
       this.close(top.id)
     },
     clear() {
-      // opzionale: chiama close() su tutti in ordine top->bottom
-      // ma nel logout puoi anche solo dropparli
+     
       this.stack = []
       this._applyScrollLock?.()
     },

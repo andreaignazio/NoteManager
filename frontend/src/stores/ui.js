@@ -1,4 +1,3 @@
-// src/stores/ui.js
 import { defineStore } from 'pinia'
 
 const STORAGE_KEY = 'myasset.ui.v1'
@@ -7,11 +6,11 @@ const clamp = (v, min, max) => Math.max(min, Math.min(max, v))
 
 export const useUiStore = defineStore('ui', {
   state: () => ({
-    // persisted
+    
     sidebarMode: 'docked', // 'docked' | 'hidden'
     sidebarWidth: 280,
 
-    // non-persisted (optional)
+   
     _hydrated: false,
     topbarHidden: false,
   }),

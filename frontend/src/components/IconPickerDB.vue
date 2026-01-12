@@ -10,13 +10,13 @@ const emit = defineEmits(['select', 'close'])
 
 const q = ref('')
 
-// normalizza: stringa -> oggetto “fake”
+
 const normalized = computed(() => {
   return (props.icons ?? []).map((x) => {
     if (typeof x === 'string') {
       return { id: x, label: x, icon: null, keywords: [], category: '' }
     }
-    // icon item lucide
+
     return {
       id: x.id ?? '',
       label: x.label ?? x.id ?? '',
@@ -47,8 +47,6 @@ const filtered = computed(() => {
 })
 
 function pick(item) {
-  // compat: emettiamo SEMPRE una stringa come prima
-  // per lucide sarà "lucide:folder"
   emit('select', item.id)
 }
 </script>

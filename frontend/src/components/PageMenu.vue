@@ -84,7 +84,7 @@ const menuStyle = computed(() => {
 
 <style scoped>
 .menu {
-  position: fixed; /* ancorato al viewport usando getBoundingClientRect */
+  position: fixed; 
   z-index: 1000;
   min-width: 220px;
 
@@ -145,7 +145,6 @@ const menuStyle = computed(() => {
   background: rgba(0,0,0,.08);
 }
 
-/* Extra: stile “danger” coerente con lo stesso look */
 .optionBtn.danger .optionLabel {
   color: #b42318;
 }

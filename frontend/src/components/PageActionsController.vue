@@ -41,8 +41,6 @@ async function open() {
   scheduleUpdate()
   await nextTick()
   scheduleUpdate()
-
-  //nextTick(() => scheduleUpdate())
 }
 
 

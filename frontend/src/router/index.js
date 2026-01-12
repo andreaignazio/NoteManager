@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import LoginView from '../views/LoginView.vue';
-// Importiamo un placeholder per la home protetta
 import AppShell from '../views/AppShell.vue'; 
 import PageView from '../views/PageView.vue';
 
@@ -14,9 +13,9 @@ const routes = [
     path: '/',
     name: 'App',
     component: AppShell,
-    meta: { requiresAuth: true }, // 🔒 Rotta protetta
+    meta: { requiresAuth: true },
     children: [
-        // Qui metteremo le pagine in futuro
+        
         {
           path: '/pages/:id',
           name: 'pageDetail',
@@ -32,7 +31,6 @@ const router = createRouter({
   routes,
 });
 
-// Navigation Guard (Il Buttafuori Frontend)
 router.beforeEach((to, from, next) => {
   const isAuthenticated = localStorage.getItem('auth_token');
   

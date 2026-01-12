@@ -2,11 +2,9 @@
 import { computed, nextTick, onBeforeUnmount, ref, unref, watch, onMounted, onUnmounted } from 'vue'
 import usePagesStore from '@/stores/pages'
 import useLiveAnchorRect from '@/composables/useLiveAnchorRect'
-import useScrollLock from '@/composables/useScrollLock'
 import ActionMenuDB from '@/components/ActionMenuDB.vue'
 import PageTitlePopoverDB from '@/components/PageTitlePopoverDB.vue'
 import IconPickerDB from '@/components/IconPickerDB.vue'
-import { ICONS_TEMP } from '@/domain/icons_temp'
 import { useOverlayLayer } from '@/composables/useOverlayLayer'
 import { ICONS } from "@/icons/catalog"
 
@@ -65,7 +63,6 @@ const { syncOpen } = useOverlayLayer(
   layerId,
   () => ({
     getMenuEl: () => activeMenuEl.value,
-    // qui l’anchor “principale” è quella title (bottone titolo)
     getAnchorEl: () => titleAnchorResolved.value,
     close: () => requestCloseTopmost(),
     options: {
@@ -108,9 +105,7 @@ const page = computed(() => {
   return pagesStore.pagesById?.[id] ?? null
 })
 
-/* ============================================================================
- * Open/Close API (layered)
- * ==========================================================================*/
+//===OPEN/CLOSE===
 function open() {
   
   if (!props.pageId) return
@@ -140,9 +135,6 @@ function toggle() {
 
 defineExpose({ open, close: closeAll, toggle })
 
-/* ============================================================================
- * Icon picker open/close + select
- * ==========================================================================*/
 function openIconPicker() {
   if (!titleOpen.value) return
   iconOpen.value = true
@@ -159,9 +151,7 @@ function onSelectIcon(icon) {
   }
 }
 
-/* ============================================================================
- * Commit / Cancel
- * ==========================================================================*/
+
 function onCancel() {
   closeAll()
 }
@@ -194,13 +184,6 @@ async function onCommit({ icon, title }) {
     closeAll()
   }
 }
-
-/* ============================================================================
- * ESC priority handling (IMPORTANT)
- * - if icon picker open: ESC closes only icon picker
- * - else: ESC closes title (and all)
- * This MUST stop ActionMenuDB's keydown handler.
- * ==========================================================================*/
 
 
 </script>

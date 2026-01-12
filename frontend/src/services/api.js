@@ -22,6 +22,5 @@ api.interceptors.request.use( (config) =>
   return config
 })
 
-//api.defaults.headers.post['Content-Type'] = 'application/json';
 
 export default api

@@ -62,9 +62,6 @@ export default function useLiveAnchorRect(anchorEl, enabled, opts) {
   const start = () => {
     updateNow()
     scheduleUpdate()
-    //window.addEventListener("resize", onResize, { passive: true })
-    // scroll può avvenire in container, quindi capture=true aiuta molto
-    //window.addEventListener("scroll", onScroll, { passive: true, capture: captureScroll })
     window.addEventListener("resize", onResize, resizeOpts)
     window.addEventListener("scroll", onScroll, scrollOpts)
   }
@@ -72,8 +69,6 @@ export default function useLiveAnchorRect(anchorEl, enabled, opts) {
   const stop = () => {
     if (raf) cancelAnimationFrame(raf)
     raf = 0
-    //window.removeEventListener("resize", onResize)
-    //window.removeEventListener("scroll", onScroll, captureScroll)
     window.removeEventListener("resize", onResize, resizeOpts)
     window.removeEventListener("scroll", onScroll, scrollOpts)
     rect.value = null
@@ -88,7 +83,6 @@ export default function useLiveAnchorRect(anchorEl, enabled, opts) {
     { immediate: true }
   )
 
-  // se cambia l'elemento ancora mentre è attivo
   watch(
     () => getEl(),
     () => {
