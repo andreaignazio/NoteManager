@@ -3,7 +3,7 @@
   
   import usePagesStore from '@/stores/pages'
   import { useBlocksStore } from '@/stores/blocks'
-  import RecursiveDraggable from '@/components/nested/RecursiveDraggable.vue';
+  import RecursiveDraggableV0 from '@/components/nested/RecursiveDraggableV0.vue';
   import BlockRow from '@/views/BlockRow.vue'
   //import BlockTypeMenu from '@/views/BlockTypeMenu.vue'
   import { storeToRefs } from 'pinia'
@@ -332,7 +332,7 @@ const overlayTopId = computed(()=>overlay.hasAny ? overlay.top?.id : null )
 
       <!-- BLOCKS -->
        <div ref="blockListEl" class="block-list">
-       <RecursiveDraggable v-if="childrenByParentId"
+       <RecursiveDraggableV0 v-if="childrenByParentId"
           v-model:list="localTree"
           parent-id="root" 
           root-key="root"
@@ -349,7 +349,7 @@ const overlayTopId = computed(()=>overlay.hasAny ? overlay.top?.id : null )
               @open-menu="onOpenBlockMenu"
             />
           </template>
-      </RecursiveDraggable>
+      </RecursiveDraggableV0>
     </div>
     </div>
 

@@ -3,13 +3,15 @@ import { computed, nextTick, onMounted, onUnmounted, ref,watch } from 'vue'
 import router from '@/router'
 import { storeToRefs } from 'pinia'
 import usePagesStore from '@/stores/pages'
-import PageRowNS from '@/components/PageRowNS.vue'
-import RecursiveDraggable from '@/components/nested/RecursiveDraggable.vue';
+import PageRowC from '@/components/PageRowC.vue'
+import RecursiveDraggableV0 from '@/components/nested/RecursiveDraggableV0.vue';
 import useAuthStore from '@/stores/auth'
 import SidebarHeader from '@/components/shell/SidebarHeader.vue'
 import PageActionsController from '@/components/PageActionsController.vue'
 import PageTitlePopoverController from '@/components/PageTitlePopoverController.vue'
 import { useOverlayStore } from '@/stores/overlay'
+
+import DndController from '@/components/draggableList/DnDController.vue'
 
 const authStore = useAuthStore()
 const overlay = useOverlayStore()
@@ -194,23 +196,29 @@ defineExpose({
 
   watch(sourceTree, (newVal) => {
       localTree.value = newVal;
-  }, { immediate: true, deep: true });
+  }, { immediate: true});
 
   function buildForest(childrenMap, contentMap, expandedMap) {
         const rootIds = childrenMap[KEY_ROOT] ?? [];
 
       function buildNode(id) {
-          const pageData = contentMap[id];
+          //const pageData = contentMap[id];
+          const key = String(id)
+          const pageData = contentMap[id]
           if (!pageData) return null;
 
           const allChildIds = childrenMap[id] ?? [];
           const hasChildren = allChildIds.length > 0;
-          const isExpanded = !!expandedMap[id];
+          let isExpanded = !!expandedMap[id];
+          console.log(id,isExpanded)
 
           const visibleChildren = isExpanded 
               ? allChildIds.map(childId => buildNode(childId)).filter(Boolean)
               : [];
 
+              console.log('id', id, 'children keys has?', Object.prototype.hasOwnProperty.call(childrenMap, String(id)), 'raw', childrenMap[String(id)])
+
+              console.log("built_new_tree")
           return {
               ...pageData,
               hasChildren, 
@@ -228,21 +236,24 @@ defineExpose({
 
    const handleToggleExpand = (pageId) => {
     pagesStore.toggleExpandPage(pageId);
+    console.log(pagesStore.isExpanded(pageId))
   }
  
+
   const handleMove = async ({ id, parentId, position }) => {
+    flashMoved(id)
     console.log("Evento ricevuto dal generico:", "id:",id, "parent:",parentId, "pos:",position);
     
     if (pagesStore.isCircularMove(id, parentId, pagesStore.pagesById)) {
           console.warn("Operazione bloccata: tentativo di creare un ciclo infinito.");
-          localTree.value = buildForest(pagesStore.childrenByParentId, pagesStore.pagesById);
+          localTree.value = buildForest(pagesStore.childrenByParentId, pagesStore.pagesById,pagesStore.expandedById );
           return; 
       }
       pagesStore.updatePageLocationOptimistic(id, { 
         newParentId: parentId, 
         newPosition: position 
     });
-
+      pagesStore.ensureVisible(id)
     try {
        const res = await pagesStore.patchPage(String(id), { parent: parentId, position:String(position) });
        console.log("MovedID:",res.data.id, "MovedParentID", res.data.parent)
@@ -255,6 +266,29 @@ defineExpose({
 function test() {
   console.log(tree.value)
 }
+function startEdit(){}
+
+const recentlyMovedId = ref(null)
+let movedTimer = null
+
+function flashMoved(id) {
+  recentlyMovedId.value = id
+
+  requestAnimationFrame(() => {
+    const el = sidebarScrollEl.value?.querySelector?.(`.draggable-item[data-id="${id}"]`)
+    el?.scrollIntoView?.({ block: 'nearest' })
+  })
+
+
+  if (movedTimer) clearTimeout(movedTimer)
+  movedTimer = setTimeout(() => {
+    recentlyMovedId.value = null
+  }, 900)
+}
+
+onUnmounted(() => {
+  if (movedTimer) clearTimeout(movedTimer)
+})
 
 onMounted(pagesStore.fetchPages);
 
@@ -278,7 +312,40 @@ onMounted(pagesStore.fetchPages);
     <div ref="sidebarScrollEl" class="sidebar-scroll scrollbar-auto">
       
       <!--<NestedList/>-->
-      <RecursiveDraggable vif="childrenByParentId"
+      <!--<DndController
+        :tree="localTree"
+        @node-moved="handleMove"
+      />-->
+      <DndController
+        :tree="localTree"
+        @node-moved="handleMove"
+      >
+        <template #row="{ item, level, hasChildren, isExpanded }">
+          <PageRowC
+            :page="item"
+            :level="level"
+            :has-children="hasChildren"
+            :is-active="pagesStore.currentPageId === item.id"
+            :is-expanded="isExpanded"
+            :is-editing="String(editingPageId) === item.id"
+            :draft-title="draftPage.title"
+            :register-menu-anchor="registerMenuAnchor"
+            :parent-key="pagesStore.getParentKey(item.parentId)"
+            :page-action-menu-id="overlayTopId"
+            :flash="String(recentlyMovedId) === String(item.id)"
+            @open="openPage"
+            @start-edit="startEdit"
+            @toggle-expand="handleToggleExpand"
+            @add-child="addChildAndRename"
+            @open-menu="openPageActions"
+            @update:draftTitle="draftPage.title = $event"
+            @commit="commitEditTitle"
+            @cancel="cancelEditTitle"
+          />
+        </template>
+      </DndController>
+
+      <!--<RecursiveDraggableV0 vif="childrenByParentId"
           v-model:list="localTree"
           parent-id="root" 
           root-key="root"
@@ -308,7 +375,7 @@ onMounted(pagesStore.fetchPages);
              />
              
           </template>
-      </RecursiveDraggable>
+      </RecursiveDraggableV0>-->
       <PageActionsController
         ref="pageActionsRef"
         :pageId="actionsPageId"
