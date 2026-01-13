@@ -12,6 +12,8 @@ class BlockType(models.TextChoices):
     CHECKBOX = 'cb', 'Checkbox'
     IMAGE = 'img', 'Image'
     DIVIDER = 'div', 'Divider'
+    CODE = "code", "Code"
+    
 
 class Page(models.Model):
     id = models.UUIDField(

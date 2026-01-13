@@ -22,6 +22,11 @@ body {
   --bar-pad: 14px;
   --bar-btn: 28px;
   --bar-radius: 8px;
+  --block-actions-w: 34px;  
+  --code-actions-gap: 2px;    /* puoi tweakare 32-36 */
+  --code-toolbar-h: 32px;       /* altezza top bar */
+  --code-toolbar-top: 0px;      /* offset top */
+  --code-toolbar-gap: 0px;   
 }
 
 .overlay-scroll-locked .content-scroll,

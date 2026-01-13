@@ -79,9 +79,19 @@ watch(
 
 const menuBtn = ref(null)
 
-onMounted(() => {
+
+watch(
+  () => menuBtn.value,
+  (el) => {
+    // quando compare/scompare il bottone (per v-if), aggiorna la mappa
+    props.registerMenuAnchor?.(props.page.id, el)
+  },
+  { immediate: true }
+)
+
+/*onMounted(() => {
   props.registerMenuAnchor?.(props.page.id, menuBtn.value)
-})
+})*/
 
 onUnmounted(() => {
   props.registerMenuAnchor?.(props.page.id, null)

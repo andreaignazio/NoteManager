@@ -14,7 +14,7 @@
   import BlockTypeMenuController from '@/components/BlockTypeMenuController.vue'
   const { lock, unlock } = useScrollLock()
   import { useOverlayStore } from '@/stores/overlay'
-
+  import CodeLanguageMenuController from '@/components/CodeLanguageMenuController.vue'
 
   const pagesStore = usePagesStore()
   const blocksStore = useBlocksStore()
@@ -24,6 +24,8 @@
   const {optionsMenu} = storeToRefs(blocksStore)
   const overlay = useOverlayStore()
   
+  const errorMsg = ref("")
+
   const props = defineProps({
     id: String
   })
@@ -65,7 +67,7 @@ function onMenuAction({ id, payload }) {
   // futuro: altre azioni qui senza creare nuovi eventi
 }
 
-const optionsMenuActiveId = computed(() => {
+  const optionsMenuActiveId = computed(() => {
   const blockId = optionsMenu.value.blockId
   const block = blocksStore.blocksById[blockId]
   return block ? block.type : null
@@ -80,77 +82,51 @@ const optionsMenuActiveId = computed(() => {
   onMounted(() => window.addEventListener('resize', bumpLayoutTick))
   onBeforeUnmount(() => window.removeEventListener('resize', bumpLayoutTick))
 
-  /*const anchorRectLive = computed(() => {
-    layoutTick.value
-    if (!optionsMenu.value.open) return null
-    const blockId = optionsMenu.value.blockId
-    const el = menuAnchorByBlockId.get(String(blockId))
-    //console.log(el)
-    if (!el) return null
 
-    const r = el.getBoundingClientRect()
-    return {
-      top: r.top,
-      left: r.left,
-      right: r.right,
-      bottom: r.bottom,
-      width: r.width,
-      height: r.height,
-    }
-  })*/
-
-  const registerMenuAnchor = (blockId, el) => {
+  /*const registerMenuAnchor = (blockId, el) => {
     if (!blockId) return
     if (el) menuAnchorByBlockId.set(String(blockId), el)
     else menuAnchorByBlockId.delete(String(blockId))
-  }
-
-  /*function onOpenBlockMenu(blockId) {
-  const el = menuAnchorByBlockId.get(String(blockId))
-  if (!el) return
-
-  lock() 
-  blocksStore.openOptionsMenu(blockId)
   }*/
-
+ const registerMenuAnchor = (blockId, el, kind = 'actions') => {
+  if (!blockId) return
+  const k = `${String(blockId)}:${kind}`
+  if (el) menuAnchorByBlockId.set(k, el)
+  else menuAnchorByBlockId.delete(k)
+}
 
 watch(() => optionsMenu.value.open,
   (open) => {
     if (!open) unlock()
   })
 
+//===BLOCK TYPE MENU===
   
 const blockMenuRef = ref(null)
 const blockMenuAnchorEl = ref(null) // HTMLElement
 const blockMenuBlockId = ref(null)
 
 function onOpenBlockMenu(blockId) {
-  const el = menuAnchorByBlockId.get(String(blockId))
+  const el = menuAnchorByBlockId.get(`${String(blockId)}:actions`)
   if (!el) return
   blockMenuAnchorEl.value = el
   blockMenuBlockId.value = blockId
   nextTick(() => blockMenuRef.value?.open?.())
 }
-
-/*watch( anchorRectLive,
-  (r) => {
-    if (!optionsMenu.value.open || !r) return
-
-    const margin = 8
-    const out =
-      r.bottom < margin ||
-      r.top > window.innerHeight - margin ||
-      r.right < margin ||
-      r.left > window.innerWidth - margin
-
-    if (out) {
-      blocksStore.closeOptionsMenu()
-    }
-  })*/
-
   
-  const errorMsg = ref("")
- 
+//===BLOCK LANG MENU====
+  const langMenuRef = ref(null)
+  const langMenuAnchorEl = ref(null)
+  const langMenuBlockId = ref(null)
+
+  function onOpenLangMenu(blockId) {
+    const el = menuAnchorByBlockId.get(`${String(blockId)}:lang`)
+    if (!el) return
+    langMenuAnchorEl.value = el
+    langMenuBlockId.value = blockId
+    nextTick(() => langMenuRef.value?.open?.())
+  }
+  
    
 
   watch(
@@ -347,6 +323,7 @@ const overlayTopId = computed(()=>overlay.hasAny ? overlay.top?.id : null )
               :registerMenuAnchor="registerMenuAnchor"
               :blockActionMenuId="overlayTopId"
               @open-menu="onOpenBlockMenu"
+              @open-lang-menu="onOpenLangMenu"
             />
           </template>
       </RecursiveDraggableV0>
@@ -364,6 +341,16 @@ const overlayTopId = computed(()=>overlay.hasAny ? overlay.top?.id : null )
   :sideOffsetX="0"
   :lockScrollOnOpen="true"
 />
+    <CodeLanguageMenuController
+  ref="langMenuRef"
+  :pageId="id"
+  :blockId="langMenuBlockId"
+  :anchorEl="langMenuAnchorEl"
+  anchorLocation="blockRow"
+  placement="bottom-end"
+  :lockScrollOnOpen="false"
+/>
+
   </div>
 </template>
 
@@ -422,9 +409,9 @@ const overlayTopId = computed(()=>overlay.hasAny ? overlay.top?.id : null )
   transition: background-color 140ms ease, transform 140ms ease;
   will-change: background-color, transform;
 }
-:deep(.block-item:hover .row) {
+/*:deep(.block-item:hover .row) {
   background: rgba(0, 0, 0, 0.03);
-}
+}*/
 
 /* Base */
 :deep(.block-item.drop-before),

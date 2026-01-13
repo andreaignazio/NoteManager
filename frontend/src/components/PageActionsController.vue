@@ -22,30 +22,60 @@ const emit = defineEmits(['rename', 'deleted', 'duplicated', 'moved', 'close'])
 const pagesStore = usePagesStore()
 
 // open states
+const rectTriggerOpen = ref(false)
 const menuOpen = ref(false)
 const moveOpen = ref(false)
 const delOpen = ref(false)
 const keepChildren = ref(true)
 
-const anyOpen = computed(() => menuOpen.value || moveOpen.value || delOpen.value)
+const anyOpen = computed(() => menuOpen.value || moveOpen.value || delOpen.value || rectTriggerOpen.value )
 
 // anchor rect live (wrapper responsibility)
 const anchorResolved = computed(() => unref(props.anchorEl) ?? null)
-const { anchorRect, scheduleUpdate } = useLiveAnchorRect(anchorResolved, anyOpen)
+const { anchorRect, scheduleUpdate, updateNow } = useLiveAnchorRect(anchorResolved, anyOpen)
 
 // expose methods
-async function open() {
+/*async function open() {
+  
   if (!props.pageId) return
+  //rectTriggerOpen.value=true;
+  //anchorRect.value = anchorResolved.value.getBoundingClientRect().toJSON()
+  console.log("PAGEACTIONS_rect", anchorRect.value,"anchorEl:", anchorResolved.value)
+  
+  //updateNow()
   await nextTick()
   menuOpen.value = true
+  console.log("PAGEACTIONS_rect", anchorRect.value,"anchorEl:", anchorResolved.value)
   scheduleUpdate()
   await nextTick()
   scheduleUpdate()
+}*/
+async function open() {
+  if (!props.pageId) return
+
+  // 1) attiva solo il calcolo del rect (menu ancora chiuso)
+  rectTriggerOpen.value = true
+  await nextTick()
+  updateNow()
+
+  // 2) aspetta un frame per stabilizzare layout/scroll
+  await new Promise(requestAnimationFrame)
+  updateNow()
+
+  // se ancora null, prova un ultimo giro (opzionale ma utile)
+  if (!anchorRect.value) {
+    scheduleUpdate()
+    await new Promise(requestAnimationFrame)
+  }
+
+  // 3) ora apri il menu (rect dovrebbe essere pronto)
+  menuOpen.value = true
+  rectTriggerOpen.value = false
 }
 
 
-
 function close() {
+  rectTriggerOpen.value = false
   menuOpen.value = false
   moveOpen.value = false
   delOpen.value = false

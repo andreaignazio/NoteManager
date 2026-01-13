@@ -431,16 +431,20 @@ export const useBlocksStore = defineStore('blocksStore', {
     // -----------------------------
     // Content / type
     // -----------------------------
-    async updateBlockContent(blockId, newContent) {
+    async updateBlockContent(blockId, patch) {
       blockId = String(blockId)
       const editedBlock = this.blocksById[blockId]
       if (!editedBlock) return
 
       const previousContent = editedBlock.content
-      editedBlock.content = newContent
+      //editedBlock.content = newContent
+       const nextContent = { ...(previousContent ?? {}), ...(patch ?? {}) }
+
+      editedBlock.content = nextContent
 
       try {
-        await api.patch(`/blocks/${blockId}/`, { content: { text: newContent.text } })
+         await api.patch(`/blocks/${blockId}/`, { content: nextContent })
+        //await api.patch(`/blocks/${blockId}/`, { content: { text: newContent.text } })
       } catch (error) {
         console.warn('Error updating block:', error?.response?.data ?? error)
         editedBlock.content = previousContent

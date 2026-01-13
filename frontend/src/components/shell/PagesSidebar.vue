@@ -136,7 +136,10 @@ const actionsAnchorEl = ref(null) // HTMLElement|null
 const isActionsOpen = computed(() => actionsPageId.value != null)
 
 function openPageActions(pageId) {
+  console.log("OpenMenu")
   const el = menuAnchorByPageId.get(String(pageId))
+  console.log("menuAnchorMap:", menuAnchorByPageId)
+  console.log("EL:", el, "pageId:", pageId)
   if (!el) return
 
   actionsPageId.value = pageId

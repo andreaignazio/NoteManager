@@ -15,19 +15,44 @@
    })
 
    const menuBtn = ref(null)
-    onMounted(() => {
-      if(menuBtn.value){ props.registerMenuAnchor?.(props.block.id, menuBtn.value)} 
-    })
+   const langBtn = ref(null)
 
-    onUnmounted(()=>{
-      if(menuBtn.value){props.registerMenuAnchor?.(props.block.id, null)}
-    })
+   onMounted(() => {
+  if (menuBtn.value) {props.registerMenuAnchor?.(props.block.id,menuBtn.value,'actions')}
+  if (props.block.type === 'code' && langBtn.value) {
+    props.registerMenuAnchor?.(props.block.id,langBtn.value,'lang')}
+})
 
-   const emit = defineEmits(['open-menu'])
+  onUnmounted(() => {
+
+    props.registerMenuAnchor?.(props.block.id,null,'actions')
+    props.registerMenuAnchor?.(props.block.id,null,'lang' )
+  })
+
+  //===CONVERSIONI TEXT-> CODE OR CODE->TEXT
+  watch(
+  () => props.block.type,
+  (t) => {
+    // quando diventa code: registra anchor lang
+    if (t === 'code' && langBtn.value) {
+      props.registerMenuAnchor?.(props.block.id, langBtn.value, 'lang')
+    }
+    // quando smette di essere code: deregistra anchor lang
+    if (t !== 'code') {
+      props.registerMenuAnchor?.(props.block.id, null, 'lang')
+    }
+  }
+)
+
+
+   const emit = defineEmits(['open-menu', 'open-lang-menu'])
 
    function handleOpenMenu(e) {
     emit('open-menu', props.block.id)
    }
+   function handleOpenLangMenu() {
+    emit('open-lang-menu', props.block.id)
+  }
 
    async function handleInsertAfter() {
       const newId = await blocksStore.addNewBlock(
@@ -87,13 +112,30 @@ watch(
     </div>
 
     <!-- CONTENT ROW -->
-    <div class="row"
-    :class="{ 'highlighted' : isHighlighted }">
+    <div
+      class="row"
+      :class="[
+        { highlighted: isHighlighted },
+        { 'is-code-card': block.type === 'code' }
+      ]"
+    >
       <div class="blockContent">
         <BlockEditor :block="block" :pageId="pageId" />
       </div>
 
       <div class="blockActions">
+        <!-- Language pill (solo code) -->
+        <button
+          v-if="block.type === 'code'"
+          ref="langBtn"
+          class="lang-pill"
+          type="button"
+          @click.stop="handleOpenLangMenu"
+        >
+          {{ block.content?.language ?? 'plaintext' }} 
+        </button>
+
+        <!-- Dots (sempre) -->
         <button
           ref="menuBtn"
           class="dots"
@@ -108,6 +150,7 @@ watch(
 </template>
 
 <style scoped>
+  
 .block-item {
   display: grid;
   grid-template-columns: var(--block-gutter) 1fr;
@@ -125,23 +168,42 @@ watch(
 }
 
 /* ROW (hover area) */
+/* ROW base: grid con colonna azioni fissa */
 .row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr var(--block-actions-w);
   align-items: stretch;
   gap: 6px;
 
-  padding: 0px 0 0 var(--block-row-pad-x)  ;
-  padding-top: 0px;
-  padding-bottom: 4px;
-  
+  padding: 0 0 4px var(--block-row-pad-x);
   border-radius: 10px;
+  padding-right: 4px;
+  padding-top:4px;
+}
+
+/* ========== CODE CARD ========== */
+.row.is-code-card {
+  /* card styling in tema chiaro */
+  border: 0px solid rgba(0,0,0,.10);
+  background: rgba(0,0,0,.02);
+  border-radius: 12px;
+
+  /* qui diamo un po' più respiro */
+  padding-bottom: 8px;
+}
+
+/* Spingiamo il contenuto sotto la top bar (solo code) */
+.row.is-code-card .blockContent {
+  padding-top: var(--code-toolbar-h);
+  min-width: 0;
 }
 
 /* hover SOLO sul contenuto */
 .block-item:hover .row {
-  background: rgba(0, 0, 0, 0.03);
+  /*background: rgba(0, 0, 0, 0.03);*/
+  
 }
+
 .highlighted{
   background: rgba(0, 0, 0, 0.03);
 }
@@ -211,27 +273,115 @@ watch(
   min-width: 0;
 }
 
-/* Actions */
+/* Actions column sempre uguale (allineamento dots) */
 .blockActions {
-  display: flex;
-  align-items: start;
+  position: relative;
+  display: block;
+  width: var(--block-actions-w);
+}
+/* Actions column sempre uguale (allineamento dots) */
+.blockActions {
+  position: relative;
+  display: block;
+  width: var(--block-actions-w);
 }
 
-/* Dots */
+/* Dots: sempre ancorati in alto a destra (ma visibili solo hover/focus come già fai) */
 .dots {
-  opacity: 0;
-  pointer-events: none;
-  width: 28px;
-  height: 28px;
+  position: absolute;
+  top: var(--code-toolbar-top);
+  right: 0;
+
+  width: var(--bar-btn);
+  height: var(--bar-btn);
   border-radius: 8px;
   border: 0;
   background: transparent;
   cursor: pointer;
+
+  opacity: 0;
+  pointer-events: none;
 }
 
 .block-item:hover .dots,
 .block-item:focus-within .dots {
+
   opacity: 1;
   pointer-events: auto;
 }
+
+.dots:hover{
+  background: rgba(0,0,0,.06);
+  color: rgba(0,0,0,.85);
+}
+
+
+.block-item .icon-ghost {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.block-item:hover .icon-ghost,
+.block-item:focus-within .icon-ghost {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+
+
+/* Pill: assoluto, a sinistra del gutter dots, così non sposta layout */
+.lang-pill {
+  position: absolute;
+  top: var(--code-toolbar-top);
+  right: calc(var(--block-actions-w) + var(--code-actions-gap));
+
+  height: var(--bar-btn);
+  border-radius: var(--bar-radius);
+  border: 0px solid rgba(0,0,0,.10);
+  background: rgba(0,0,0,.03);
+  cursor: pointer;
+
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  color: rgba(0,0,0,.70);
+  font-size: 13px;
+
+  opacity: 0;
+  pointer-events: none;
+}
+
+.block-item:hover .lang-pill,
+.block-item:focus-within .lang-pill {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.lang-pill:hover {
+  background: rgba(0,0,0,.06);
+  color: rgba(0,0,0,.85);
+}
+
+.lang-pill::after {
+  content: '▾';
+  font-size: 11px;
+  margin-left: 4px;
+
+  opacity: 0;
+  transform: translateY(-1px);
+  transition: opacity 120ms ease;
+}
+
+/* SOLO hover sul bottone */
+.lang-pill:hover::after {
+  opacity: .6;
+}
+
+.block-item:hover .lang-pill::after,
+.block-item:focus-within .lang-pill::after {
+  opacity: .6;
+}
+
 </style> 
