@@ -11,7 +11,7 @@ import PageActionsController from '@/components/PageActionsController.vue'
 import PageTitlePopoverController from '@/components/PageTitlePopoverController.vue'
 import { useOverlayStore } from '@/stores/overlay'
 
-import DndController from '@/components/draggableList/DnDController.vue'
+import DndController from '@/components/draggableList/DndController.vue'
 
 const authStore = useAuthStore()
 const overlay = useOverlayStore()
