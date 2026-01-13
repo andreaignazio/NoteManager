@@ -8,8 +8,11 @@ function normalizeBlock(raw) {
     id: String(raw.id),
     pageId: String(raw.page),
     parentId: raw.parent_block == null ? null : String(raw.parent_block),
+    kind: raw.kind ?? 'block',          // ✅ NEW
     type: raw.type,
     content: raw.content ?? { text: '' },
+    layout: raw.layout ?? {},           // ✅ NEW (row)
+    width: raw.width ?? null,           // ✅ NEW (column)
     position: raw.position ?? '',
     version: raw.version ?? 1,
     updatedAt: raw.updated_at ?? null,
@@ -104,6 +107,26 @@ export const useBlocksStore = defineStore('blocksStore', {
     ensurePageMap(pageId) {
       if (!this.childrenByParentId[pageId]) this.childrenByParentId[pageId] = {}
     },
+    getKind(id) {
+      const n = this.blocksById[String(id)]
+      return n?.kind ?? 'block'
+    },
+    hasRowAncestor(blockId) {
+      let cur = String(blockId)
+      while (true) {
+        const node = this.blocksById[cur]
+        if (!node) return false
+
+        const pid = node.parentId
+        if (!pid) return false
+
+        const parent = this.blocksById[String(pid)]
+        if (!parent) return false
+
+        if ((parent.kind ?? 'block') === 'row') return true
+        cur = String(pid)
+      }
+    },
 
     sortSiblingsByPosition(ids) {
       ids.sort((a, b) => {
@@ -171,6 +194,95 @@ export const useBlocksStore = defineStore('blocksStore', {
     getParentKeyOf(parentId) {
       return parentKeyOf(parentId)
     },
+
+    applyCreateLocal(pageId, rawNode) {
+      const node = {
+        id: String(rawNode.id),
+        pageId: String(rawNode.pageId ?? pageId),
+        parentId: rawNode.parentId == null ? null : String(rawNode.parentId),
+        kind: rawNode.kind ?? 'block',
+        type: rawNode.type ?? DEFAULT_BLOCK_TYPE,
+        content: rawNode.content ?? { text: '' },
+        layout: rawNode.layout ?? {},
+        width: rawNode.width ?? null,
+        position: String(rawNode.position ?? ''),
+        version: rawNode.version ?? 1,
+        updatedAt: rawNode.updatedAt ?? null,
+      }
+
+      this.blocksById[node.id] = node
+
+      // blocksByPage
+      if (!this.blocksByPage[pageId]) this.blocksByPage[pageId] = []
+      if (!this.blocksByPage[pageId].includes(node.id)) this.blocksByPage[pageId].push(node.id)
+
+      // children map
+      this.ensurePageMap(pageId)
+      const key = parentKeyOf(node.parentId)
+      const arr = (this.childrenByParentId[pageId][key] ?? []).map(String)
+      if (!arr.includes(node.id)) arr.push(node.id)
+      this.childrenByParentId[pageId][key] = arr
+      this.sortSiblingsByPosition(this.childrenByParentId[pageId][key])
+
+      return true
+    },
+
+    applyUpdateLocal(blockId, patch) {
+      blockId = String(blockId)
+      const b = this.blocksById[blockId]
+      if (!b) return false
+
+      // non permettere di cambiare id/pageId qui
+      const next = { ...b, ...patch }
+      next.id = b.id
+      next.pageId = b.pageId
+
+      // se cambiano parent/position usa move (regola: update non fa move)
+      if ('parentId' in patch || 'position' in patch) {
+        console.warn('applyUpdateLocal: parentId/position should use move op')
+      }
+
+      this.blocksById[blockId] = next
+      return true
+    },
+
+    applyTransactionLocal(pageId, tx) {
+      if (!tx?.ops?.length) return false
+      pageId = String(pageId)
+
+      for (const op of tx.ops) {
+        if (!op) continue
+
+        if (op.op === 'create') {
+          this.applyCreateLocal(pageId, op.node)
+          continue
+        }
+
+        if (op.op === 'move') {
+          const parentId = op.parentId == null ? null : String(op.parentId)
+          this.applyMoveLocal(pageId, op.id, {
+            newParentId: parentId,
+            newPosition: String(op.position),
+          })
+          continue
+        }
+
+        if (op.op === 'update') {
+          this.applyUpdateLocal(op.id, op.patch ?? {})
+          continue
+        }
+
+        if (op.op === 'delete') {
+          this.applyDeleteLocal(pageId, op.id)
+          continue
+        }
+
+        console.warn('Unknown tx op', op)
+      }
+
+      return true
+    },
+
 
     // -----------------------------
     // Selection / focus / menu
@@ -284,6 +396,52 @@ export const useBlocksStore = defineStore('blocksStore', {
         throw error
       }
     },
+    async persistTransaction(pageId, tx) {
+      pageId = String(pageId)
+      try {
+        for (const op of tx.ops ?? []) {
+          if (op.op === 'create') {
+            // backend: POST /pages/:id/blocks/ (nested action)
+            const n = op.node
+            const payload = {
+              id: n.id,
+              kind: n.kind ?? 'block',
+              parent_block: n.parentId ?? null,
+              position: String(n.position ?? ''),
+              type: n.type ?? DEFAULT_BLOCK_TYPE,
+              content: n.content ?? { text: '' },
+              layout: n.layout ?? {},
+              width: n.width ?? null,
+            }
+            await api.post(`/pages/${pageId}/blocks/`, payload)
+            continue
+          }
+
+          if (op.op === 'move') {
+            await this.patchBlock(String(op.id), {
+              parent_block: op.parentId ?? null,
+              position: String(op.position),
+            })
+            continue
+          }
+
+          if (op.op === 'update') {
+            await this.patchBlock(String(op.id), op.patch ?? {})
+            continue
+          }
+
+          if (op.op === 'delete') {
+            await api.delete(`/blocks/${String(op.id)}/`)
+            continue
+          }
+        }
+      } catch (e) {
+        // resync hard
+        await this.fetchBlocksForPage(pageId)
+        throw e
+      }
+    },
+
 
     // -----------------------------
     // UI-Optimistic Actions (Phase A)
@@ -312,6 +470,7 @@ export const useBlocksStore = defineStore('blocksStore', {
 
     // Tab indent: optimistic local, fetch hard on error
     async indentBlock(pageId, blockId) {
+      if (this.hasRowAncestor(blockId)) return
       blockId = String(blockId)
       const block = this.blocksById[blockId]
       if (!block) return
@@ -324,6 +483,10 @@ export const useBlocksStore = defineStore('blocksStore', {
       if (idx <= 0) return
 
       const newParentId = siblings[idx - 1]
+      const prev = this.blocksById[String(newParentId)]
+      if (!prev || (prev.kind ?? 'block') !== 'block') return
+      if (this.hasRowAncestor(newParentId)) return
+
       const newKey = parentKeyOf(newParentId)
       const newSiblings = (this.childrenByParentId[pageId][newKey] ?? []).map(String)
 
@@ -344,6 +507,7 @@ export const useBlocksStore = defineStore('blocksStore', {
 
   
     async outdentBlock(pageId, blockId) {
+      if (this.hasRowAncestor(blockId)) return
       blockId = String(blockId)
       const block = this.blocksById[blockId]
       if (!block?.parentId) return

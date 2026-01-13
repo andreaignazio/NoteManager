@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 from django.db.models import Prefetch
+from rest_framework.exceptions import ValidationError
 
 from .models import Page, Block
 from .serializers import (
@@ -44,9 +45,16 @@ class PageViewSet(viewsets.ModelViewSet):
         page = self.get_object() # Carica la pagina e verifica che sia tua (grazie al queryset)
 
        
-        serializer = BlockSerializer(data=request.data)
+        serializer = BlockCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
+        parent = serializer.validated_data.get("parent_block")
+
+        if parent and parent.page_id != page.id:
+            raise ValidationError({
+                "parent_block": "parent_block must belong to the same page"
+            })
+        
         block = serializer.save(page=page)
         return Response(BlockSerializer(block).data, status=status.HTTP_201_CREATED)
 
@@ -64,8 +72,16 @@ class BlockViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
      
         page = serializer.validated_data["page"]
-
         if page.owner_id != self.request.user.id:
             raise PermissionDenied("Non puoi creare blocchi su una pagina non tua.")
+
+        parent = serializer.validated_data.get("parent_block")
+
+        if parent and parent.page_id != page.id:
+            raise ValidationError({
+                "parent_block": "parent_block must belong to the same page"
+            })
+
+        
 
         serializer.save()

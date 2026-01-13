@@ -13,7 +13,12 @@ class BlockType(models.TextChoices):
     IMAGE = 'img', 'Image'
     DIVIDER = 'div', 'Divider'
     CODE = "code", "Code"
-    
+
+class BlockKind(models.TextChoices):
+    BLOCK = "block", "Block"
+    ROW = "row", "Row"
+    COLUMN = "column", "Column"
+
 
 class Page(models.Model):
     id = models.UUIDField(
@@ -44,9 +49,16 @@ class Block(models.Model):
      parent_block = models.ForeignKey("self", on_delete=models.SET_NULL, 
                                       null=True, blank=True,
                                       related_name="children")
+     
+     kind = models.CharField(max_length=10, choices=BlockKind.choices, default=BlockKind.BLOCK)
+
      type = models.CharField(max_length=20, choices=BlockType.choices,
                              default=BlockType.PARAGRAPH)
      content = models.JSONField(default=dict, blank=True)
+
+     layout = models.JSONField(default=dict, blank=True)  # per row
+     width = models.FloatField(null=True, blank=True)     # per column (o ratio)
+
      position = models.CharField(max_length=32)
 
      version = models.IntegerField(default=1)
@@ -60,6 +72,8 @@ class Block(models.Model):
         indexes = [
             
             models.Index(fields=['page', 'parent_block', 'position']),
+
+            models.Index(fields=["page", "kind", "parent_block", "position"]),
         ]
         ordering = ['parent_block_id','position'] 
 

@@ -15,6 +15,7 @@
   const { lock, unlock } = useScrollLock()
   import { useOverlayStore } from '@/stores/overlay'
   import CodeLanguageMenuController from '@/components/CodeLanguageMenuController.vue'
+  import DndController from '@/components/draggableList/DndController.vue'
 
   const pagesStore = usePagesStore()
   const blocksStore = useBlocksStore()
@@ -307,8 +308,30 @@ const overlayTopId = computed(()=>overlay.hasAny ? overlay.top?.id : null )
       </div>
 
       <!-- BLOCKS -->
-       <div ref="blockListEl" class="block-list">
-       <RecursiveDraggableV0 v-if="childrenByParentId"
+
+      <div ref="blockListEl" class="block-list">
+        <DndController
+        :tree="localTree"
+        @node-moved="handleMove"
+      >
+        <template #row="{ item, level, hasChildren, isExpanded }">
+           <BlockRow
+              :block="item"
+              :level="level"
+              :pageId="id"
+              :parentKey="blocksStore.getParentKeyOf(item.parentId)"
+              :registerMenuAnchor="registerMenuAnchor"
+              :blockActionMenuId="overlayTopId"
+              @open-menu="onOpenBlockMenu"
+              @open-lang-menu="onOpenLangMenu"
+            />
+           </template>
+      </DndController>
+
+
+
+
+        <!--<RecursiveDraggableV0 v-if="childrenByParentId"
           v-model:list="localTree"
           parent-id="root" 
           root-key="root"
@@ -326,7 +349,7 @@ const overlayTopId = computed(()=>overlay.hasAny ? overlay.top?.id : null )
               @open-lang-menu="onOpenLangMenu"
             />
           </template>
-      </RecursiveDraggableV0>
+      </RecursiveDraggableV0>-->
     </div>
     </div>
 
@@ -411,7 +434,7 @@ const overlayTopId = computed(()=>overlay.hasAny ? overlay.top?.id : null )
 }
 /*:deep(.block-item:hover .row) {
   background: rgba(0, 0, 0, 0.03);
-}*/
+}*/ 
 
 /* Base */
 :deep(.block-item.drop-before),
