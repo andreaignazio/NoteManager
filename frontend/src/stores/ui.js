@@ -10,6 +10,8 @@ export const useUiStore = defineStore('ui', {
     sidebarMode: 'docked', // 'docked' | 'hidden'
     sidebarWidth: 280,
 
+    themeMode: 'system', // 'system' | 'light' | 'dark'
+
    
     _hydrated: false,
     topbarHidden: false,
@@ -22,7 +24,16 @@ export const useUiStore = defineStore('ui', {
   },
 
   actions: {
+    getSystemTheme() {
+      return window.matchMedia?.('(prefers-color-scheme: dark)')?.matches ? 'dark' : 'light'
+    },
+
+    applyThemeToDom(mode) {
+      const resolved = mode === 'system' ? getSystemTheme() : mode
+      document.documentElement.dataset.theme = resolved // <html data-theme="dark">
+    },
     setTopbarHidden(v) { this.topbarHidden = !!v },
+
     hydrate() {
       if (this._hydrated) return
       this._hydrated = true
@@ -38,6 +49,10 @@ export const useUiStore = defineStore('ui', {
         if (typeof data?.sidebarWidth === 'number') {
           this.sidebarWidth = clamp(data.sidebarWidth, this.sidebarMinWidth, this.sidebarMaxWidth)
         }
+        if (data?.themeMode === 'light' || data?.themeMode === 'dark' || data?.themeMode === 'system') {
+          this.themeMode = data.themeMode
+        }
+        applyThemeToDom(this.themeMode)
       } catch {
         // ignore
       }
@@ -50,6 +65,7 @@ export const useUiStore = defineStore('ui', {
           JSON.stringify({
             sidebarMode: this.sidebarMode,
             sidebarWidth: this.sidebarWidth,
+            themeMode: this.themeMode,
           })
         )
       } catch {
@@ -69,6 +85,12 @@ export const useUiStore = defineStore('ui', {
 
     setSidebarWidth(px) {
       this.sidebarWidth = clamp(px, this.sidebarMinWidth, this.sidebarMaxWidth)
+      this.persist()
+    },
+    setThemeMode(mode) {
+      if (mode !== 'light' && mode !== 'dark' && mode !== 'system') return
+      this.themeMode = mode
+      applyThemeToDom(mode)
       this.persist()
     },
   },

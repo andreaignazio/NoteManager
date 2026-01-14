@@ -23,10 +23,70 @@ body {
   --bar-btn: 28px;
   --bar-radius: 8px;
   --block-actions-w: 34px;  
-  --code-actions-gap: 2px;    /* puoi tweakare 32-36 */
+  --code-actions-gap: -4px;    /* puoi tweakare 32-36 */
   --code-toolbar-h: 32px;       /* altezza top bar */
   --code-toolbar-top: 0px;      /* offset top */
-  --code-toolbar-gap: 0px;   
+  --code-toolbar-gap: 0px;
+  --block-row-btn: 23px;
+
+  
+  /* neutrals */
+  --text-default: rgba(0,0,0,.88);
+  --text-muted: rgba(0,0,0,.55);
+
+  --bg-page: #ffffff;
+  --bg-elev: rgba(0,0,0,.02);
+
+  /* block colors (token mapping) */
+  --c-text-gray: #6B7280;
+  --c-text-darkgray: #6B7280;
+  --c-text-brown: #92400E;
+  --c-text-orange: #EA580C;
+  --c-text-yellow: #CA8A04;
+  --c-text-green: #16A34A;
+  --c-text-blue: #2563EB;
+  --c-text-purple: #7C3AED;
+  --c-text-pink: #DB2777;
+  --c-text-red: #DC2626;
+
+  --c-bg-gray: #F3F4F6;
+  --c-bg-darkgray: #d8dcde;
+  --c-bg-brown: #fee3c7;
+  --c-bg-orange: #FFEDD5;
+  --c-bg-yellow: #FEF9C3;
+  --c-bg-green: #DCFCE7;
+  --c-bg-blue: #DBEAFE;
+  --c-bg-purple: #EDE9FE;
+  --c-bg-pink: #FCE7F3;
+  --c-bg-red: #FEE2E2;
+}
+
+html[data-theme="dark"] {
+  --text-default: rgba(255,255,255,.88);
+  --text-muted: rgba(255,255,255,.60);
+
+  --bg-page: #0b0f17;
+  --bg-elev: rgba(255,255,255,.04);
+
+  --c-text-gray: #9CA3AF;
+  --c-text-brown: #D97706;
+  --c-text-orange: #FB923C;
+  --c-text-yellow: #FACC15;
+  --c-text-green: #4ADE80;
+  --c-text-blue: #60A5FA;
+  --c-text-purple: #A78BFA;
+  --c-text-pink: #F472B6;
+  --c-text-red: #F87171;
+
+  --c-bg-gray: #111827;
+  --c-bg-brown: #2A1A0A;
+  --c-bg-orange: #2A1206;
+  --c-bg-yellow: #2A2406;
+  --c-bg-green: #062A12;
+  --c-bg-blue: #061A2A;
+  --c-bg-purple: #1B0A2A;
+  --c-bg-pink: #2A0A1B;
+  --c-bg-red: #2A0606;   
 }
 
 .overlay-scroll-locked .content-scroll,

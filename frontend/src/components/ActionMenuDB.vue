@@ -36,7 +36,19 @@ const measuredW = ref(0)
 const measuredH = ref(0)
 const measured = ref(false)
 
-defineExpose({ el: menuEl })
+const menuItems = ref([]) // array di button
+
+function getItemElById(id) {
+  const arr = menuItems.value ?? []
+  return arr.find((btn) => btn?.dataset?.menuItemId === String(id)) ?? null
+}
+
+function getMenuEl() {
+  return menuEl.value ?? null
+}
+
+
+defineExpose({ el: menuEl , menuItems, getItemElById, getMenuEl})
 
 const anchorElResolved = computed(() => unref(props.anchorEl) ?? null)
 
@@ -47,8 +59,19 @@ function computePosition(anchorRect, menuW, menuH) {
 
   let left = 0
   let top = 0
-
-  if (props.placement === 'right') {
+    if (props.placement === 'right-start') {
+    left = anchorRect.right + gap + offsetX
+    top = anchorRect.top
+  } else if (props.placement === 'right-end') {
+    left = anchorRect.right + gap + offsetX
+    top = anchorRect.bottom - menuH
+  } else if (props.placement === 'left-start') {
+    left = anchorRect.left - menuW + offsetX
+    top = anchorRect.top
+  } else if (props.placement === 'left-end') {
+    left = anchorRect.left - menuW + offsetX
+    top = anchorRect.bottom - menuH
+  } else if (props.placement === 'right') {
     left = anchorRect.right + gap + offsetX
     top = anchorRect.top
   } else if (props.placement === 'bottom-start') {
@@ -167,7 +190,7 @@ watch(
   <Transition name="menu-pop">
     <div
       
-      v-if="open && anchorRect"
+      v-if="open"
       ref="menuEl"
       class="menu"
       :style="menuStyle"
@@ -181,15 +204,18 @@ watch(
         <template v-for="(it, idx) in items" :key="it.type === 'separator' ? `sep-${idx}` : it.id">
           <li v-if="it.type === 'separator'" class="separator" role="separator" aria-hidden="true"></li>
 
-          <li v-else class="menuItem">
+          <li v-else class="menuItem" >
             <button
+              ref="menuItems"
               class="optionBtn"
+              :data-menu-item-id="it.id"
               :class="{ active: it.id === activeId, danger: !!it.danger }"
               :disabled="!!it.disabled"
               type="button"
               role="menuitem"
               @click="pick(it)"
             >
+              <span v-if="it.submenu" class="optionChevron" aria-hidden="true">›</span>
               <span v-if="it.icon" class="optionIcon" aria-hidden="true">{{ it.icon }}</span>
               <span class="optionLabel">{{ it.label }}</span>
             </button>
@@ -262,4 +288,9 @@ watch(
   opacity: 1;
   transform: scale(1);
 }
+.optionChevron {
+  margin-left: auto;
+  opacity: .55;
+}
+.optionBtn:disabled .optionChevron { opacity: .35; }
 </style>

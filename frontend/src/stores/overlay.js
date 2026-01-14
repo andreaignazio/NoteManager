@@ -111,6 +111,7 @@ export const useOverlayStore = defineStore('overlay', {
       if (!top) return
 
       const menuEl = top.getMenuEl?.()
+      console.log("OVERLAY_MENUel",menuEl)
       if (!menuEl) return
       if (menuEl && menuEl.contains(e.target)) return
 

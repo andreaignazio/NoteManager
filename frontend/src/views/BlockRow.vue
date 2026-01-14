@@ -1,9 +1,10 @@
 <script setup>
    import BlockEditor from '@/views/BlockEditor.vue';
    import { useBlocksStore } from '@/stores/blocks'
-   import { nextTick, ref, onMounted,onUnmounted, toRef,watch } from 'vue';
-
-   const blocksStore = useBlocksStore()
+   import { nextTick, computed, ref, onMounted,onUnmounted, toRef,watch } from 'vue';
+  import { classForTextToken, classForBgToken } from '@/theme/colorsCatalog'
+   
+  const blocksStore = useBlocksStore()
 
    const props = defineProps({
     block: Object,
@@ -16,6 +17,7 @@
 
    const menuBtn = ref(null)
    const langBtn = ref(null)
+   const isCallout = computed(() => props.block.type === 'callout')
 
    onMounted(() => {
   if (menuBtn.value) {props.registerMenuAnchor?.(props.block.id,menuBtn.value,'actions')}
@@ -28,6 +30,23 @@
     props.registerMenuAnchor?.(props.block.id,null,'actions')
     props.registerMenuAnchor?.(props.block.id,null,'lang' )
   })
+  //===COLOR PICKER====
+  const styleClasses = computed(() => {
+  const s = props.block?.props?.style ?? {}
+  console.log("BLOCKROW:", s.bgColor)
+  console.log(classForBgToken(s.bgColor))
+ 
+  return [
+    classForTextToken(s.textColor ?? 'default'),
+    classForBgToken(s.bgColor ?? 'default'),
+  ]
+})
+
+const style = ref(null)
+watch(props.block?.props?.style, (newStyle) => {
+      const textColor = classForTextToken(newStyle.textColor ?? 'default')
+      const bgColor = classForTextToken(newStyle.textColor ?? 'default')
+})
 
   //===CONVERSIONI TEXT-> CODE OR CODE->TEXT
   watch(
@@ -116,10 +135,14 @@ watch(
       class="row"
       :class="[
         { highlighted: isHighlighted },
-        { 'is-code-card': block.type === 'code' }
+        { 'is-code-card': block.type === 'code' },
+        {'is-callout': isCallout}
       ]"
+      :style="{background: `var(--${classForBgToken(block.props.style.bgColor)})`,}"
     >
-      <div class="blockContent">
+      <div class="blockContent" :class="styleClasses"
+      :style="{ color: `var(--${classForTextToken(block.props.style.textColor)})`,
+         background: `var(--c-text-${block.props.style.bgColor})` }">
         <BlockEditor :block="block" :pageId="pageId" />
       </div>
 
@@ -176,9 +199,10 @@ watch(
   gap: 6px;
 
   padding: 0 0 4px var(--block-row-pad-x);
-  border-radius: 10px;
+  border-radius: 5px;
   padding-right: 4px;
   padding-top:4px;
+  padding-bottom:4px;
 }
 
 /* ========== CODE CARD ========== */
@@ -190,6 +214,13 @@ watch(
 
   /* qui diamo un po' più respiro */
   padding-bottom: 8px;
+  margin-top: 5px;
+  margin-bottom: 5px;
+}
+
+.row.is-callout{
+
+  border-radius: 16px;
 }
 
 /* Spingiamo il contenuto sotto la top bar (solo code) */
@@ -271,6 +302,7 @@ watch(
 /* Contenuto */
 .blockContent {
   min-width: 0;
+  border-radius: 12px;
 }
 
 /* Actions column sempre uguale (allineamento dots) */
@@ -292,8 +324,8 @@ watch(
   top: var(--code-toolbar-top);
   right: 0;
 
-  width: var(--bar-btn);
-  height: var(--bar-btn);
+  width: var(--block-row-btn);
+  height: var(--block-row-btn);
   border-radius: 8px;
   border: 0;
   background: transparent;
@@ -335,7 +367,7 @@ watch(
   top: var(--code-toolbar-top);
   right: calc(var(--block-actions-w) + var(--code-actions-gap));
 
-  height: var(--bar-btn);
+  height: var(--block-row-btn);
   border-radius: var(--bar-radius);
   border: 0px solid rgba(0,0,0,.10);
   background: rgba(0,0,0,.03);

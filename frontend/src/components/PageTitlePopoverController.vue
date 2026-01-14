@@ -117,6 +117,7 @@ function open() {
 
 function closeIconPicker() {
   iconOpen.value = false
+  nextTick(() => titleUiRef.value?.focusTitle?.())
 }
 
 function closeTitle() {
@@ -147,7 +148,9 @@ function onSelectIcon(icon) {
   } catch (e) {
     console.error('[PageTitlePopover] setDraftIcon failed', e)
   } finally {
-    closeIconPicker() // ✅ chiude SOLO il picker
+    closeIconPicker() 
+
+    
   }
 }
 

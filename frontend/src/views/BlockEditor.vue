@@ -1,7 +1,8 @@
 <script setup>
-import { nextTick, ref, watch, computed } from 'vue'
+import { nextTick, ref, watch, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useBlocksStore } from '@/stores/blocks'
 import { storeToRefs } from 'pinia'
+import { useAutoResizeTextarea, createTextareaAutoResizer } from '@/composables/useAutoResizeTextarea'
 
 const blocksStore = useBlocksStore()
 
@@ -15,12 +16,25 @@ const errorMsg = ref("")
 const localTextContent = ref(props.block.content?.text ?? "")
 const localLanguage = ref(props.block.content?.language ?? "plaintext")
 
+import { getIconComponent } from '@/icons/catalog'
+
+const isCallout = computed(() => props.block.type === 'callout')
+const calloutIconId = computed(() => props.block.props?.iconId ?? null)
+const CalloutIcon = computed(() => {
+  if (!calloutIconId.value) return null
+  return getIconComponent(calloutIconId.value)
+})
+
+
 const typeClass = ref(props.block.type)
 
 const { focusRequestId } = storeToRefs(blocksStore)
 const inputEl = ref(null)
 
 const isCode = computed(() => props.block.type === 'code')
+
+const { resize } = useAutoResizeTextarea(inputEl)
+onMounted(() => nextTick(resize))
 
 // puoi allargarla quando vuoi (meglio allinearla al backend)
 const CODE_LANG_OPTIONS = [
@@ -134,7 +148,7 @@ let t = null
 async function handleInput(inputEvent) {
   const newInput = inputEvent.target.value
   localTextContent.value = newInput
-
+  ar.resize()
   const newContent = isCode.value
     ? { text: newInput, language: localLanguage.value }
     : { text: newInput }
@@ -168,9 +182,46 @@ async function onLanguageChange() {
 }
 
 // watchers
-watch(() => props.block.content?.text, (newText) => {
+
+const wrapEl = ref(null) // opzionale: wrapper che cambia width
+const ar = createTextareaAutoResizer()
+
+watch(
+  () => inputEl.value,
+  async (el) => {
+    if (!el) return
+
+   /* if (isCode.value) {
+      ar.detach()
+      return
+    }*/
+
+    await nextTick()
+    ar.attach(el, wrapEl.value || el) 
+    ar.resize()
+  },
+  { immediate: true }
+)
+
+onBeforeUnmount(() => ar.detach())
+
+
+watch(() => props.block.content?.text, async (newText) => {
   localTextContent.value = newText ?? ""
+  
+   await nextTick()
+  resize()
+
 })
+
+/*watch(isCode, (nowCode) => {
+  if (nowCode) {
+    ar.detach()
+  } else if (inputEl.value) {
+    ar.attach(inputEl.value, wrapEl.value || inputEl.value)
+    ar.resize()
+  }
+})*/
 
 watch(() => props.block.content?.language, (newLang) => {
   localLanguage.value = newLang ?? "plaintext"
@@ -188,6 +239,7 @@ watch(
     inputEl.value?.focus()
     if (typeof req.caret === 'number') {
       inputEl.value?.setSelectionRange?.(req.caret, req.caret)
+      
     }
     blocksStore.clearFocusRequest()
   },
@@ -197,13 +249,38 @@ watch(
 
 
 <template>
-  <div class="wrap" :class="{ 'is-code': isCode }">
-    
+  <div ref="wrapEl" class="wrap" :class="{ 'is-code': isCode, 'is-callout': isCallout }">
+       <div v-if="isCallout && !isCode" class="calloutInner">
+      <button
+        class="calloutIconBtn"
+        type="button"
+        @click.stop="$emit('openIconPicker')" 
+        title="Change icon"
+      >
+        <component v-if="CalloutIcon" :is="CalloutIcon" :size="15" class="calloutIcon" />
+        <span v-else class="calloutIconPlaceholder">+</span>
+      </button>
 
-    <input
-      v-if="!isCode"
+      <textarea
+        ref="inputEl"
+        class="input text-block calloutText"
+        rows="1"
+        :class="typeClass"
+        :value="localTextContent"
+        data-block-editor="true"
+        :data-block-id="block.id"
+        @focus="onFocus"
+        @blur="onBlur"
+        @keydown="onKeydown"
+        @input="handleInput"
+      />
+    </div>
+
+    <textarea
+      v-else-if="!isCode"
       ref="inputEl"
-      class="input"
+      class="input text-block"
+      rows="1"
       :class="typeClass"
       :value="localTextContent"
       data-block-editor="true"
@@ -238,6 +315,7 @@ watch(
 }
 
 .input{
+  display: block;
   width: 100%;
   border: none;
   outline: none;
@@ -245,7 +323,12 @@ watch(
   resize: none;
   font: inherit;
   padding: 0 0;
-  line-height: 2em;
+  line-height: 1.5em;
+  overflow: hidden;
+ color: inherit; 
+}
+.text-block{
+  overflow: hidden;
 }
 textarea.input.code {
   line-height: 1.6em; /* più stretto per code */
@@ -259,7 +342,7 @@ textarea.input.code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   line-height: 1.6em;
   /* niente background qui */
-  background: transparent;
+ background: transparent;
 }
 
 /* toolbar sopra il textarea */
@@ -276,4 +359,62 @@ textarea.input.code {
   border: 1px solid rgba(0,0,0,0.12);
   background: rgba(255,255,255,0.8);
 }
+.wrap.is-callout {
+  /* il background e colore arrivano dal BlockRow con classi c-bg-* ecc */
+}
+
+.calloutInner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.calloutIconBtn {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: 0;
+  background: rgba(0,0,0,.04);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.calloutIconBtn:hover {
+  background: rgba(0,0,0,.07);
+}
+
+.calloutIcon {
+  width: 18px;
+  height: 18px;
+  opacity: .85;
+}
+
+.calloutIconPlaceholder {
+  font-size: 16px;
+  opacity: .55;
+}
+
+.calloutText {
+  /* per farlo “centrato” con l’icona */
+  padding-top: 2px;
+}
+
+/*textarea.input.code {
+  
+  white-space: pre;
+  overflow-x: auto;
+  overflow-y: auto;
+
+  
+  resize: none;
+
+  
+  max-height: 420px;
+
+  
+  scrollbar-gutter: stable both-edges;
+}*/
 </style>

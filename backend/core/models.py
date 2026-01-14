@@ -9,10 +9,13 @@ class BlockType(models.TextChoices):
     H3 = "h3", "Heading 3"
     BULLETED_LIST = "ul", "Bulleted List"
     NUMBERED_LIST = 'ol', 'Numbered List'
-    CHECKBOX = 'cb', 'Checkbox'
+    TODO = 'todo', 'Todo'
+    QUOTE = 'quote', 'Quote'
     IMAGE = 'img', 'Image'
     DIVIDER = 'div', 'Divider'
     CODE = "code", "Code"
+    CALLOUT = "callout", "Callout"
+    TOGGLE = "toggle", "Toggle"
 
 class BlockKind(models.TextChoices):
     BLOCK = "block", "Block"
@@ -55,6 +58,7 @@ class Block(models.Model):
      type = models.CharField(max_length=20, choices=BlockType.choices,
                              default=BlockType.PARAGRAPH)
      content = models.JSONField(default=dict, blank=True)
+     props = models.JSONField(default=dict, blank=True)
 
      layout = models.JSONField(default=dict, blank=True)  # per row
      width = models.FloatField(null=True, blank=True)     # per column (o ratio)

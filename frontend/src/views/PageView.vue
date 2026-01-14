@@ -16,6 +16,7 @@
   import { useOverlayStore } from '@/stores/overlay'
   import CodeLanguageMenuController from '@/components/CodeLanguageMenuController.vue'
   import DndController from '@/components/draggableList/DndController.vue'
+  import BlockMenuController from '@/components/BlockMenuController.vue'
 
   const pagesStore = usePagesStore()
   const blocksStore = useBlocksStore()
@@ -354,7 +355,7 @@ const overlayTopId = computed(()=>overlay.hasAny ? overlay.top?.id : null )
     </div>
 
     <!-- Action menu -->
-    <BlockTypeMenuController
+    <!--<BlockTypeMenuController
   ref="blockMenuRef"
   :pageId="id"
   :blockId="blockMenuBlockId"
@@ -363,6 +364,20 @@ const overlayTopId = computed(()=>overlay.hasAny ? overlay.top?.id : null )
   placement="left"
   :sideOffsetX="0"
   :lockScrollOnOpen="true"
+/>-->
+<BlockMenuController
+  ref="blockMenuRef"
+  :pageId="id"
+  :blockId="blockMenuBlockId"
+  :anchorEl="blockMenuAnchorEl"
+  anchorLocation="blockRow"
+  placement="left"
+  :sideOffsetX="0"
+  :lockScrollOnOpen="true"
+  :enableMoveTo="false"
+  :enableDuplicate="false"
+  :enableCopyLink="false"
+  :enableComment="false"
 />
     <CodeLanguageMenuController
   ref="langMenuRef"

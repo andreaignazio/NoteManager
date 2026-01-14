@@ -2,20 +2,37 @@ import { defineStore } from 'pinia'
 import api from '@/services/api'
 import { DEFAULT_BLOCK_TYPE } from '@/domain/blockTypes'
 import { posBetween } from '@/domain/position'
+import { normalizeProps, isTextToken, isBgToken } from '@/theme/colorsCatalog'
+import { DEFAULT_ICON_ID } from '@/icons/catalog'
+
+
+
+/*function normalizeProps(rawProps) {
+  const p = rawProps && typeof rawProps === 'object' ? rawProps : {}
+  const style = p.style && typeof p.style === 'object' ? p.style : {}
+  return {
+    ...p,
+    style: {
+      ...DEFAULT_STYLE,
+      ...style,
+    },
+  }
+}*/
 
 function normalizeBlock(raw) {
   return {
     id: String(raw.id),
     pageId: String(raw.page),
     parentId: raw.parent_block == null ? null : String(raw.parent_block),
-    kind: raw.kind ?? 'block',          // ✅ NEW
+    kind: raw.kind ?? 'block',          
     type: raw.type,
     content: raw.content ?? { text: '' },
-    layout: raw.layout ?? {},           // ✅ NEW (row)
-    width: raw.width ?? null,           // ✅ NEW (column)
+    layout: raw.layout ?? {},           
+    width: raw.width ?? null,           
     position: raw.position ?? '',
     version: raw.version ?? 1,
     updatedAt: raw.updated_at ?? null,
+    props : normalizeProps(raw.props),
   }
 }
 
@@ -208,6 +225,7 @@ export const useBlocksStore = defineStore('blocksStore', {
         position: String(rawNode.position ?? ''),
         version: rawNode.version ?? 1,
         updatedAt: rawNode.updatedAt ?? null,
+        props: normalizeProps(rawNode.props),
       }
 
       this.blocksById[node.id] = node
@@ -410,6 +428,7 @@ export const useBlocksStore = defineStore('blocksStore', {
               position: String(n.position ?? ''),
               type: n.type ?? DEFAULT_BLOCK_TYPE,
               content: n.content ?? { text: '' },
+              props: normalizeProps(n.props), 
               layout: n.layout ?? {},
               width: n.width ?? null,
             }
@@ -616,7 +635,7 @@ export const useBlocksStore = defineStore('blocksStore', {
       }
     },
 
-    async updateBlockType(blockId, newType) {
+    /*async updateBlockType(blockId, newType) {
       blockId = String(blockId)
       const editedBlock = this.blocksById[blockId]
       if (!editedBlock) return
@@ -631,10 +650,119 @@ export const useBlocksStore = defineStore('blocksStore', {
         editedBlock.type = previousType
         throw error
       }
+    },*/
+    buildNextProps(existingProps, stylePatch) {
+  const base = normalizeProps(existingProps)
+  const prevStyle = base.style ?? {}
+  const next = {
+    ...base,
+    style: {
+      ...prevStyle,
+      ...stylePatch,
     },
+  }
+  return normalizeProps(next)
+},
+    async updateBlockType(blockId, newType) {
+  blockId = String(blockId)
+  const b = this.blocksById[blockId]
+  if (!b) return
+
+  const previousType = b.type
+  const previousProps = b.props
+
+  // calcola nextProps con la regola richiesta
+  let nextProps = previousProps
+
+  const prevStyle = normalizeProps(previousProps).style
+
+  const prevBg = prevStyle?.bgColor ?? 'default'
+
+  // ✅ Regola: se entro in code e bg è ancora default -> set gray_bg
+  if (newType === 'code' && prevBg === 'default') {
+    nextProps = this.buildNextProps(previousProps, { bgColor: 'gray_bg' })
+  }
+   if (previousType === 'code' && newType !== 'code' && prevBg === 'gray_bg') {
+     nextProps = this.buildNextProps(previousProps, { bgColor: 'default' })
+   }
+
+   if (newType === 'callout' && prevBg === 'default') {
+    nextProps = this.buildNextProps(previousProps, { bgColor: 'darkgray_bg' })
+  }
+   if (previousType === 'callout' && newType !== 'callout' && prevBg === 'darkgray_bg') {
+     nextProps = this.buildNextProps(previousProps, { bgColor: 'default' })
+   }
+   if (newType === 'callout' && !b.props?.iconId) {
+      nextProps.iconId = DEFAULT_ICON_ID
+  }
+
+  // optimistic
+  b.type = newType
+  if (nextProps !== previousProps) b.props = nextProps
+
+  try {
+    // 🔥 1 PATCH sola (meglio): type + props insieme
+    const payload = { type: newType }
+    if (nextProps !== previousProps) payload.props = nextProps
+    await api.patch(`/blocks/${blockId}/`, payload)
+  } catch (error) {
+    console.warn('Error updating block type:', error?.response?.data ?? error)
+    b.type = previousType
+    b.props = previousProps
+    throw error
+  }
+},
+
+    async updateBlockStyle(blockId, stylePatch) {
+      blockId = String(blockId)
+      const b = this.blocksById[blockId]
+      if (!b) return
+
+      const prevProps = normalizeProps(b.props)
+      const prevStyle = prevProps.style
+      const nextStyle = { ...prevStyle }
+
+      if ('textColor' in stylePatch && isTextToken(stylePatch.textColor)) {
+        nextStyle.textColor = stylePatch.textColor
+      }
+      if ('bgColor' in stylePatch && isBgToken(stylePatch.bgColor)) {
+        nextStyle.bgColor = stylePatch.bgColor
+      }
+
+      const nextProps = { ...prevProps, style: nextStyle }
+
+      b.props = nextProps
+      try {
+        const res = await api.patch(`/blocks/${blockId}/`, { props: nextProps })
+        console.log("PATCH",res)
+      } catch (e) {
+        b.props = prevProps
+        throw e
+      }
+    },
+    async updateBlockIcon(blockId, iconId) {
+  const b = this.blocksById[blockId]
+  if (!b) return
+
+  const prevProps = b.props ?? {}
+  const nextProps = {
+    ...prevProps,
+    iconId: iconId ?? null,
+  }
+
+  b.props = nextProps
+
+  try {
+    await api.patch(`/blocks/${blockId}/`, { props: nextProps })
+  } catch (e) {
+    b.props = prevProps
+    throw e
+  }
+},
+
 
     // -----------------------------
-    // Add new block (ancora server-driven, ok per Phase A)
+    // Add new block 
     // -----------------------------
     async addNewBlock(pageId, payload, blockId) {
       const key = String(blockId)

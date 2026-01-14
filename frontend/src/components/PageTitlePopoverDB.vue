@@ -17,6 +17,8 @@ const titleEl = ref(null)
 const draftIcon = ref('')
 const draftTitle = ref('')
 
+
+
 watch(
   () => props.open,
   async (open) => {
@@ -64,9 +66,19 @@ function onKeydown(e) {
   }
 }
 
+function focusTitle() {
+  nextTick(() => {
+    titleEl.value?.focus()
+    
+    const el = titleEl.value
+    el?.setSelectionRange?.(el.value.length, el.value.length)
+  })
+}
+
 defineExpose({
   iconAnchorEl: iconEl, 
   setDraftIcon,
+  focusTitle
 })
 </script>
 

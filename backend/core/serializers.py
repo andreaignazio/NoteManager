@@ -48,7 +48,7 @@ def normalize_block_content(block_type: str, content):
 class BlockSerializer(serializers.ModelSerializer):
     class Meta:
         model = Block
-        fields = ['id', 'page', 'parent_block', 'kind', 'type', 'content', 'layout', 'width', 'position', 'created_at', 'updated_at']
+        fields = ['id', 'page', 'parent_block', 'kind', 'type', 'content', 'layout', 'width', 'position', 'created_at', 'updated_at', 'props']
         read_only_fields = ['id', 'page', 'created_at', 'updated_at']
 
     def validate(self, attrs):
@@ -67,7 +67,7 @@ class BlockCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Block
-        fields = ['id', 'page', 'parent_block', 'kind', 'type', 'content', 'layout', 'width', 'position', 'created_at', 'updated_at']
+        fields = ['id', 'page', 'parent_block', 'kind', 'type', 'content', 'layout', 'width', 'position', 'created_at', 'updated_at','props']
         read_only_fields = ['created_at', 'updated_at']
     
     def validate(self, attrs):
