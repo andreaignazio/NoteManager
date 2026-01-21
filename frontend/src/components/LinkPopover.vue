@@ -20,20 +20,72 @@ const href = ref(props.initialHref ?? "")
 const urlInputEl = ref<HTMLInputElement | null>(null)
 const pagePickerRef = ref<any>(null)
 
+const POPOVER_W = 350
+const POPOVER_H = 350
+const POPOVER_TOP_H = 40
+const LIST_H = POPOVER_H - POPOVER_TOP_H
+const GAP = 10
+const MARGIN = 10
+
 watch(() => props.initialHref, (v) => { href.value = v ?? "" })
+
+
+const preferAbove = computed(() => {
+  const r = props.anchorRect
+  const spaceBelow = window.innerHeight - r.bottom
+  const spaceAbove = r.top
+  // preferisci sotto, ma se non ci sta -> sopra (e se sopra ci sta meglio)
+  if (spaceBelow >= POPOVER_H + GAP + MARGIN) return false
+  if (spaceAbove >= POPOVER_H + GAP + MARGIN) return true
+  // fallback: scegli il lato con più spazio
+  return spaceAbove > spaceBelow
+})
 
 const pos = computed(() => {
   const r = props.anchorRect
-  const x = (r.left + r.right) / 2
-  const y = r.bottom
+  let x = (r.left + r.right) / 2
+  //x = window.innerWidth / 2
+
+  const y = preferAbove.value ? (r.top - GAP) : (r.bottom + GAP)
+  const ty = preferAbove.value ? 1 : 0
+
   return computeFloatingPosition({
-    x, y,
-    w: 360,
-    h: 420,
+    x,
+    y,
+    w: POPOVER_W,
+    h: POPOVER_H,
     tx: 0.5,
-    ty: 0,
-    margin: 10,
+    ty,
+    margin: MARGIN,
   })
+})
+
+function extractPageIdFromHref(raw: string): string | null {
+  const s = (raw ?? '').trim()
+  // accetta /pages/<id> o pages/<id>
+  const m = s.match(/(?:^|\/)pages\/([^/?#]+)/)
+  return m?.[1] ? String(m[1]) : null
+}
+
+function isProbablyUrl(raw: string): boolean {
+  const s = (raw ?? '').trim()
+  if (!s) return false
+  // url completo o www.
+  if (/^https?:\/\//i.test(s)) return true
+  if (/^www\./i.test(s)) return true
+  // opzionale: dominio.tld (molto permissivo)
+  if (/^[\w-]+\.[a-z]{2,}(\/|$)/i.test(s)) return true
+  return false
+}
+
+const pickedPageIdFromHref = computed(() => extractPageIdFromHref(href.value))
+
+const pickerQuery = computed(() => {
+  const s = (href.value ?? '').trim()
+  if (!s) return ''
+  if (pickedPageIdFromHref.value) return ''     // è già un link pagina -> mostra tree
+  if (isProbablyUrl(s)) return ''               // è URL -> mostra tree
+  return s                                      // testo -> ricerca titoli
 })
 
 function close() {
@@ -59,12 +111,7 @@ function removeLink() {
 }
 
 function onPickPage(pageId: string) {
-  // scegli uno schema interno:
-  // 1) route
-  applyLink(`/page/${pageId}`)
-
-  // 2) oppure schema custom:
-  // applyLink(`app:page:${pageId}`)
+  applyLink(`/pages/${pageId}`)
 }
 
 watch(
@@ -74,16 +121,36 @@ watch(
     await nextTick()
     urlInputEl.value?.focus()
 
-    // prepara lista pagine (fetch + auto expand + reset query)
-    await pagePickerRef.value?.resetAndPrepare?.()
+    await pagePickerRef.value?.resetAndPrepare?.({
+      revealPageId: pickedPageIdFromHref.value
+    })
   },
   { immediate: true }
 )
+
+const footerAction = computed(() => ({
+  iconId: 'lucide:globe',
+  title: ({ hasQuery }: any) => {
+    const s = (href.value ?? '').trim()
+    return s ? s : 'Type a complete URL to link'
+  },
+  subtitle: () => 'Web page',
+  disabled: () => !(href.value ?? '').trim(),
+  onSelect: () => {
+    const s = (href.value ?? '').trim()
+    if (!s) return
+    applyLink(s)
+  },
+}))
 </script>
 
 <template>
-  <div v-if="open" class="wrap" :style="{ left: pos.x + 'px', top: pos.y + 'px' }">
-    <div class="card">
+  <div v-if="open" 
+  class="wrap" 
+  :class="{ above: preferAbove }"
+  :style="{ left: pos.x + 'px', top: pos.y + 'px' }">
+    <div class="card"
+    :style="{width: POPOVER_W + 'px', maxHeight: POPOVER_H + 'px'}">
       <div class="top">
         <div class="row">
           <input
@@ -95,7 +162,7 @@ watch(
           />
           <button class="btn" type="button" @click="applyLink(href)">Apply</button>
         </div>
-
+<!--
         <div class="row actions">
           <button
             class="btn ghost"
@@ -107,19 +174,23 @@ watch(
             Remove
           </button>
           <button class="btn ghost" type="button" @click="close">Close</button>
-        </div>
+        </div>-->
       </div>
 
       <div class="divider"></div>
-
+      <div class="body">
       <PagePickerList
         ref="pagePickerRef"
-        title="Link to a page"
+        title=""
+        :maxHeight="LIST_H - 40"
         :currentPageId="currentPageId ?? null"
-        :enableSearch="true"
+        :query="pickerQuery"
+        :enableSearch="false"
         :fetchIfEmpty="true"
+        :footerAction="footerAction"
         @select="onPickPage"
       />
+      </div>
     </div>
   </div>
 </template>
@@ -131,18 +202,46 @@ watch(
   z-index: 2005;
   pointer-events: auto;
 }
+.wrap.above{
+  transform: translate(-50%, -100%);
+}
 .card{
-  width: 360px;
-  max-height: 520px;
+  
   border-radius: 14px;
   background: var(--bg-menu, rgba(255,255,255,.94));
   border: 1px solid rgba(0,0,0,.10);
   box-shadow: 0 18px 50px rgba(0,0,0,.18);
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
+
 }
 .top{
+  height: 40px;
   padding: 10px;
+  flex: 0 0 auto;
 }
+.divider{ 
+  flex: 0 0 auto;
+   height: 1px;
+  background: rgba(0,0,0,.08);
+ }
+.body{
+  flex: 1 1 auto;         /* prende lo spazio rimanente */
+  min-height: 0;          /* IMPORTANTISSIMO per far funzionare scroll nei figli */
+  overflow: hidden;       /* lo scroll lo fa la lista dentro */
+}
+:deep(.page-picker){
+  display: flex;
+  flex: 1 1 auto;
+  height: 100%;
+  max-height: 120%;     /* toglie il vincolo “px only” */
+  overflow-y: auto;
+  min-height: 0;            /* prende tutto lo spazio disponibile */
+}
+
+
+
 .row{
   display:flex;
   gap: 8px;
@@ -172,8 +271,5 @@ watch(
 }
 .btn.ghost{ background: transparent; }
 .btn:disabled{ opacity: .5; cursor: default; }
-.divider{
-  height: 1px;
-  background: rgba(0,0,0,.08);
-}
+
 </style>

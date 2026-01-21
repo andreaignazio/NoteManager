@@ -226,7 +226,7 @@ async function onMenuAction({ id }) {
 
     if (id === 'rename') {
       close()
-      emit('rename', props.pageId)
+      emit('rename', props.pageId, props.scope)
       return
     }
 

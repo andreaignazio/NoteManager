@@ -72,6 +72,21 @@ import {
   Italic,
   Strikethrough,
   Underline,
+  
+ //Type,
+  Heading1,
+  Heading2,
+  Heading3,
+  List,
+  ListOrdered,
+  ChevronRight,
+  //CheckSquare,
+  Quote,
+  Code,
+ // Lightbulb,
+  Minus,
+  Unlink,
+
 } from "lucide-vue-next"
 
 
@@ -150,12 +165,33 @@ export const ICONS = [
   { id: "lucide:message-circle", label: "Commento", icon: MessageCircle, category: "actions" },
 
   // ===== Text formatting =====
-  { id: "lucide:bold", label: "Grassetto", icon: Bold, category: "actions" },
+  /*{ id: "lucide:bold", label: "Grassetto", icon: Bold, category: "actions" },
   { id: "lucide:italic", label: "Corsivo", icon: Italic, category: "actions" },
   { id: "lucide:strikethrough", label: "Barrato", icon: Strikethrough, category: "actions" },
   { id: "lucide:underline", label: "Sottolineato", icon: Underline, category: "actions" },
-  { id: "lucide:link", label: "Link", icon: Link, category: "actions" },
+  { id: "lucide:link", label: "Link", icon: Link, category: "actions" },*/
+  
+// ===== Text Formatting / Inline Actions =====
+{ id: "lucide:bold",          label: "Bold",           icon: Bold,          category: "actions" },
+{ id: "lucide:italic",        label: "Italic",         icon: Italic,        category: "actions" },
+{ id: "lucide:underline",     label: "Underline",      icon: Underline,     category: "actions" },
+{ id: "lucide:strikethrough", label: "Strikethrough", icon: Strikethrough, category: "actions" },
+{ id: "lucide:link",          label: "Link",           icon: Link,          category: "actions" },
+{ id: "lucide:unlink",        label: "Remove link",    icon: Unlink,        category: "actions" },
 
+// ===== Block Types / Structure =====
+//{ id: "lucide:type",           label: "Paragraph",        icon: Type,          category: "blocks" },
+{ id: "lucide:heading-1",      label: "Heading 1",        icon: Heading1,      category: "blocks" },
+{ id: "lucide:heading-2",      label: "Heading 2",        icon: Heading2,      category: "blocks" },
+{ id: "lucide:heading-3",      label: "Heading 3",        icon: Heading3,      category: "blocks" },
+{ id: "lucide:list",           label: "Bulleted list",    icon: List,          category: "blocks" },
+{ id: "lucide:list-ordered",   label: "Numbered list",    icon: ListOrdered,   category: "blocks" },
+{ id: "lucide:chevron-right",  label: "Toggle",           icon: ChevronRight,  category: "blocks" },
+{ id: "lucide:check-square",   label: "To-do",            icon: CheckSquare,   category: "blocks" },
+{ id: "lucide:quote",          label: "Quote",            icon: Quote,         category: "blocks" },
+{ id: "lucide:code",           label: "Code block",       icon: Code,          category: "blocks" },
+{ id: "lucide:lightbulb",      label: "Callout",          icon: Lightbulb,     category: "blocks" },
+{ id: "lucide:minus",          label: "Divider",          icon: Minus,         category: "blocks" },
 
 ]
 

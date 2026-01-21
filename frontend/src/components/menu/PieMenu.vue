@@ -64,10 +64,10 @@ const PRESETS = {
   sidebar: {
     block: [
       { id:'newPage', label:'New page', iconId:'lucide:file' },
-      { id:'rename', label:'Rename', iconId:'lucide:edit-3' },
-      { id:'movePage', label:'Move', iconId:'lucide:folder-input' },
+      { id:'renamePage', label:'Rename', iconId:'lucide:edit-3' },
+      { id:'duplicatePage', label:'Duplicate', iconId:'lucide:files' },
       { id:'share', label:'Share', iconId:'lucide:share-2' },
-      { id:'trash', label:'Delete', iconId:'lucide:trash-2' },
+      { id:'deletePage', label:'Delete', iconId:'lucide:trash-2' },
     ],
     ai: [
       { id:'ai', label:'AI tools', iconId:'lucide:sparkles' },

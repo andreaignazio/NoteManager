@@ -4,6 +4,7 @@ import { useEditorRegistryStore } from "@/stores/editorRegistry"
 import { useUiStore } from "@/stores/ui"
 
 import { DOMSerializer } from "prosemirror-model"
+import { get } from "sortablejs"
 
 /**
  * Clipboard interno "rich" come fallback (se permessi clipboard web non disponibili)
@@ -77,6 +78,10 @@ function editorHasFocus(ed: any) {
 
 
 
+
+
+
+
 export function useTextActions() {
   const editorReg = useEditorRegistryStore()
   const ui = useUiStore()
@@ -88,6 +93,27 @@ export function useTextActions() {
   function getEditor(blockId: string) {
     return editorReg.getEditor(blockId)
   }
+  function getSelectionRect(ed: any) {
+  const { from, to } = ed.state.selection
+  const a = ed.view.coordsAtPos(from)
+  const b = ed.view.coordsAtPos(to)
+
+  const left = Math.min(a.left, b.left)
+  const right = Math.max(a.right, b.right)
+  const top = Math.min(a.top, b.top)
+  const bottom = Math.max(a.bottom, b.bottom)
+
+  return { left, right, top, bottom, width: right - left, height: bottom - top }
+}
+
+function getActiveLinkHref(ed: any): string | null {
+  // tiptap: isActive('link') + attrs
+  if (!ed.isActive?.('link')) return null
+  const attrs = ed.getAttributes?.('link')
+  return attrs?.href ?? null
+}
+
+
 
   async function copyBlockRich(blockId: string) {
     const ed = getEditor(blockId)
@@ -198,24 +224,61 @@ export function useTextActions() {
   }
 
   // ==== Link (per ora: apertura popover, lo implementiamo dopo) ====
-  function openLinkPopover(blockId: string) {
+  /*function openLinkPopover(blockId: string) {
     const ed = getEditor(blockId)
     if (!ed) return
     // Qui poi apriamo overlay popover con anchor sulla selection
     // (lasciamo stub, lo colleghiamo dopo)
     ;(ui as any).requestLinkPopover = { blockId, ts: Date.now() }
-  }
+  }*/
 
   function unsetLink(blockId: string) {
     const ed = getEditor(blockId)
     ed?.chain().focus().unsetLink().run()
   }
 
+
   function setLink(blockId: string, href: string) {
     const ed = getEditor(blockId)
     if (!ed) return
     ed.chain().focus().setLink({ href }).run()
   }
+
+  function removeLinkInSelection(blockId: string) {
+  const ed = editorReg.getEditor(blockId)
+  if (!ed) return
+
+  const sel = ed.state?.selection
+  if (!sel || sel.empty) return // ✅ solo se c’è un range selezionato
+
+  const linkType = ed.state.schema?.marks?.link
+  if (!linkType) return
+
+  ed.view.dispatch(
+    ed.state.tr.removeMark(sel.from, sel.to, linkType)
+  )
+
+  ed.view.focus()
+}
+function removeLinkInSelectionOrAtCaret(blockId: string) {
+  const ed = editorReg.getEditor(blockId)
+  if (!ed) return
+
+  const sel = ed.state?.selection
+  if (!sel) return
+
+  // ✅ range selezionato: rimuovi link solo nel range
+  if (!sel.empty) {
+    const linkType = ed.state.schema?.marks?.link
+    if (!linkType) return
+    ed.view.dispatch(ed.state.tr.removeMark(sel.from, sel.to, linkType))
+    ed.view.focus()
+    return
+  }
+
+  // ✅ fallback: caret (o stored mark) -> unsetLink tiptap
+  ed.chain().focus().unsetLink().run()
+}
 
   return {
     copyBlockRich,
@@ -225,9 +288,13 @@ export function useTextActions() {
     toggleItalic,
     toggleStrike,
     toggleUnderline,
-    openLinkPopover,
+    getActiveLinkHref,
+    getSelectionRect,
     unsetLink,
     setLink,
+    removeLinkInSelection,
+    removeLinkInSelectionOrAtCaret
+    
   }
 }
 

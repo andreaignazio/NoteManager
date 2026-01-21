@@ -12,7 +12,9 @@ import { useOverlayBinding } from '@/composables/useOverlayBinding'
 import PieMenu from '@/components/menu/PieMenu.vue'
 import PieColorMenu from '@/components/menu/PieColorMenu.vue'
 import PieHighlightMenu from '@/components/menu/PieHighlightMenu.vue'
- import { usePieMenuPolicy } from '@/composables/usePieMenuPolicy';
+import PieBlockTypeMenu from '@/components/menu/PieBlockTypeMenu.vue'
+import LinkPopover from '@/components/LinkPopover.vue'
+import { usePieMenuPolicy } from '@/composables/usePieMenuPolicy';
 import { usePieMenuController } from "@/composables/usePieMenuController"
 import FlyoutSidebar from '@/components/shell/FlyoutSidebar.vue'
 import PagesSidebar from '@/components/shell/PagesSidebar.vue'
@@ -20,6 +22,7 @@ import Topbar from '@/components/shell/Topbar.vue'
 import { computeFloatingPosition } from "@/utils/computeFloatingPosition"
 import { useAppActions } from '@/actions/useAppActions'
 import { useEditorRegistryStore } from '@/stores/editorRegistry'
+
 
 const authStore = useAuthStore()
 const pagesStore = usePagesStore()
@@ -351,6 +354,8 @@ const isLoginRoute = computed(() => router.currentRoute.value?.name === 'login' 
 
 import { BG_TOKENS, TEXT_TOKENS, labelForBgToken,labelForTextToken, styleForBgToken,styleForTextToken } from '../theme/colorsCatalog'
 
+
+
 const pieOpen = ref(false)
 const pieKind = ref("context")
 const pieMode = ref("block")  // 'block' | 'ai'
@@ -451,6 +456,9 @@ async function onPieAction(actionId, ctxFromEvent) {
     const pageId = ctx.pageId
     switch (actionId) {
       case "share":
+        const BASE_URL = 'http://localhost:5173'
+        const URL = BASE_URL + `/pages/${pageId}`
+        actions.utility.copyToClipboard(URL)
         console.log("[PIE][sidebar] share", ctx)
         break
       case "ai":
@@ -462,6 +470,17 @@ async function onPieAction(actionId, ctxFromEvent) {
         //actions.pages.createChildAndActivate(null)
         actions.pages.createPageAfterAndActivate(pageId)
         break 
+      case "renamePage":
+        dockedSidebarRef.value?.onRenameFromMenu(pageId, ctx.anchorScope)
+        console.log("[PIE][sidebar] rename page", ctx)
+        break
+      case "duplicatePage":
+        console.log("[PIE][sidebar] duplicate page", ctx)
+        await actions.pages.duplicatePage(pageId)
+        break
+      case "deletePage":
+        await actions.pages.deletePage(pageId)
+        break
       default:
         console.log("[PIE][sidebar] action:", actionId, ctx)
     }
@@ -547,7 +566,16 @@ async function onPieAction(actionId, ctxFromEvent) {
       break
 
     case "link":
-      actions.text.openLinkPopover(blockId) // apriremo popover
+      if(ctx?.mods?.alt){
+        console.log("[PIE][main] remove link", blockId)
+       actions.text.removeLinkInSelectionOrAtCaret(blockId)
+        break
+      } else {
+        onOpenLinkPopover(ctx)
+        console.log("[PIE][main] open link popover", blockId)
+      }
+      
+      
       break
       
     default:
@@ -564,7 +592,7 @@ const pieController = usePieMenuController({
   highlightMenuRef: () => highlightPieRef.value,
   dwellMs: 300,
   submenuIds: 
-  computed(() => (pieMode.value === 'block' ? ['color','highlight'] : [] )).value,
+  computed(() => (pieMode.value === 'block' ? ['color','highlight','changeType'] : [] )).value,
 
   dwellMoveToId: "moveTo",
 
@@ -615,6 +643,14 @@ const pieController = usePieMenuController({
     ed?.chain().focus().toggleHighlight({ color }).run()
     console.log("[PIE][main] setHighlight", color, ctx)
   },
+  onSetBlockType: async (blockType, ctx) => {
+    const blockId = ctx?.blockId
+    if (!blockId) return
+    
+
+    await blocksStore.updateBlockType(blockId, blockType)
+    console.log("[PIE][main] setBlockType", blockType, ctx)
+  },
 })
 
 const currentBg = computed(() => {
@@ -627,6 +663,12 @@ const currentText = computed(() => {
   const blockId = pieContext.value?.blockId
   if (!blockId) return null
   return blocksStore.blocksById[blockId]?.props?.style?.textColor ?? null
+})
+
+const currentBlockType = computed(() => {
+  const blockId = pieContext.value?.blockId
+  if (!blockId) return null
+  return blocksStore.blocksById[blockId]?.type ?? null
 })
 
 const labelForBg = (t) => BG_TOKENS.map(t=> labelForBgToken(t))
@@ -684,13 +726,72 @@ useOverlayBinding({
   },
 })
 
+
+
 const HIGHLIGHT_COLORS = [
   '#FFEE58', '#FFD54F', '#FFAB91', '#F48FB1',
   '#CE93D8', '#90CAF9', '#80DEEA', '#A5D6A7',
 ]
 
+// ====== LINK POPOVER OVERLAY ======
 
 
+const linkPopoverOpen = ref(false)
+const linkPopoverState = ref(null)
+const linkPopoverEl = ref(null)
+
+useOverlayBinding({
+  id: 'link-popover',
+  kind: 'modal',
+  priority: 100,                 // > pie (es. pie=20)
+  behaviour: 'exclusiveKinds',
+  exclusiveKinds: ['pie', 'dropdown', 'hoverbar', 'tooltip'],
+
+  isOpen: () => linkPopoverOpen.value,
+
+  // importante: con un modal spesso vuoi scope "local" (click fuori lo chiude),
+  // oppure "global" se vuoi far passare i pointerdown fuori senza stopPropagation
+  getInteractionScope: () => 'local',
+
+  requestClose: (reason) => { onCloseLinkPopover() },
+
+  getMenuEl: () => linkPopoverEl.value,
+  getAnchorEl: () => null,
+
+  options: {
+    closeOnEsc: true,
+    closeOnOutside: true,
+    lockScroll: false,           // o true se è proprio un modal blocking
+    stopPointerOutside: true,
+    allowAnchorClick: true,
+    restoreFocus: true,
+  },
+})
+
+
+
+
+function onOpenLinkPopover(ctx){
+  const blockId = ctx?.blockId
+  if (!blockId) return
+  const ed = editorRegStore.getEditor(blockId)
+  const activeHref = ed ? actions.text.getActiveLinkHref(blockId) : null
+  const anchorRect = ed ? actions.text.getSelectionRect(ed) : null
+  const pageId = blocksStore.blocksById[blockId]?.pageId ?? null
+  linkPopoverState.value = {
+    blockId: String(blockId),
+    anchorRect,
+    initialHref: activeHref ?? "",
+    currentPageId: pageId,
+  }
+ 
+  linkPopoverOpen.value = true
+}
+
+function onCloseLinkPopover(){
+  linkPopoverState.value = null
+  linkPopoverOpen.value = false
+}
 </script>
 
 <template>
@@ -814,6 +915,29 @@ const HIGHLIGHT_COLORS = [
   :context="pieContext"
   :colors="HIGHLIGHT_COLORS"
   :current="ui.lastHighlightColor"
+/>
+<PieBlockTypeMenu
+  ref="typePieRef"
+  v-show="pieOpen && overlay.has('pie') && pieTop === 'changeType'"
+  :open="pieOpen && overlay.has('pie') && pieTop === 'changeType'"
+  :x="pieAnchorX"
+  :y="pieAnchorY"
+  :centerX="pieCenter.x"
+  :centerY="pieCenter.y"
+  :context="pieContext"
+  :currentType="currentBlockType"
+  :onRegisterApi="pieController.registerMenuApi"
+  :onUnregisterApi="pieController.unregisterMenuApi"
+/>
+</Teleport>
+<Teleport to="body">
+<LinkPopover 
+ref="linkPopoverEl"
+:open="linkPopoverOpen"
+:blockId="linkPopoverState?.blockId"
+:currentPageId="linkPopoverState?.currentPageId"
+:anchorRect="linkPopoverState?.anchorRect"
+:initialHref="linkPopoverState?.initialHref"
 />
 </Teleport>
   <Teleport to="body">

@@ -15,7 +15,8 @@ export function usePieMenuController({
   onAction,          // (id, ctx) => void|Promise
   onSetTextToken,    // (token, ctx) => void|Promise
   onSetBgToken,      // (token, ctx) => void|Promise
-  onSetHighlightColor, // (color, ctx) => void|Promise
+  onSetHighlightColor,
+  onSetBlockType,    // (blockType, ctx) => void|Promise
   // submenu policy
   dwellMs = 300,
   submenuIds = ["color"],     // estendibile
@@ -218,6 +219,10 @@ export function usePieMenuController({
        await onSetHighlightColor?.(res.color, { ...pieContext.value, mods })
         closePie(); resetStack(); return
     }
+    if (res.type === "setBlockType") {
+       await onSetBlockType?.(res.blockType, { ...pieContext.value, mods })
+        closePie(); resetStack(); return
+    }
     closePie(); resetStack()
   }
 
@@ -253,6 +258,10 @@ export function usePieMenuController({
     if (res.type === "setHighlight") {
       await onSetHighlightColor?.(res.color, { ...pieContext.value, mods })
       closePie(); resetStack(); return
+    }
+    if (res.type === "setBlockType") {
+       await onSetBlockType?.(res.blockType, { ...pieContext.value, mods })
+        closePie(); resetStack(); return
     }
 
   }

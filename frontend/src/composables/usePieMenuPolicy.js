@@ -56,7 +56,12 @@ function isTextModifierPressed(e) {
       blockEl?.getAttribute("data-id") ||
       null
 
-    return area === "main" ? { area, blockId } : { area, pageId: blockId }
+    let anchorScope = null
+    if(area === "sidebar") {
+    const pageEl = t.closest("[data-anchor-scope]")
+    anchorScope=pageEl?.getAttribute("data-anchor-scope")}
+
+    return area === "main" ? { area, blockId } : { area, pageId: blockId, anchorScope}
   }
 
   function onPointerDown(e) {

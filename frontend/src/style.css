@@ -159,12 +159,12 @@ html[data-theme="dark"] {
    --bg-menu-danger:#eb575713;
    --bg-search:rgba(0, 0, 0, 0.087);
   --bg-search-focus:rgba(145, 145, 145, 0.185);
-  --bg-input:rgba(129, 129, 129, 0.043);
+  --bg-input:#313131;
   --bg-input-focus:rgba(0,0,0,.04);
 
    --bg-toolbar: #20201F;
 
-  --border-menu: rgba(201, 201, 201, 0.04);
+  --border-menu: rgba(201, 201, 201, 0.066);
   --border-menu-focus:#3E7EC1;
    --border-todo:rgba(255, 255, 255, 0.24);
 

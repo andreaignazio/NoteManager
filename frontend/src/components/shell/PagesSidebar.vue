@@ -150,7 +150,10 @@ function closePageActions() {
   actionsAnchorEl.value = null
 }
 
-function onRenameFromMenu(){
+function onRenameFromMenu(pageId,scope){
+  actionsPageId.value = pageId
+  actionsPageScope.value = scope
+  actionsAnchorEl.value = menuAnchorByKey.get(anchorKey(scope, pageId)) 
   pageTitlePopoverRef.value?.open?.()
 }
 
@@ -172,6 +175,7 @@ function containsTarget(t) {
 defineExpose({
   //updateMenuRectIfOpen,
   containsTarget,
+  onRenameFromMenu,
 })
 
 
@@ -356,6 +360,7 @@ watch(pendingSidebarScrollToPageId, async (pageId) => {
   })
 })
 
+
 </script>
 
 <template>
@@ -393,7 +398,7 @@ watch(pendingSidebarScrollToPageId, async (pageId) => {
             :register-menu-anchor="registerMenuAnchor"
             :parent-key="'favorites'"
             :page-action-menu-id="overlayTopId"
-            :anchor-scope="'favorites'"
+            :data-anchor-scope="'favorites'"
             @add-child="createNewPage(item.id)"
             @open="openFromFavorites"
             @open-menu="openPageActions"
@@ -434,7 +439,7 @@ watch(pendingSidebarScrollToPageId, async (pageId) => {
               :parent-key="pagesStore.getParentKey(item.parentId)"
               :page-action-menu-id="overlayTopId"
               :flash="String(recentlyMovedId) === String(item.id)"
-              :anchor-scope="'tree'"
+              :data-anchor-scope="'tree'"
               @open="openPage"
               @start-edit="startEdit"
               @toggle-expand="handleToggleExpand"

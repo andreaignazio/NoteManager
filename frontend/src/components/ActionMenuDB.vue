@@ -339,7 +339,7 @@ const maxHeightStyle = computed(() => {
 <style scoped>
 .menu {
   background: var(--bg-menu);
-  border: 1px solid var(--border-menu);
+  border: 1.5px solid var(--border-menu);
   border-radius: 12px;
   box-shadow: 0 12px 30px rgba(0,0,0,.14);
   padding: 6px;

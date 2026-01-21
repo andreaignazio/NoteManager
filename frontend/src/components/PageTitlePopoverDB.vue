@@ -159,7 +159,7 @@ defineExpose({
   background: var(--bg-input);
   padding: 0 10px;
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 250;
   color: var(--text-main);
   outline: none;
 }

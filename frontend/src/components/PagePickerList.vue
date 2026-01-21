@@ -24,12 +24,15 @@ const props = defineProps({
 
   // fetching
   fetchIfEmpty: { type: Boolean, default: true },
+  footerAction: { type: Object, default: null },
+  maxHeight: { type: Number, default: null},
 })
 
 const emit = defineEmits([
   'select',
   'update:query',
   'update:expanded',
+  'footer-select'
 ])
 
 const pagesStore = usePagesStore()
@@ -46,6 +49,50 @@ const currentId = computed(() =>
 function isDisabledTarget(pageId) {
   return currentId.value != null && String(pageId) === currentId.value
 }
+
+
+const queryTrim = computed(() => (props.query ?? '').trim())
+const footerCtx = computed(() => ({
+  query: queryTrim.value,
+  hasQuery: queryTrim.value.length > 0,
+}))
+
+const footerTitle = computed(() => {
+  const fa = props.footerAction
+  if (!fa) return ''
+  return typeof fa.title === 'function' ? fa.title(footerCtx.value) : fa.title
+})
+
+const footerSubtitle = computed(() => {
+  const fa = props.footerAction
+  if (!fa?.subtitle) return ''
+  return typeof fa.subtitle === 'function' ? fa.subtitle(footerCtx.value) : fa.subtitle
+})
+
+const footerDisabled = computed(() => {
+  const fa = props.footerAction
+  if (!fa) return true
+  if (typeof fa.disabled === 'function') return !!fa.disabled(footerCtx.value)
+  if (typeof fa.disabled === 'boolean') return fa.disabled
+  return false
+})
+
+function clickFooter() {
+  const fa = props.footerAction
+  if (!fa || footerDisabled.value) return
+
+  // opzione 1: callback
+  if (typeof fa.onSelect === 'function') {
+    fa.onSelect(footerCtx.value)
+    return
+  }
+
+  // opzione 2: evento
+  emit('footer-select', footerCtx.value)
+}
+
+
+
 
 /**
  * query: controlled/uncontrolled
@@ -182,11 +229,29 @@ function autoExpandCurrentParent() {
 
 // API pubblica da chiamare dal parent quando “apri” un popover
 defineExpose({
-  resetAndPrepare: async () => {
-    setQuery('')
+  resetAndPrepare: async (opts) => {
+    // NON resettare query se la controlla l'host: lascia stare
     await ensurePagesLoaded()
+
+    // espandi parent della current page (come già fai)
     autoExpandCurrentParent()
-  },
+
+    // ✅ NEW: se ti passo revealPageId, espandi tutta la catena parent
+    const rid = opts?.revealPageId ? String(opts.revealPageId) : null
+    if (rid) {
+      const next = new Set(getExpandedSet())
+      let cur = pagesStore.pagesById?.[rid]
+      const seen = new Set()
+      while (cur?.parentId != null) {
+        const pid = String(cur.parentId)
+        if (seen.has(pid)) break
+        seen.add(pid)
+        next.add(pid)
+        cur = pagesStore.pagesById?.[pid]
+      }
+      setExpandedSet(next)
+    }
+  }
 })
 
 function select(targetPageId) {
@@ -196,7 +261,8 @@ function select(targetPageId) {
 </script>
 
 <template>
-  <div class="page-picker">
+  <div class="page-picker"
+    :style="{maxHeight: maxHeight ? maxHeight + 'px' : '100%'}">
     <div v-if="title" class="header">{{ title }}</div>
 
     <div v-if="enableSearch" class="search">
@@ -232,20 +298,43 @@ function select(targetPageId) {
       <span class="label">{{ r.title }}</span>
     </button>
 
-    <div v-if="rows.length === 0" class="empty">
+    <!--<div v-if="rows.length === 0" class="empty">
       No pages
+    </div>-->
+     <div v-if="footerAction" class="footer">
+      <button
+        class="row footer-row"
+        type="button"
+        :disabled="footerDisabled"
+        @click="clickFooter"
+      >
+        <span class="caret-spacer"></span>
+
+        <component
+          :is="getIconComponent(footerAction.iconId || 'lucide:globe')"
+          :size="16"
+        />
+
+        <div class="text">
+          <div class="label">{{ footerTitle }}</div>
+          <div v-if="footerSubtitle" class="sub">{{ footerSubtitle }}</div>
+        </div>
+      </button>
     </div>
+
+
   </div>
 </template>
 
 <style scoped>
 .page-picker {
-  padding: 6px;
+  padding: 0px;
   display: flex;
   flex-direction: column;
   gap: 4px;
   background: var(--bg-menu);
-  max-height: 400px;
+  height: 110%;
+  min-height: 34px;
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -284,7 +373,7 @@ function select(targetPageId) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.empty { padding: 10px 8px; opacity: .6; }
+/*.empty { padding: 10px 8px; opacity: .6; }*/
 
 /* scrollbar come prima */
 .page-picker::-webkit-scrollbar { width: 13px; }
@@ -295,4 +384,29 @@ function select(targetPageId) {
   background-clip: content-box;
 }
 .page-picker::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,.26); }
+.footer{
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255,255,255,.06); /* o rgba(0,0,0,.08) in base al tema */
+  padding-bottom: 0px;
+}
+.footer-row{
+  align-items: flex-start; /* per titolo + sottotitolo */
+}
+
+.text{
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sub{
+  font-size: 12px;
+  opacity: .6;
+  line-height: 1.2;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 </style>
