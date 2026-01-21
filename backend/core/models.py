@@ -1,6 +1,8 @@
 from django.db import models
 import uuid
 from django.conf import settings
+from fractional_indexing import generate_key_between
+
 
 class BlockType(models.TextChoices):
     PARAGRAPH = "p", "Paragraph"
@@ -39,6 +41,7 @@ class Page(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     favorite = models.BooleanField(default=False)
+    favorite_position = models.CharField(max_length=32, null=True, blank=True, db_index=True)
     def __str__(self):
         return f"{self.title} ({self.owner.username})"
 

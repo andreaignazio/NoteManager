@@ -53,6 +53,21 @@ import {
   Trash2,
   Edit3,
   Users,
+
+  //menu
+  Blocks,
+  Palette,
+  FolderInput,
+  Copy,
+  MessageCircle,
+  X,
+
+  //pie menu
+  Share2,
+  Sparkles,
+  ClipboardPaste,
+  Highlighter,
+  Type,
 } from "lucide-vue-next"
 
 
@@ -111,6 +126,26 @@ export const ICONS = [
   { id: "lucide:edit-3", label: "Modifica", icon: Edit3, category: "system" },
   { id: "lucide:users", label: "Team", icon: Users, category: "system" },
   { id: "lucide:trash-2", label: "Cestino", icon: Trash2, category: "system" },
+  { id: "lucide:x", label: "Chiudi", icon: X, category: "system" },
+
+    // ===== Actions / Blocks =====
+  { id: "lucide:blocks", label: "Tipo blocco", icon: Blocks, category: "actions" },
+  { id: "lucide:type", label: "Testo", icon: Type, category: "actions" },
+
+  { id: "lucide:palette", label: "Colore", icon: Palette, category: "actions" },
+  { id: "lucide:highlighter", label: "Evidenziatore", icon: Highlighter, category: "actions" },
+
+  { id: "lucide:folder-input", label: "Sposta in", icon: FolderInput, category: "actions" },
+
+  { id: "lucide:copy", label: "Copia", icon: Copy, category: "actions" },
+  { id: "lucide:clipboard-paste", label: "Incolla", icon: ClipboardPaste, category: "actions" },
+
+  { id: "lucide:share-2", label: "Condividi", icon: Share2, category: "actions" },
+  { id: "lucide:sparkles", label: "AI tools", icon: Sparkles, category: "actions" },
+
+  { id: "lucide:message-circle", label: "Commento", icon: MessageCircle, category: "actions" },
+
+
 ]
 
 

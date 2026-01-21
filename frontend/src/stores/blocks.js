@@ -52,6 +52,11 @@ export const useBlocksStore = defineStore('blocksStore', {
     currentBlockId: null,
     focusRequestId: null,
 
+    _contentTokens: {},
+
+    //Editors
+    editorsByBlockId: {},
+
     // options menu
     optionsMenu: {
       open: false,
@@ -67,7 +72,7 @@ export const useBlocksStore = defineStore('blocksStore', {
     currentBlock(state) {
       return state.currentBlockId ? state.blocksById[state.currentBlockId] : null
     },
-
+     
     blocksForPage: (state) => (pageId) => {
       return (state.blocksByPage[pageId] ?? [])
         .map((blockId) => state.blocksById[blockId])
@@ -115,12 +120,67 @@ export const useBlocksStore = defineStore('blocksStore', {
         })
         .filter(Boolean)
     },
+    getOlNumber: (state) => (pageId, blockId) => {
+      pageId = String(pageId)
+      blockId = String(blockId)
+
+      const b = state.blocksById[blockId]
+      if (!b) return null
+      if (b.type !== 'ol') return null
+
+      const pageMap = state.childrenByParentId[pageId] ?? {}
+      const key = parentKeyOf(b.parentId) // 'root' se null
+
+      const sibIds = (pageMap[key] ?? []).map(String)
+      const idx = sibIds.indexOf(blockId)
+      if (idx < 0) return 1
+
+      // trova inizio della "run" contigua di ol
+      let start = idx
+      while (start - 1 >= 0) {
+        const prevId = sibIds[start - 1]
+        const prev = state.blocksById[prevId]
+        if (!prev) break
+        if (prev.kind !== 'block') break
+        if (prev.type !== 'ol') break
+        start--
+      }
+
+      // conta quanti ol ci sono da start a idx (si ferma se incontra non-ol)
+      let n = 0
+      for (let i = start; i <= idx; i++) {
+        const it = state.blocksById[sibIds[i]]
+        if (!it || it.kind !== 'block' || it.type !== 'ol') break
+        n++
+      }
+      return n
+    },
   },
 
   actions: {
     // -----------------------------
+    // Editors management
+    // -----------------------------
+
+    registerEditor(blockId, editorRef) {
+    this.editorsByBlockId[String(blockId)] = editorRef
+    },
+    unregisterEditor(blockId) {
+      delete this.editorsByBlockId[String(blockId)]
+    },
+    getCurrentEditor() {
+    const id = this.currentBlockId
+    if (!id) return null
+    const editorRef = this.editorsByBlockId[String(id)]
+    return editorRef?.value ?? null
+  },
+   
+
+    // -----------------------------
     // Helpers (internal)
     // -----------------------------
+    
+
     ensurePageMap(pageId) {
       if (!this.childrenByParentId[pageId]) this.childrenByParentId[pageId] = {}
     },
@@ -189,7 +249,7 @@ export const useBlocksStore = defineStore('blocksStore', {
       return true
     },
 
-    applyDeleteLocal(pageId, blockId) {
+    /*applyDeleteLocal(pageId, blockId) {
       blockId = String(blockId)
       const block = this.blocksById[blockId]
       if (!block) return false
@@ -206,7 +266,51 @@ export const useBlocksStore = defineStore('blocksStore', {
       if (this.optionsMenu?.blockId === blockId) this.closeOptionsMenu()
 
       return true
-    },
+    },*/
+    applyDeleteLocal(pageId, blockId) {
+  blockId = String(blockId)
+  const block = this.blocksById[blockId]
+  if (!block) return false
+
+  this.ensurePageMap(pageId)
+
+  const parentKey = parentKeyOf(block.parentId)
+  const siblings = (this.childrenByParentId[pageId][parentKey] ?? []).map(String)
+
+  // figli diretti del blocco che stai eliminando
+  const selfKey = parentKeyOf(blockId)
+  const children = (this.childrenByParentId[pageId][selfKey] ?? []).map(String)
+
+  // rimpiazza il blocco con i suoi figli, mantenendo la posizione
+  const idx = siblings.indexOf(blockId)
+  const nextSiblings =
+    idx === -1
+      ? siblings.filter(id => id !== blockId) // fallback
+      : [
+          ...siblings.slice(0, idx),
+          ...children,
+          ...siblings.slice(idx + 1),
+        ]
+
+  this.childrenByParentId[pageId][parentKey] = nextSiblings
+
+  // re-parent dei figli
+  for (const childId of children) {
+    const child = this.blocksById[String(childId)]
+    if (child) child.parentId = block.parentId
+  }
+
+  // pulisci la lista figli del blocco eliminato
+  delete this.childrenByParentId[pageId][selfKey]
+
+  // elimina solo il blocco
+  delete this.blocksById[blockId]
+
+  if (this.currentBlockId === blockId) this.currentBlockId = null
+  if (this.optionsMenu?.blockId === blockId) this.closeOptionsMenu()
+
+  return true
+},
 
     getParentKeyOf(parentId) {
       return parentKeyOf(parentId)
@@ -333,14 +437,33 @@ export const useBlocksStore = defineStore('blocksStore', {
       // (non usata nel flow attuale, ma la lascio)
       this.optionsMenu.anchorEl = anchorEl
     },
+    isExpanded(blockId){
+      const block = this.blocksById[blockId]
+      const v = block?.content?.isExpanded
+      return v ?? true   // default true se null/undefined
 
-    expandBlock(blockId) {
-      this.expandedById[String(blockId)] = true
+    },
+
+   expandBlock(blockId) {
+      blockId = String(blockId)
+      const block = this.blocksById[blockId]
+      if (!block) return
+      if (!block.content) block.content = {}
+      block.content.isExpanded = true
+      this.updateBlockContent(blockId, { isExpanded: true })
     },
 
     toggleExpandBlock(blockId) {
-      const id = String(blockId)
-      this.expandedById[id] = this.expandedById[id] ? false : true
+      blockId = String(blockId)
+      const block = this.blocksById[blockId]
+      if (!block) return
+
+      const next = !(block.content?.isExpanded ?? true) // default true
+      if (!block.content) block.content = {}
+      block.content.isExpanded = next
+
+      // optimistic + sync
+      this.updateBlockContent(blockId, { isExpanded: next })
     },
 
     collapseAll() {
@@ -360,9 +483,53 @@ export const useBlocksStore = defineStore('blocksStore', {
 
         const blocks = response.data.blocks ?? []
         const normBlocks = blocks.map((b) => normalizeBlock(b))
+        // --- MERGE PER-PAGE (non distruggere blocksById globale) ---
+
+        // 1) ricorda gli id che avevi prima per questa pagina
+        const prevIds = (this.blocksByPage[String(pageId)] ?? []).map(String)
+
+        // 2) scrivi/aggiorna i blocchi fetchati
+        for (const b of normBlocks) {
+          this.blocksById[b.id] = b
+        }
+
+        // 3) aggiorna la lista ids per la pagina
+        const nextIds = normBlocks.map(b => b.id)
+        this.blocksByPage[String(pageId)] = nextIds
+
+        // 4) rimuovi i blocchi che prima erano in questa pagina ma ora non ci sono più
+        //    (es: perché spostati altrove o cancellati)
+        const nextIdSet = new Set(nextIds)
+        for (const id of prevIds) {
+          if (nextIdSet.has(id)) continue
+          const old = this.blocksById[id]
+          // elimina solo se è ancora marcato come appartenente a questa pagina (stale)
+          if (old?.pageId === String(pageId)) {
+            delete this.blocksById[id]
+          }
+        }
+
+        // 5) rebuild children map SOLO per questa pagina (ok come già fai)
+        const pageMap = normBlocks.reduce((dict, b) => {
+          const parentKey = parentKeyOf(b.parentId)
+          if (!dict[parentKey]) dict[parentKey] = []
+          dict[parentKey].push(b.id)
+          return dict
+        }, {})
+
+        Object.values(pageMap).forEach((childIds) => {
+          childIds.sort((idA, idB) => {
+            const posA = this.blocksById[idA]?.position ?? '\uffff'
+            const posB = this.blocksById[idB]?.position ?? '\uffff'
+            const cmp = posA < posB ? -1 : posA > posB ? 1 : 0
+            return cmp !== 0 ? cmp : String(idA).localeCompare(String(idB))
+          })
+        })
+
+        this.childrenByParentId[String(pageId)] = pageMap
 
       
-        this.blocksById = normBlocks.reduce((dict, b) => {
+        /*this.blocksById = normBlocks.reduce((dict, b) => {
           dict[b.id] = b
           return dict
         }, {})
@@ -386,7 +553,7 @@ export const useBlocksStore = defineStore('blocksStore', {
           })
         })
 
-        this.childrenByParentId[pageId] = pageMap
+        this.childrenByParentId[pageId] = pageMap*/
       } catch (error) {
         console.error('Errore caricamento pagina:', error)
         throw error
@@ -614,12 +781,12 @@ export const useBlocksStore = defineStore('blocksStore', {
     // -----------------------------
     // Content / type
     // -----------------------------
-    async updateBlockContent(blockId, patch) {
+    /*async updateBlockContent(blockId, patch) {
       blockId = String(blockId)
       const editedBlock = this.blocksById[blockId]
       if (!editedBlock) return
 
-      const previousContent = editedBlock.content
+      const previousContent = structuredClone(editedBlock.content ?? {})
       //editedBlock.content = newContent
        const nextContent = { ...(previousContent ?? {}), ...(patch ?? {}) }
 
@@ -633,36 +800,53 @@ export const useBlocksStore = defineStore('blocksStore', {
         editedBlock.content = previousContent
         throw error
       }
-    },
-
-    /*async updateBlockType(blockId, newType) {
+    },*/
+    async updateBlockContent(blockId, patch) {
       blockId = String(blockId)
       const editedBlock = this.blocksById[blockId]
       if (!editedBlock) return
 
-      const previousType = editedBlock.type
-      editedBlock.type = newType
+     
+      if (!this._contentTokens) this._contentTokens = {}
+
+      const token = (this._contentTokens[blockId] = (this._contentTokens[blockId] ?? 0) + 1)
+
+      // clona "safe" (evita side-effects se content è referenziato altrove)
+      const previousContent = JSON.parse(JSON.stringify(editedBlock.content ?? {}))
+      const nextContent = { ...previousContent, ...(patch ?? {}) }
+
+      // optimistic
+      editedBlock.content = nextContent
 
       try {
-        await api.patch(`/blocks/${blockId}/`, { type: newType })
+        await api.patch(`/blocks/${blockId}/`, { content: nextContent })
+
+        
+        if (this._contentTokens[blockId] !== token) return
       } catch (error) {
+       
+        if (this._contentTokens[blockId] === token) {
+          editedBlock.content = previousContent
+        }
         console.warn('Error updating block:', error?.response?.data ?? error)
-        editedBlock.type = previousType
         throw error
       }
-    },*/
-    buildNextProps(existingProps, stylePatch) {
-  const base = normalizeProps(existingProps)
-  const prevStyle = base.style ?? {}
-  const next = {
-    ...base,
-    style: {
-      ...prevStyle,
-      ...stylePatch,
     },
-  }
-  return normalizeProps(next)
-},
+
+  
+  buildNextProps(existingProps, stylePatch) {
+    const base = normalizeProps(existingProps)
+    const prevStyle = base.style ?? {}
+    const next = {
+      ...base,
+      style: {
+        ...prevStyle,
+        ...stylePatch,
+      },
+    }
+    return normalizeProps(next)
+  },
+
     async updateBlockType(blockId, newType) {
   blockId = String(blockId)
   const b = this.blocksById[blockId]
@@ -671,8 +855,11 @@ export const useBlocksStore = defineStore('blocksStore', {
   const previousType = b.type
   const previousProps = b.props
 
+  const previousContent = b.content
+
   // calcola nextProps con la regola richiesta
   let nextProps = previousProps
+  let nextContent = previousContent
 
   const prevStyle = normalizeProps(previousProps).style
 
@@ -695,15 +882,24 @@ export const useBlocksStore = defineStore('blocksStore', {
    if (newType === 'callout' && !b.props?.iconId) {
       nextProps.iconId = DEFAULT_ICON_ID
   }
+  if (newType === 'toggle'){
+    nextContent = { ...(previousContent ?? {}), isExpanded: true }
+    }
 
   // optimistic
   b.type = newType
   if (nextProps !== previousProps) b.props = nextProps
+  if (nextContent !== previousContent) b.content = nextContent
+
+  
 
   try {
     // 🔥 1 PATCH sola (meglio): type + props insieme
     const payload = { type: newType }
     if (nextProps !== previousProps) payload.props = nextProps
+    if (nextContent !== previousContent){
+      payload.content = nextContent
+    }
     await api.patch(`/blocks/${blockId}/`, payload)
   } catch (error) {
     console.warn('Error updating block type:', error?.response?.data ?? error)
@@ -711,6 +907,7 @@ export const useBlocksStore = defineStore('blocksStore', {
     b.props = previousProps
     throw error
   }
+  
 },
 
     async updateBlockStyle(blockId, stylePatch) {
@@ -773,7 +970,7 @@ export const useBlocksStore = defineStore('blocksStore', {
       return await this.addNewBlockAfter(pageId, payload, blockId)
     },
 
-    async addNewBlockAfter(pageId, payload, blockId) {
+   async addNewBlockAfter(pageId, payload, blockId) {
       try {
         let postData = {}
 
@@ -821,6 +1018,161 @@ export const useBlocksStore = defineStore('blocksStore', {
       }
     },
 
+    /*async addNewBlockAfter(pageId, payload, blockId) {
+      console.log("add_new_block_after")
+  // --- helpers
+  const makeTempId = () => `tmp_${Date.now()}_${Math.random().toString(16).slice(2)}`
+  const asStr = (v) => String(v)
+
+  const insertAfter = (arr, afterId, newId) => {
+    const ids = arr ? [...arr] : []
+    if (!afterId) {
+      ids.push(newId)
+      return ids
+    }
+    const idx = ids.map(String).indexOf(String(afterId))
+    if (idx === -1) {
+      // fallback: append (oppure throw)
+      ids.push(newId)
+      return ids
+    }
+    ids.splice(idx + 1, 0, newId)
+    return ids
+  }
+
+  const removeId = (arr, id) => (arr ?? []).filter((x) => String(x) !== String(id))
+
+  const replaceId = (arr, fromId, toId) =>
+    (arr ?? []).map((x) => (String(x) === String(fromId) ? toId : x))
+
+  // --- compute optimistic data (stesso calcolo posizioni che hai già)
+  let postData = {}
+  let parentKey = null
+  let anchor = null
+  let siblingsIds = []
+  let insertAfterId = null
+
+  if (!blockId) {
+    const rootKey = KEY_ROOT
+    parentKey = rootKey
+    siblingsIds = this.childrenByParentId[pageId]?.[parentKey] ?? []
+
+    const lastId = siblingsIds.length ? siblingsIds[siblingsIds.length - 1] : null
+    const lastPos = lastId ? this.blocksById[asStr(lastId)]?.position ?? null : null
+    const newPos = posBetween(lastPos, null)
+
+    postData = {
+      type: payload.type ?? DEFAULT_BLOCK_TYPE,
+      content: payload.content ?? { text: '' },
+      parent_block: null,
+      position: newPos,
+    }
+
+    insertAfterId = lastId // "after last" = append
+  } else {
+    anchor = this.blocksById[asStr(blockId)]
+    if (!anchor) throw new Error('anchor block not found')
+
+    parentKey = parentKeyOf(anchor.parentId)
+    siblingsIds = this.childrenByParentId[pageId]?.[parentKey] ?? []
+
+    const idx = siblingsIds.map(String).indexOf(asStr(blockId))
+    if (idx === -1) throw new Error(`blockId ${blockId} not found in siblings`)
+
+    const prevPos = this.blocksById[asStr(blockId)]?.position ?? null
+    const nextId = idx + 1 < siblingsIds.length ? siblingsIds[idx + 1] : null
+    const nextPos = nextId ? this.blocksById[asStr(nextId)]?.position ?? null : null
+    const newPos = posBetween(prevPos, nextPos)
+
+    postData = {
+      type: payload.type ?? DEFAULT_BLOCK_TYPE,
+      content: payload.content ?? { text: '' },
+      parent_block: anchor.parentId, // null ok
+      position: newPos,
+    }
+
+    insertAfterId = blockId
+  }
+
+  // --- optimistic insert
+  const tempId = makeTempId()
+
+  // snapshot minimo per rollback
+  const prevSiblings = this.childrenByParentId[pageId]?.[parentKey] ?? []
+  const hadBlockAlready = Boolean(this.blocksById[tempId]) // quasi sempre false
+
+  // 1) inserisci in blocksById
+  this.blocksById[tempId] = {
+    id: tempId,
+    type: postData.type,
+    content: postData.content,
+    parentId: postData.parent_block,   // nel tuo store sembra sia anchor.parentId
+    position: postData.position,
+    // opzionali: pageId, createdAt, status...
+    __optimistic: true,
+  }
+
+  // 2) inserisci nei children
+  if (!this.childrenByParentId[pageId]) this.childrenByParentId[pageId] = {}
+  this.childrenByParentId[pageId][parentKey] = insertAfter(
+    prevSiblings,
+    insertAfterId,
+    tempId
+  )
+
+  try {
+    // --- network
+    const res = await api.post(`/pages/${pageId}/blocks/`, postData)
+    const realId = asStr(res.data.id)
+
+    // --- commit: sostituisci tempId -> realId (senza fetch)
+    // 1) blocksById: sposta record
+    const optimisticBlock = this.blocksById[tempId]
+    if (!optimisticBlock) {
+      // caso raro: se qualcuno ha già rollbackato
+      return realId
+    }
+
+    delete this.blocksById[tempId]
+    this.blocksById[realId] = {
+      ...optimisticBlock,
+      id: realId,
+      __optimistic: false,
+    }
+
+    // 2) children: rimpiazza id nella lista
+    this.childrenByParentId[pageId][parentKey] = replaceId(
+      this.childrenByParentId[pageId][parentKey],
+      tempId,
+      realId
+    )
+
+    // 3) se hai map/lookup extra basati su id, aggiornali qui (es: selection/focus queues)
+    // if (this.focusRequestId === tempId) this.focusRequestId = realId
+
+    return realId
+  } catch (error) {
+    // --- rollback: rimuovi blocco ottimistico
+    if (!hadBlockAlready) delete this.blocksById[tempId]
+    this.childrenByParentId[pageId][parentKey] = removeId(
+      this.childrenByParentId[pageId][parentKey],
+      tempId
+    )
+
+    // riallinea SOLO in caso di rollback (come vuoi tu)
+    try {
+      await this.fetchBlocksForPage(pageId)
+    } catch (e) {
+      // se anche fetch fallisce, almeno non crashare qui
+      console.warn('Rollback fetch failed:', e)
+    }
+
+    console.warn('Error adding new block (optimistic rollback):', error?.response?.data ?? error)
+    throw error
+  }
+},*/
+
+   
     async addNewBlockAfterAdoptChildren(pageId, payload, blockId) {
       const newId = await this.addNewBlockAfter(pageId, payload, blockId)
 
@@ -834,6 +1186,35 @@ export const useBlocksStore = defineStore('blocksStore', {
 
       await this.fetchBlocksForPage(pageId)
       return newId
+    },
+    async addChildBlock(pageId, parentId, payload) {
+      pageId = String(pageId)
+      parentId = String(parentId)
+
+      try {
+        // siblings = figli del parent
+        const childKey = parentId
+        const childIds = (this.childrenByParentId[pageId]?.[childKey] ?? []).map(String)
+
+        // inserisci come primo figlio (pos prima del primo)
+        const firstId = childIds.length ? childIds[0] : null
+        const firstPos = firstId ? this.blocksById[firstId]?.position ?? null : null
+        const newPos = posBetween(null, firstPos)
+
+        const postData = {
+          type: payload.type ?? 'p',
+          content: payload.content ?? { text: '' },
+          parent_block: parentId,
+          position: newPos,
+        }
+
+        const res = await api.post(`/pages/${pageId}/blocks/`, postData)
+        await this.fetchBlocksForPage(pageId)
+        return String(res.data.id)
+      } catch (error) {
+        console.warn('Error adding child block:', error?.response?.data ?? error)
+        throw error
+      }
     },
 
     // -----------------------------
@@ -855,6 +1236,215 @@ export const useBlocksStore = defineStore('blocksStore', {
 
       return false
     },
+    async transferSubtreeToPage({
+      fromPageId,
+      toPageId,
+      rootId,
+      toParentId = null,
+      afterBlockId = null,
+    }) {
+      fromPageId = String(fromPageId)
+      toPageId = String(toPageId)
+      rootId = String(rootId)
+      console.log("fromPageId",fromPageId,"toPageId",toPageId,"rootId",rootId,"toParentId",toParentId,"afterBlockId",afterBlockId)
+      try {
+        await api.post(`/pages/${fromPageId}/transfer-subtree/`, {
+          root_id: rootId,
+          to_page_id: toPageId,
+          to_parent_block: toParentId,
+          after_block_id: afterBlockId,
+        })
+
+        // v1 semplice: resync hard
+        await this.fetchBlocksForPage(fromPageId)
+        await this.fetchBlocksForPage(toPageId)
+      } catch (e) {
+        // safe resync anche su errore (ti evita store “mezzo rotto”)
+        await this.fetchBlocksForPage(fromPageId)
+        if (toPageId !== fromPageId) await this.fetchBlocksForPage(toPageId)
+        throw e
+      }
+    },
+
+    async duplicateBlockInPlace(pageId, blockId) {
+      try{
+      await api.post(`/blocks/${blockId}/duplicate-subtree/`, {})
+      await this.fetchBlocksForPage(pageId)
+      } catch(e) {
+        console.warn('Error duplicating block:', e?.response?.data ?? e)
+        await this.fetchBlocksForPage(pageId)
+        throw e
+      } 
+    },
+/* 
+getChildIds(pageId, parentId) {
+  pageId = String(pageId)
+  const key = parentKeyOf(parentId) // 'root' se null
+  return (this.childrenByParentId[pageId]?.[key] ?? []).map(String)
+},
+
+computeAppendPosition(pageId, parentId) {
+  pageId = String(pageId)
+  const key = parentKeyOf(parentId)
+  const arr = (this.childrenByParentId[pageId]?.[key] ?? []).map(String)
+  const lastId = arr.at(-1) ?? null
+  const lastPos = lastId ? (this.blocksById[lastId]?.position ?? null) : null
+  return posBetween(lastPos, null)
+},
+
+// snapshot-aware children getter (per duplication/move subtree)
+_makeSnapshotChildren(pageId) {
+  const m = this.childrenByParentId[String(pageId)] ?? {}
+  // shallow clone delle liste per sicurezza
+  const snap = {}
+  for (const k of Object.keys(m)) snap[k] = (m[k] ?? []).map(String)
+  return snap
+},
+_getChildIdsFromSnap(snapMap, parentId) {
+  const key = parentKeyOf(parentId)
+  return (snapMap[key] ?? []).map(String)
+},
+
+_collectSubtreePostOrderFromSnap(snapMap, rootId) {
+  rootId = String(rootId)
+  const out = []
+  const visit = (id) => {
+    const children = this._getChildIdsFromSnap(snapMap, id)
+    for (const cid of children) visit(cid)
+    out.push(id)
+  }
+  visit(rootId)
+  return out
+},
+
+async cloneSubtreeToPage({ fromPageId, toPageId, rootId, insertAfterId = null, targetParentId = null }) {
+  fromPageId = String(fromPageId)
+  toPageId = String(toPageId)
+  rootId = String(rootId)
+
+  const srcRoot = this.blocksById[rootId]
+  if (!srcRoot) throw new Error('root not found')
+
+  // snapshot children della pagina sorgente (o stessa pagina)
+  const snap = this._makeSnapshotChildren(fromPageId)
+
+  // 1) calcola parent/position del nuovo root nel target
+  let rootParentId = targetParentId ?? null
+  let rootPosition = null
+
+  if (insertAfterId) {
+    // inserisci dopo un blocco anchor nel target (stesso parent dell’anchor)
+    const { parentId, position } = this.computeInsertPositionAfter(toPageId, insertAfterId)
+    rootParentId = parentId ?? null
+    rootPosition = position
+  } else {
+    // append nel parent scelto
+    rootPosition = this.computeAppendPosition(toPageId, rootParentId)
+  }
+
+  // mappa vecchio->nuovo id
+  const idMap = new Map()
+
+  const createOne = async (srcId, newParentId, position) => {
+    const src = this.blocksById[String(srcId)]
+    if (!src) throw new Error(`missing src node ${srcId}`)
+
+    const payload = {
+      type: src.type,
+      content: src.content ?? { text: '' },
+      props: normalizeProps(src.props),
+      layout: src.layout ?? {},
+      width: src.width ?? null,
+      parent_block: newParentId ?? null,
+      position: String(position ?? ''),
+      kind: src.kind ?? 'block',
+    }
+
+    const res = await api.post(`/pages/${toPageId}/blocks/`, payload)
+    return String(res.data.id)
+  }
+
+  // 2) crea root
+  const newRootId = await createOne(rootId, rootParentId, rootPosition)
+  idMap.set(rootId, newRootId)
+
+  // 3) DFS: per ogni parent creato, crea i figli in ordine e append
+  const cloneChildren = async (srcParentId) => {
+    const newParent = idMap.get(String(srcParentId))
+    if (!newParent) return
+
+    const childIds = this._getChildIdsFromSnap(snap, srcParentId) // ordine stabile
+    for (const childId of childIds) {
+      const pos = this.computeAppendPosition(toPageId, newParent) // append nel nuovo parent
+      const newChildId = await createOne(childId, newParent, pos)
+      idMap.set(String(childId), newChildId)
+      await cloneChildren(childId)
+    }
+  }
+
+  await cloneChildren(rootId)
+
+  return { newRootId, idMap }
+},
+async deleteSubtree(pageId, rootId) {
+  pageId = String(pageId)
+  rootId = String(rootId)
+
+  const snap = this._makeSnapshotChildren(pageId)
+  const ids = this._collectSubtreePostOrderFromSnap(snap, rootId)
+
+  // optimistic local (children first)
+  for (const id of ids) {
+    this.applyDeleteLocal(pageId, id)
+  }
+
+  try {
+    for (const id of ids) {
+      await api.delete(`/blocks/${String(id)}/`)
+    }
+  } catch (e) {
+    await this.fetchBlocksForPage(pageId) // hard resync
+    throw e
+  }
+},
+async duplicateSubtree(pageId, rootId) {
+  pageId = String(pageId)
+  rootId = String(rootId)
+
+  const { newRootId } = await this.cloneSubtreeToPage({
+    fromPageId: pageId,
+    toPageId: pageId,
+    rootId,
+    insertAfterId: rootId, // duplica subito dopo
+  })
+
+  await this.fetchBlocksForPage(pageId)
+  return newRootId
+},
+async moveSubtreeToPage({ fromPageId, toPageId, rootId, insertAfterId = null, targetParentId = null }) {
+  fromPageId = String(fromPageId)
+  toPageId = String(toPageId)
+  rootId = String(rootId)
+
+  const { newRootId } = await this.cloneSubtreeToPage({
+    fromPageId,
+    toPageId,
+    rootId,
+    insertAfterId,
+    targetParentId,
+  })
+
+  await this.deleteSubtree(fromPageId, rootId)
+
+  // refresh entrambe
+  await this.fetchBlocksForPage(fromPageId)
+  if (toPageId !== fromPageId) await this.fetchBlocksForPage(toPageId)
+
+  return newRootId
+},*/
+
+
+
 
     // -----------------------------
     // LEGACY 
@@ -883,3 +1473,5 @@ export const useBlocksStore = defineStore('blocksStore', {
     */
   },
 })
+
+export default useBlocksStore

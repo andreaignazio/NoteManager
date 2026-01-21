@@ -15,8 +15,9 @@ def normalize_block_content(block_type: str, content):
     # default text per blocchi che lo usano
     if block_type in {
         BlockType.PARAGRAPH, BlockType.H1, BlockType.H2, BlockType.H3,
-        BlockType.BULLETED_LIST, BlockType.NUMBERED_LIST, BlockType.CHECKBOX,
-        BlockType.CODE
+        BlockType.BULLETED_LIST, BlockType.NUMBERED_LIST, BlockType.TODO,
+        BlockType.CODE, BlockType.QUOTE, BlockType.CALLOUT, BlockType.TOGGLE,
+        BlockType.DIVIDER
     }:
         text = content.get("text", "")
         if text is None:
@@ -89,7 +90,7 @@ class BlockCreateSerializer(serializers.ModelSerializer):
 class PageSerializer(serializers.ModelSerializer):
     class Meta:
         model = Page
-        fields = ['id', 'title', 'created_at', 'updated_at', 'position', 'parent','icon','favorite']
+        fields = ['id', 'title', 'created_at', 'updated_at', 'position', 'parent','icon','favorite','favorite_position']
         read_only_fields = ['id', 'created_at', 'updated_at']
 
 class PageDetailSerializer(PageSerializer):
@@ -98,4 +99,18 @@ class PageDetailSerializer(PageSerializer):
     class Meta(PageSerializer.Meta):
         fields = PageSerializer.Meta.fields + ['blocks']
 
+class TransferSubtreeSerializer(serializers.Serializer):
+    root_id = serializers.UUIDField()
+    to_page_id = serializers.UUIDField()
+    to_parent_block = serializers.UUIDField(required=False, allow_null=True)
+    after_block_id = serializers.UUIDField(required=False, allow_null=True)
 
+class DuplicatePageDeepSerializer(serializers.Serializer):
+    include_children = serializers.BooleanField(required=False, default=False)
+    title = serializers.CharField(required=False, allow_blank=True)
+
+class DuplicateBlockSubtreeSerializer(serializers.Serializer):
+    # opzionale: cambia destinazione dentro la stessa pagina
+    to_parent_block = serializers.UUIDField(required=False, allow_null=True)
+    # opzionale: inserisci dopo un sibling (sotto to_parent_block)
+    after_block_id = serializers.UUIDField(required=False, allow_null=True)

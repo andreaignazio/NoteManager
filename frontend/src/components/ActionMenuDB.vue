@@ -1,30 +1,49 @@
 <script setup>
 import { ref, watch, nextTick, onMounted, onBeforeUnmount, computed, unref } from 'vue'
+import { getIconComponent } from '@/icons/catalog'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
-
-  
-  anchorRect: { type: Object, default: null }, // {top,left,right,bottom,width,height}
-
-
-  anchorEl: { type: [Object, null], default: null }, // HTMLElement | ref
-
-  
+  anchorRect: { type: Object, default: null },
+  anchorEl: { type: [Object, null], default: null },
   items: { type: Array, default: () => [] },
-
   activeId: { type: String, default: null },
 
   minWidth: { type: Number, default: 220 },
   gap: { type: Number, default: 6 },
+
+  // ✅ offset extra (oltre a gap e sideOffsetX)
+  offsetX: { type: Number, default: 0 },
+  offsetY: { type: Number, default: 0 },
+
+  // compat
   viewportMargin: { type: Number, default: 25 },
-  closeOnAction: { type: Boolean, default: true },
   sideOffsetX: { type: Number, default: 0 },
+
+  closeOnAction: { type: Boolean, default: true },
   custom: { type: Boolean, default: false },
 
+  placement: { type: String, default: 'left' },
 
-  placement: { type: String, default: 'left' }, // 'right' | 'bottom-start' | 'bottom-end' | 'left'
+  // ✅ clamp PRE (usato per flip/decisioni)
+  xPre: { type: Number, default: null },
+  yPre: { type: Number, default: null },
+
+  // ✅ clamp POST (safety clamp finale)
+  xPost: { type: Number, default: null },
+  yPost: { type: Number, default: null },
+
+  // ✅ max size PRE (applicato nella fase misura)
+  maxWPre: { type: [Number, String, null], default: null },
+  maxHPre: { type: [Number, String, null], default: null },
+
+  // ✅ max size POST (applicato quando visibile)
+  maxWPost: { type: [Number, String, null], default: null },
+  maxHPost: { type: [Number, String, null], default: null },
+
+  flip: { type: [Boolean, String], default: 'auto' },
 })
+
 
 const emit = defineEmits(['action', 'close'])
 
@@ -47,55 +66,104 @@ function getMenuEl() {
   return menuEl.value ?? null
 }
 
+function cssSize(v) {
+  if (v == null || v === '') return null
+  return typeof v === 'number' ? `${v}px` : String(v)
+}
 
 defineExpose({ el: menuEl , menuItems, getItemElById, getMenuEl})
 
 const anchorElResolved = computed(() => unref(props.anchorEl) ?? null)
 
 function computePosition(anchorRect, menuW, menuH) {
-  const margin = props.viewportMargin
-  const offsetX = props.sideOffsetX ?? 0
   const gap = props.gap ?? 6
+
+  const baseMargin = props.viewportMargin ?? 0
+  const xPre  = props.xPre  ?? baseMargin
+  const yPre  = props.yPre  ?? baseMargin
+  const xPost = props.xPost ?? baseMargin
+  const yPost = props.yPost ?? baseMargin
+
+  const offsetX = (props.sideOffsetX ?? 0) + (props.offsetX ?? 0)
+  const offsetY = props.offsetY ?? 0
+
+  const place = props.placement
+
+  // flip policy
+  const flipVal = props.flip
+  const flipNone = flipVal === false || flipVal === 'none'
+  const flipBoth = flipVal === true || flipVal === 'both'
+  const flipXOnly = flipVal === 'x'
+  const flipYOnly = flipVal === 'y'
+
+  const allowFlipX =
+    !flipNone && (flipBoth || flipXOnly || (flipVal === 'auto' && (place.startsWith('right') || place.startsWith('left') || place === 'right' || place === 'left')))
+
+  const allowFlipY =
+    !flipNone && (flipBoth || flipYOnly || (flipVal === 'auto' && (place.startsWith('bottom') || place.startsWith('top'))))
 
   let left = 0
   let top = 0
-    if (props.placement === 'right-start') {
-    left = anchorRect.right + gap + offsetX
-    top = anchorRect.top
-  } else if (props.placement === 'right-end') {
-    left = anchorRect.right + gap + offsetX
-    top = anchorRect.bottom - menuH
-  } else if (props.placement === 'left-start') {
-    left = anchorRect.left - menuW + offsetX
-    top = anchorRect.top
-  } else if (props.placement === 'left-end') {
-    left = anchorRect.left - menuW + offsetX
-    top = anchorRect.bottom - menuH
-  } else if (props.placement === 'right') {
-    left = anchorRect.right + gap + offsetX
-    top = anchorRect.top
-  } else if (props.placement === 'bottom-start') {
-    left = anchorRect.left + offsetX
-    top = anchorRect.bottom + gap
-  } else if (props.placement === 'bottom-end') {
-    left = anchorRect.right - menuW + offsetX
-    top = anchorRect.bottom + gap
-  } else {
-   
-    left = anchorRect.left - menuW + offsetX
-    top = anchorRect.top + (anchorRect.height - menuH) / 2
 
-    
-    if (left < margin) left = anchorRect.right + gap + offsetX
+  // --- initial placement ---
+  if (place === 'right-start') {
+    left = anchorRect.right + gap + offsetX
+    top = anchorRect.top + offsetY
+  } else if (place === 'right-end') {
+    left = anchorRect.right + gap + offsetX
+    top = anchorRect.bottom - menuH + offsetY
+  } else if (place === 'left-start') {
+    left = anchorRect.left - menuW + offsetX
+    top = anchorRect.top + offsetY
+  } else if (place === 'left-end') {
+    left = anchorRect.left - menuW + offsetX
+    top = anchorRect.bottom - menuH + offsetY
+  } else if (place === 'right') {
+    left = anchorRect.right + gap + offsetX
+    top = anchorRect.top + offsetY
+  } else if (place === 'bottom-start') {
+    left = anchorRect.left + offsetX
+    top = anchorRect.bottom + gap + offsetY
+  } else if (place === 'bottom-end') {
+    left = anchorRect.right - menuW + offsetX
+    top = anchorRect.bottom + gap + offsetY
+  } else {
+    // default "left" (centrato verticalmente)
+    left = anchorRect.left - menuW + offsetX
+    top = anchorRect.top + (anchorRect.height - menuH) / 2 + offsetY
+
+    // compat: se non entra a sinistra, prova a destra
+    if (left < xPre) left = anchorRect.right + gap + offsetX
   }
 
-  // clamp verticale
-  top = Math.min(top, window.innerHeight - menuH - margin)
-  top = Math.max(top, margin)
+  // --- PRE: flip decisions using pre padding ---
+  if (allowFlipY && place.startsWith('bottom')) {
+    if (top + menuH > window.innerHeight - yPre) {
+      // flip sopra
+      top = anchorRect.top - gap - menuH + offsetY
+    }
+  }
 
-  // clamp orizzontale
-  left = Math.min(left, window.innerWidth - menuW - margin)
-  left = Math.max(left, margin)
+  if (allowFlipX && (place.startsWith('right') || place === 'right')) {
+    if (left + menuW > window.innerWidth - xPre) {
+      // flip a sinistra
+      left = anchorRect.left - gap - menuW + offsetX
+    }
+  }
+
+  if (allowFlipX && (place.startsWith('left') || place === 'left')) {
+    if (left < xPre) {
+      // flip a destra
+      left = anchorRect.right + gap + offsetX
+    }
+  }
+
+  // --- POST: clamp final safety using post padding ---
+  top = Math.min(top, window.innerHeight - menuH - yPost)
+  top = Math.max(top, yPost)
+
+  left = Math.min(left, window.innerWidth - menuW - xPost)
+  left = Math.max(left, xPost)
 
   return { top, left }
 }
@@ -104,7 +172,9 @@ async function measureIfNeeded() {
   if (!props.open) return
   if (measured.value) return
 
-  // rendilo misurabile ma invisibile 
+  const maxW = cssSize(props.maxWPre)
+  const maxH = cssSize(props.maxHPre)
+
   menuStyle.value = {
     position: 'fixed',
     top: '-9999px',
@@ -112,6 +182,9 @@ async function measureIfNeeded() {
     zIndex: 2000,
     minWidth: `${props.minWidth}px`,
     visibility: 'hidden',
+
+    ...(maxW ? { maxWidth: maxW } : {}),
+    ...(maxH ? { maxHeight: maxH, overflow: 'auto' } : {}),
   }
 
   await nextTick()
@@ -134,6 +207,9 @@ function updatePosition() {
 
   const { top, left } = computePosition(props.anchorRect, w, h)
 
+  const maxW = cssSize(props.maxWPost)
+  const maxH = cssSize(props.maxHPost)
+
   menuStyle.value = {
     position: 'fixed',
     top: `${top}px`,
@@ -141,8 +217,12 @@ function updatePosition() {
     zIndex: 2000,
     minWidth: `${props.minWidth}px`,
     visibility: 'visible',
+
+    ...(maxW ? { maxWidth: maxW } : {}),
+    ...(maxH ? { maxHeight: maxH, overflow: 'auto' } : {}),
   }
 }
+
 
 async function syncPosition() {
 if (!props.anchorRect) {
@@ -184,6 +264,28 @@ watch(
   { deep: true }
 )
 
+const resolvedScroll = computed(() => {
+  // auto: comportamento “sensato”
+  if (props.scroll === 'auto') return props.custom ? false : true
+  return !!props.scroll
+})
+
+const maxHeightStyle = computed(() => {
+  // Se scroll è off → niente maxHeight
+  if (!resolvedScroll.value) return { maxHeight: 'none', overflow: 'visible' }
+
+  // scroll on → maxHeight custom o default
+  const mh =
+    props.maxHeight ??
+    'min(360px, calc(100vh - 16px))'
+
+  return {
+    maxHeight: typeof mh === 'number' ? `${mh}px` : mh,
+    overflow: 'auto',
+  }
+})
+
+
 </script>
 
 <template>
@@ -193,7 +295,11 @@ watch(
       v-if="open"
       ref="menuEl"
       class="menu"
-      :style="menuStyle"
+      :class="{
+        'scroll-on': resolvedScroll,
+        'scroll-off': resolvedScroll === false,
+      }"
+      :style="[menuStyle, maxHeightStyle]"
       role="menu"
     >
       <template v-if="custom">
@@ -215,9 +321,13 @@ watch(
               role="menuitem"
               @click="pick(it)"
             >
-              <span v-if="it.submenu" class="optionChevron" aria-hidden="true">›</span>
+              
               <span v-if="it.icon" class="optionIcon" aria-hidden="true">{{ it.icon }}</span>
+              <span v-if="it.iconId">
+               <component :is="getIconComponent(it.iconId)" :size="16" />
+              </span>
               <span class="optionLabel">{{ it.label }}</span>
+              <span v-if="it.submenu" class="optionChevron" aria-hidden="true">›</span>
             </button>
           </li>
         </template>
@@ -228,15 +338,17 @@ watch(
 
 <style scoped>
 .menu {
-  background: #fff;
-  border: 1px solid rgba(0,0,0,.10);
+  background: var(--bg-menu);
+  border: 1px solid var(--border-menu);
   border-radius: 12px;
   box-shadow: 0 12px 30px rgba(0,0,0,.14);
   padding: 6px;
   z-index:2000;
-  max-height: min(360px, calc(100vh - 16px));
-  overflow: auto;
+  color: var(--text-main);
+ /* max-height: min(360px, calc(100vh - 16px));
+  overflow: auto;*/
 }
+
 
 .menuList { list-style: none; margin: 0; padding: 0; }
 .menuItem { margin: 0; padding: 0; }
@@ -244,7 +356,7 @@ watch(
 .separator {
   height: 1px;
   margin: 6px 6px;
-  background: rgba(0,0,0,.10);
+  background: var(--border-menu);
 }
 
 .optionBtn {
@@ -258,19 +370,25 @@ watch(
   border-radius: 10px;
   cursor: pointer;
   text-align: left;
+  color: var(--text-main);
 }
 
-.optionBtn:hover { background: rgba(0,0,0,.06); }
-.optionBtn:active { background: rgba(0,0,0,.09); }
-.optionBtn.active { background: rgba(0,0,0,.08); }
+.optionBtn:hover { background: var(--bg-hover); }
+.optionBtn:active { background: var(--bg-hover); }
+.optionBtn.active { background: var(--bg-hover); }
 
-.optionBtn.danger { color: #b00020; }
-.optionBtn.danger:hover { background: rgba(176,0,32,.10); }
+
+.optionBtn.danger:hover { 
+  background: var(--bg-menu-danger); 
+  color: var(--text-danger);
+}
 
 .optionBtn:disabled { opacity: .45; cursor: not-allowed; }
 
 .optionIcon { width: 22px; display: inline-flex; justify-content: center; }
-.optionLabel { font-size: 14px; line-height: 1.2; }
+.optionLabel { 
+  font-size: 14px;
+  line-height: 1.2; }
 
 /* animazione */
 .menu-pop-enter-active,
@@ -293,4 +411,13 @@ watch(
   opacity: .55;
 }
 .optionBtn:disabled .optionChevron { opacity: .35; }
+
+.menu::-webkit-scrollbar {width:13px; }
+.menu::-webkit-scrollbar-thumb {
+background:rgba(0,0,0,.18);
+border-radius:10px;
+border:3px solid transparent;
+background-clip: content-box;
+}
+.menu::-webkit-scrollbar-thumb:hover {background:rgba(0,0,0,.26); }
 </style>

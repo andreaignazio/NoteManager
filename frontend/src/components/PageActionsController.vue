@@ -15,6 +15,7 @@ const props = defineProps({
   minWidthDelete: { type: Number, default: 320 },
   lockScrollOnOpen: { type: Boolean, default: false },
   anchorLocation: {type: String, default: ''},
+  scope: { type: String, default: 'tree' },
 })
 
 const emit = defineEmits(['rename', 'deleted', 'duplicated', 'moved', 'close'])
@@ -106,12 +107,15 @@ const activeMenuEl = computed(() => {
 })
 
 //====OVERLAY LAYER STACK====
-const layerId = computed(() => (props.pageId ? `${props.anchorLocation}:page-actions:${props.pageId}` : null))
+const layerId = computed(() => (props.pageId ? `${props.anchorLocation}:page-actions:${props.pageId}:${props.scope}` : null))
 
 const { syncOpen } = useOverlayLayer(
   // id dinamico: se cambia pageId, chiudi e riapri layer
   layerId,
   () => ({
+    kind: 'dropdown',     
+    priority: 2,          
+    behaviour: 'stack',   
     getMenuEl: () => activeMenuEl.value,
     getAnchorEl: () => anchorResolved.value,
     close: close, // chiude main/move/del
@@ -145,14 +149,23 @@ function openDeletePopover() {
 }
 
 // menu items
-const menuItems = computed(() => [
+/*const menuItems = computed(() => [
   { type: 'item', id: 'rename', label: 'Rename', icon: '✏️' },
   { type: 'item', id: 'duplicate', label: 'Duplicate', icon: '📄' },
   { type: 'separator' },
-  { type: 'item', id: 'move', label: 'Move to…', icon: '📁' },
+  { type: 'item', id: 'move to', label: 'Move to…', icon: '📁' },
   { type: 'item', id: 'share', label: 'Share…', icon: '🔗', disabled: true },
   { type: 'separator' },
   { type: 'item', id: 'delete', label: 'Delete', icon: '🗑️', danger: true },
+])*/
+const menuItems = computed(() => [
+  { type: 'item', id: 'rename', label: 'Rename', iconId: 'lucide:edit-3' },
+  { type: 'item', id: 'duplicate', label: 'Duplicate',iconId: 'lucide:copy' },
+  { type: 'separator' },
+  { type: 'item', id: 'move', label: 'Move to…',  iconId: 'lucide:folder-input' },
+  { type: 'item', id: 'share', label: 'Share…', iconId: 'lucide:link', disabled: true },
+  { type: 'separator' },
+  { type: 'item', id: 'delete', label: 'Delete', iconId: 'lucide:trash-2', danger: true },
 ])
 
 const moveItems = computed(() => {
@@ -220,7 +233,8 @@ async function onMenuAction({ id }) {
     if (id === 'duplicate') {
       close()
       try {
-        const newId = await pagesStore.duplicatePageDeep(props.pageId)
+        //const newId = await pagesStore.duplicatePageDeep(props.pageId)
+        const newId = await pagesStore.duplicatePageTransactional(props.pageId)
         emit('duplicated', newId)
         router.push({ name: 'pageDetail', params: { id: newId } })
       } catch (e) {
@@ -394,6 +408,7 @@ async function confirmDelete() {
 </script>
 
 <template>
+  <div class="controller-custom">
   <Teleport to="body">
     <!-- MAIN MENU -->
     <ActionMenuDB
@@ -415,7 +430,14 @@ async function confirmDelete() {
     :anchorRect="anchorRect"
     :anchorEl="anchorEl"
     custom
-    :minWidth="340"
+    
+    :maxWPost="400"
+    :scroll="true"
+    :maxHPost="200"
+    :offsetX="0"
+    :offsetY="0"
+    :xPre="12" :yPre="12"
+    :xPost="16" :yPost="15"
     :placement="placement"
     @close="close"
     >
@@ -425,7 +447,7 @@ async function confirmDelete() {
         <!-- Root -->
         <button class="move-row" type="button" @click="moveToParent(null)">
         <span class="caret-spacer"></span>
-        <span class="icon">⬅️</span>
+       <!-- <span class="icon">⬅️</span> -->
         <span class="label">Workspace (root)</span>
         </button>
 
@@ -467,6 +489,8 @@ async function confirmDelete() {
       :custom="true"
       :minWidth="minWidthDelete"
       :placement="placement"
+      :maxWPost="400"
+      :minHPre="800"
       @close="close"
     >
       <div class="del-pop">
@@ -488,21 +512,39 @@ async function confirmDelete() {
       </div>
     </ActionMenuDB>
   </Teleport>
+  </div>
 </template>
 
 <style scoped>
+  .constroller-custom {
+    color:var(--text-main)
+  }
 .del-pop {
   padding: 10px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  color: var(--text-main);
 }
 .del-title { font-weight: 700; font-size: 14px; }
-.del-text { font-size: 13px; color: rgba(0,0,0,.7); }
+.del-text { font-size: 13px; color:var(--text-secondary); }
 .del-check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
-.del-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.move-pop { padding: 6px; display: flex; flex-direction: column; gap: 4px; }
-.move-header { font-weight: 700; font-size: 13px; padding: 6px 8px; }
+.del-actions { display: flex; justify-content: flex-end; gap: 8px; color:var(--text-secondary); }
+.move-pop { 
+  padding: 6px; 
+  display: flex; 
+  flex-direction: column; 
+  gap: 4px; 
+  max-height: 300px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  
+  
+}
+.move-header { 
+  font-weight: 600; 
+  font-size: 13px; 
+  padding: 6px 8px; }
 .move-sep { height: 1px; background: rgba(0,0,0,.10); margin: 6px 6px; }
 
 .move-row {
@@ -516,18 +558,30 @@ async function confirmDelete() {
   padding: 8px 10px;
   cursor: pointer;
   text-align: left;
+  color:var(--text-secondary);
 }
-.move-row:hover { background: rgba(0,0,0,.06); }
+.move-row:hover { 
+  background: var(--bg-hover); 
+  color:var(--text-main);}
 .move-row:disabled { opacity: .45; cursor: not-allowed; }
 
 .caret { width: 16px; display: inline-flex; justify-content: center; }
 .caret-spacer { width: 16px; display: inline-block; }
 .icon { width: 22px; display: inline-flex; justify-content: center; }
 .label { 
+    font-weight: 400;
     font-size: 14px; 
     line-height: 1.2;
     white-space: nowrap;
     overflow: hidden; 
     text-overflow: ellipsis; 
     }
+ .move-pop::-webkit-scrollbar {width:13px; }
+.move-pop::-webkit-scrollbar-thumb {
+background:rgba(0,0,0,.18);
+border-radius:10px;
+border:3px solid transparent;
+background-clip: content-box;
+}
+.move-pop::-webkit-scrollbar-thumb:hover {background:rgba(0,0,0,.26); }   
 </style>

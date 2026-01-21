@@ -1,6 +1,9 @@
 <script setup>
 import { ref, watch, nextTick, onMounted, onUnmounted, computed, toRef } from 'vue'
 import { getIconComponent } from '@/icons/catalog'
+import { useUiStore } from '@/stores/ui'
+
+const ui = useUiStore()
 
 const props = defineProps({
 
@@ -20,6 +23,7 @@ const props = defineProps({
   parentKey: { type: String },
   pageActionMenuId: { type: String },
   flash: { type: Boolean, default: false },
+  anchorScope: { type: String, default: 'tree' },
 })
 
 const emit = defineEmits([
@@ -40,6 +44,7 @@ const editorEl = ref(null)
 const PageIcon = computed(() => getIconComponent(props.page?.icon))
 
 function onOpen() {
+  console.log("Clicked on page:", props.page.id, "Title:", props.page.title)
   if (props.isEditing) return
   emit('open', props.page.id)
 }
@@ -72,7 +77,7 @@ watch(
     isHighlighted.value =
       typeof newId === 'string' &&
       newId.includes(String(props.page.id)) &&
-      newId.includes('sidebar')
+      newId.includes(props.anchorScope)
   },
   { immediate: true }
 )
@@ -83,23 +88,30 @@ const menuBtn = ref(null)
 watch(
   () => menuBtn.value,
   (el) => {
-    // quando compare/scompare il bottone (per v-if), aggiorna la mappa
-    props.registerMenuAnchor?.(props.page.id, el)
+    props.registerMenuAnchor?.(props.anchorScope, props.page.id, el)
   },
   { immediate: true }
 )
+
+const isLastAddedPage = computed(() => {
+ 
+  const lastAddedPageId = ui.getLastAddedPageId()
+  return lastAddedPageId === props.page.id
+})
+
+
 
 /*onMounted(() => {
   props.registerMenuAnchor?.(props.page.id, menuBtn.value)
 })*/
 
 onUnmounted(() => {
-  props.registerMenuAnchor?.(props.page.id, null)
+  props.registerMenuAnchor?.(props.anchorScope, props.page.id, null)
 })
 
 function onOpenMenu() {
   if (!menuBtn.value) return
-  emit('open-menu', props.page.id)
+  emit('open-menu', { pageId: props.page.id, scope: props.anchorScope })
 }
 </script>
 
@@ -108,8 +120,12 @@ function onOpenMenu() {
   
     <div
       class="page-item"
-      :class="{ active: isActive, highlighted: isHighlighted,'moved-flash': flash }"
+      :class="{ active: isActive, highlighted: isHighlighted,
+        'moved-flash': flash || isLastAddedPage,
+        'pie-drop-hover': ui.SidebarMoveToArmed && ui.SidebarMoveToHoverPageId === page.id
+         }"
       :data-id="page.id"
+      :data-page-id="page.id" 
       :data-parent="parentKey"
       @click="onOpen"
     >
@@ -132,17 +148,23 @@ function onOpenMenu() {
             @click.stop="onToggleExpand"
             :title="isExpanded ? 'Collapse' : 'Expand'"
           >
-            <span class="chevron" aria-hidden="true">
+            <span class="chevron" 
+            :class="{active:isActive}"
+            aria-hidden="true" >
               {{ isExpanded ? '▾' : '▸' }}
             </span>
-            <span class="page-icon" aria-hidden="true">
+            <span class="page-icon"
+            :class="{active:isActive}"
+            aria-hidden="true">
               <component :is="PageIcon" :size="16" />
             </span>
           </div>
 
           <!-- TITLE -->
-          <span class="page-title-text" :title="page.title">
-            {{ page.title }}
+          <span class="page-title-text"
+            :class="{ active: isActive }"
+           :title="page.title">
+            {{ String(page.title).trim() != '' ? page.title : 'Untitled' }}
           </span>
 
           <!-- debug opzionali -->
@@ -177,11 +199,27 @@ function onOpenMenu() {
 </template>
 
 <style scoped>
-.item-wrapper {
-  width: 100%;
-  min-height: 45px;
+:root {
+  --sidebar-row-pad-y: 6px;   /* spazio verticale interno */
+  --sidebar-row-gap: 4px;     /* spazio tra righe */
+  --sidebar-row-radius: 10px;
 }
 
+.page-item.pie-drop-hover {
+  background-color: #4c93e080;
+  /*background-color: blue;*/
+  outline: 2px solid #74b5fadc;
+  z-index: 2000;
+  animation: opacityPulse 800ms ease-in-out;
+}
+
+.item-wrapper {
+  width: 100%;
+  min-height: 32px; 
+  margin-bottom: var(--sidebar-row-gap);
+  margin-top: var(--sidebar-row-gap);
+}
+/*
 .drag-handle {
   width: 0px;
   opacity: 0;
@@ -193,10 +231,11 @@ function onOpenMenu() {
     opacity 120ms ease,
     margin-right 200ms ease;
 
-  height: 28px;
-  border-radius: 8px;
+  height: var(--sidebar-handle-h);
+  border-radius: var(--sidebar-row-radius);
   border: 0px solid rgba(0,0,0,.12);
-  background: rgba(255,255,255,.7);
+  background: var(--bg-icon-light);
+  color:var(--icon-secondary);
   cursor: grab;
 
   display: inline-flex;
@@ -209,38 +248,82 @@ function onOpenMenu() {
 .page-item:hover .drag-handle,
 .page-item.active .drag-handle,
 .page-item:focus-within .drag-handle {
-  width: 28px;
+  width:  var(--sidebar-handle-h);
   opacity: 1;
   margin-right: 6px;
 }
 
+.drag-handle:active { cursor: grabbing; }*/
+.drag-handle {
+  /* base */
+  height: var(--sidebar-handle-h);
+  border-radius: var(--sidebar-row-radius);
+  border: 0px solid rgba(0,0,0,.12);
+  background: var(--bg-icon-light);
+  color: var(--icon-secondary);
+  cursor: grab;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  /* ✅ hidden = non occupa spazio */
+  flex: 0 0 auto;
+  flex-basis: 0px;
+  max-width: 0px;
+  margin-right: 0px;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+
+  transition:
+    flex-basis 200ms ease,
+    max-width 200ms ease,
+    margin-right 200ms ease,
+    opacity 120ms ease;
+  transition-delay: 40ms;
+}
+
+.page-item:hover .drag-handle,
+.page-item.active .drag-handle,
+.page-item:focus-within .drag-handle {
+  /* ✅ shown = prende spazio e spinge */
+  flex-basis: var(--sidebar-handle-h);
+  max-width: var(--sidebar-handle-h);
+  margin-right: 6px;
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .drag-handle:active { cursor: grabbing; }
+
+
 
 .debug { font-size: 12px; }
 
 .page-item {
-     width: 100%;
+  width: 100%;
   display: block;
-  border-radius: 10px;
+  border-radius: 8px;
   cursor: pointer;
-  min-height: 30px;
+  min-height: 34px;
 }
 
-.page-item:hover { background: rgba(0,0,0,.06); }
-.page-item.active { background: rgba(0,0,0,.08); }
+.page-item:hover { background:var(--bg-hover); }
+.page-item.active { background: var(--bg-active); }
 .page-item.highlighted { background: rgba(0,0,0,.08); }
 
 .page-row {
   display: flex;
   align-items: center;
-  padding: 6px 6px;
+  padding: var(--sidebar-row-pad-y) var(--sidebar-row-pad-y);
   gap: 10px;
 }
 
 .row-inner {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0px;
   flex: 1;
   min-width: 0;
 }
@@ -252,11 +335,28 @@ function onOpenMenu() {
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 14px;
+  color: var(--text-secondary);
+  transform: translateX(2px);
+}
+.page-title-text.active{
+  color: var(--text-main);
 }
 
-.row-actions {
+/*.row-actions {
   display: flex;
   gap: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}*/
+.row-actions {
+  position: absolute;          
+  right: var(--sidebar-row-pad-y);                
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 6px;
+
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms ease;
@@ -269,6 +369,15 @@ function onOpenMenu() {
   pointer-events: auto;
 }
 
+.page-item:hover .page-title-text,
+.page-item.active .page-title-text,
+.page-row.editor .page-title-text {
+  padding-right: 70px;
+}
+
+.page-title-text {
+  transition: padding-right 120ms ease;
+}
 /* edit input */
 .edit-input {
   flex: 1;
@@ -282,20 +391,23 @@ function onOpenMenu() {
 }
 
 .icon-btn {
-  height: 28px;
-  width: 28px;
+  height: var(--sidebar-handle-h);
+  width: var(--sidebar-handle-h);
   align-items: center;
   padding: 0 10px;
-  border-radius: 10px;
+  border-radius: 8px;
   border: 0px solid rgba(0,0,0,.12);
   background: transparent;
   cursor: pointer;
   font-size: 12px;
-  opacity: 1;
+  opacity: .25;
   transition: opacity 120ms ease;
+  color:var(--icon-secondary)
 }
 
-.icon-btn:hover { background: rgba(255, 255, 255, 0.402); }
+.icon-btn:hover {
+   background:  var(--bg-icon-hover); 
+   opacity: 1;}
 .icon-btn.primary { background: rgba(0,0,0,.12); }
 
 /* leading: chevron/icon overlay */
@@ -319,6 +431,15 @@ function onOpenMenu() {
   align-items: center;
   justify-content: center;
   transition: opacity 120ms ease;
+  color:var(--text-secondary)
+}
+
+.leading .chevron.active {
+  color:var(--text-main)
+} 
+
+.leading .page-icon.active {
+  color:var(--text-main)
 }
 
 .leading .chevron { font-size: 14px; line-height: 1; }

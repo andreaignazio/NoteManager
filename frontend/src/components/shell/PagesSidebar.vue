@@ -10,9 +10,13 @@ import SidebarHeader from '@/components/shell/SidebarHeader.vue'
 import PageActionsController from '@/components/PageActionsController.vue'
 import PageTitlePopoverController from '@/components/PageTitlePopoverController.vue'
 import { useOverlayStore } from '@/stores/overlay'
+import { useUiStore } from '@/stores/ui'
+
+import { useAppActions } from '@/actions/useAppActions'
 
 import DndController from '@/components/draggableList/DndController.vue'
 
+const ui = useUiStore()
 const authStore = useAuthStore()
 const overlay = useOverlayStore()
 const displayName = computed(() => {
@@ -26,7 +30,7 @@ const props = defineProps({
   indentPx: { type: Number, default: 24 },
 })
 
-
+const actions = useAppActions()
 const pagesStore = usePagesStore()
 const { editingPageId } = storeToRefs(pagesStore)
 const { draftPage } = storeToRefs(pagesStore)
@@ -48,6 +52,7 @@ function setScrollingOn(el) {
 
 // ======== Actions passed-through ========
 const openPage = async (pageId) => {
+  console.log("Apro pagina:", pageId)
   if (!pagesStore.pagesById[pageId]) {
     router.push('/')
     return
@@ -96,22 +101,12 @@ const commitEditTitle = async (pageId) => {
   await pagesStore.commitEdit(pageId)
 }
 
-async function addChildAndRename(parentId) {
-  if (!pagesStore.expandedById[parentId]) pagesStore.expandPage(parentId)
-  const child = await pagesStore.addChildPage(parentId, { title: '' })
-  startEditTitle(child)
+
+
+async function createNewPage(parentId = null) {
+  actions.pages.createChildAndActivate(parentId)
 }
 
-const toggleExpandPage = async (pageId) => {
-  await pagesStore.toggleExpandPage(pageId)
-}
-
-async function createNewRootPage() {
-  // crea una nuova pagina a root e entra in rename
-  const id = await pagesStore.addChildPage(null, { title: '' })
-  await nextTick()
-  startEditTitle(id)
-}
 
 
 // ======== Context menu anchor management ========
@@ -119,35 +114,34 @@ const rootEl = ref(null)
 const sidebarScrollEl = ref(null)
 
 
-const menuAnchorByPageId = new Map()
+const menuAnchorByKey = new Map()
 
-const registerMenuAnchor = (pageId, el) => {
+const anchorKey = (scope, pageId) => `${scope}:${String(pageId)}`
+
+const registerMenuAnchor = (scope, pageId, el) => {
   if (!pageId) return
-  if (el) menuAnchorByPageId.set(String(pageId), el)
-  else menuAnchorByPageId.delete(String(pageId))
+  const k = anchorKey(scope, pageId)
+  if (el) menuAnchorByKey.set(k, el)
+  else menuAnchorByKey.delete(k)
 }
 
 const pageActionsRef = ref(null)
 const pageTitlePopoverRef = ref(null)
 
 const actionsPageId = ref(null)   // string|number|null
+const actionsPageScope = ref(null) // string|null
 const actionsAnchorEl = ref(null) // HTMLElement|null
 
 const isActionsOpen = computed(() => actionsPageId.value != null)
 
-function openPageActions(pageId) {
-  console.log("OpenMenu")
-  const el = menuAnchorByPageId.get(String(pageId))
-  console.log("menuAnchorMap:", menuAnchorByPageId)
-  console.log("EL:", el, "pageId:", pageId)
+function openPageActions({ pageId, scope }) {
+  const el = menuAnchorByKey.get(anchorKey(scope, pageId))
   if (!el) return
 
   actionsPageId.value = pageId
+  actionsPageScope.value = scope
   actionsAnchorEl.value = el
-  console.log("Anhor:", actionsAnchorEl.value, "pageId:", pageId)
-  nextTick(() => {
-    pageActionsRef.value?.open?.()
-  })
+  nextTick(() => pageActionsRef.value?.open?.())
 }
 
 function closePageActions() {
@@ -201,6 +195,51 @@ defineExpose({
       localTree.value = newVal;
   }, { immediate: true});
 
+  //===FAVORITE LIST FLAT===
+  const favoritesTreeFlat = computed(() => {
+  const byId = pagesById.value
+  if (!byId) return []
+
+  return Object.values(byId)
+    .filter(p => !!p?.favorite)
+    .sort((a, b) => {
+      const ap = a.favorite_position ?? '\uffff'
+      const bp = b.favorite_position ?? '\uffff'
+      if (ap < bp) return -1
+      if (ap > bp) return 1
+      return String(a.id).localeCompare(String(b.id))
+    })
+    .map(p => ({
+      ...p,
+      children: [],
+      hasChildren: false,
+      isExpanded: false,
+    }))
+})
+
+const openFromFavorites = async (pageId) => {
+  pagesStore.ensureVisible(pageId)
+  flashMoved(pageId)
+  openPage(pageId)
+}
+
+const handleMoveFavorite = async ({ id, position }) => {
+  // optimistic
+  if (pagesStore.pagesById[id]) {
+    pagesStore.pagesById[id].favorite_position = position
+  }
+
+  try {
+    await pagesStore.patchPage(String(id), { favorite_position: position })
+  } catch (e) {
+    console.error(e)
+    // fallback hard:
+    // await pagesStore.fetchPages()
+  }
+}
+
+
+
   function buildForest(childrenMap, contentMap, expandedMap) {
         const rootIds = childrenMap[KEY_ROOT] ?? [];
 
@@ -213,15 +252,15 @@ defineExpose({
           const allChildIds = childrenMap[id] ?? [];
           const hasChildren = allChildIds.length > 0;
           let isExpanded = !!expandedMap[id];
-          console.log(id,isExpanded)
+         
 
           const visibleChildren = isExpanded 
               ? allChildIds.map(childId => buildNode(childId)).filter(Boolean)
               : [];
 
-              console.log('id', id, 'children keys has?', Object.prototype.hasOwnProperty.call(childrenMap, String(id)), 'raw', childrenMap[String(id)])
+              
 
-              console.log("built_new_tree")
+              
           return {
               ...pageData,
               hasChildren, 
@@ -295,6 +334,28 @@ onUnmounted(() => {
 
 onMounted(pagesStore.fetchPages);
 
+const {SidebarMoveToArmed} = storeToRefs(ui)
+const {SidebarMoveToHoverPageId} = storeToRefs(ui)
+
+const hasFavoritePages = computed(() => {
+    return pagesStore.hasFavoritePages()
+})
+
+const { pendingSidebarScrollToPageId } = storeToRefs(ui)
+
+watch(pendingSidebarScrollToPageId, async (pageId) => {
+  if (!pageId) return
+
+  // aspetta che la lista si aggiorni e il DOM esista
+  await nextTick()
+  requestAnimationFrame(() => {
+    const el = sidebarScrollEl.value?.querySelector(`[data-page-id="${pageId}"]`)
+    if (!el) return
+    el.scrollIntoView({ block: "nearest", behavior: "smooth" })
+    ui.consumeScrollToPageRequest(pageId)
+  })
+})
+
 </script>
 
 <template>
@@ -306,82 +367,90 @@ onMounted(pagesStore.fetchPages);
     <div class="sidebar-header-pad">
     <SidebarHeader
         :displayName="displayName"
-        @new-page="createNewRootPage"
+        @new-page="createNewPage"
         @logout="$emit('logout')"
       />
       
-      <div class="sidebar-title">Pages</div>
+      <div v-if="hasFavoritePages" class="sidebar-title">Favorites</div>
       </div>
-    <div ref="sidebarScrollEl" class="sidebar-scroll scrollbar-auto">
-      
-      <!--<NestedList/>-->
-      <!--<DndController
-        :tree="localTree"
-        @node-moved="handleMove"
-      />-->
-      <DndController
-        :tree="localTree"
-        @node-moved="handleMove"
-      >
-        <template #row="{ item, level, hasChildren, isExpanded }">
+    
+      <div v-if="hasFavoritePages" class="favorites-zone" >
+        <DndController
+          :tree="favoritesTreeFlat"
+          position-key="favorite_position"
+          :allow-inside="false"
+          @node-moved="handleMoveFavorite"
+        >
+        <template #row="{ item }">
           <PageRowC
             :page="item"
-            :level="level"
-            :has-children="hasChildren"
+            :level="0"
+            :has-children="false"
+            :is-expanded="false"
             :is-active="pagesStore.currentPageId === item.id"
-            :is-expanded="isExpanded"
-            :is-editing="String(editingPageId) === item.id"
-            :draft-title="draftPage.title"
+            :is-editing="false"
+            :draft-title="''"
             :register-menu-anchor="registerMenuAnchor"
-            :parent-key="pagesStore.getParentKey(item.parentId)"
+            :parent-key="'favorites'"
             :page-action-menu-id="overlayTopId"
-            :flash="String(recentlyMovedId) === String(item.id)"
-            @open="openPage"
-            @start-edit="startEdit"
-            @toggle-expand="handleToggleExpand"
-            @add-child="addChildAndRename"
+            :anchor-scope="'favorites'"
+            @add-child="createNewPage(item.id)"
+            @open="openFromFavorites"
             @open-menu="openPageActions"
-            @update:draftTitle="draftPage.title = $event"
-            @commit="commitEditTitle"
-            @cancel="cancelEditTitle"
           />
         </template>
       </DndController>
+    </div>
+    <div class="sidebar-header-pad">
+     <div class="sidebar-title">All Pages</div>
+    </div>
+    <div ref="sidebarScrollEl" class="sidebar-scroll scrollbar-auto">
+      <div class="all-pages-zone" :class="{ 'move-armed': SidebarMoveToArmed }">
+        <!-- overlay SOLO qui -->
+        <div
+          v-if="SidebarMoveToArmed"
+          class="all-pages-overlay"
+          aria-hidden="true"
+        />
 
-      <!--<RecursiveDraggableV0 vif="childrenByParentId"
-          v-model:list="localTree"
-          parent-id="root" 
-          root-key="root"
+
+        <DndController
+          :tree="localTree"
+          :indent = 20
           @node-moved="handleMove"
-      >
-          <template #row="{ element, level }">
-             <PageRowNS 
-                :row = "{page: element, level: level}"
-                :indentPx="indentPx"
-                :isActive="element.id === pagesStore.currentPageId"
-                :isEditing="String(editingPageId) === String(element.id)"
-                :draftTitle="draftPage.title"
-                :hasChildren="pagesStore.hasChildren(element.id)"
-                :isExpanded="pagesStore.isExpanded(element.id)"
-                :registerMenuAnchor="registerMenuAnchor"
-                :pagesMenu="pagesStore.contextMenu"
-                :parentKey="pagesStore.getParentKey(element.parentId)"
-                :pageActionMenuId="overlayTopId"
-                 @update:draftTitle="draftPage.title = $event"
-                @open="openPage"
-                @add-child="addChildAndRename"
-                @toggle-expand="handleToggleExpand"
-                @commit="commitEditTitle"
-                @cancel="cancelEditTitle"
-                @open-menu="openPageActions"
+        >
+          <template #row="{ item, level, hasChildren, isExpanded }">
+            <PageRowC
+              :page="item"
+              :level="level"
+              :data-page-id="item.id"
 
-             />
-             
+              :has-children="hasChildren"
+              :is-active="pagesStore.currentPageId === item.id"
+              :is-expanded="isExpanded"
+              :is-editing="String(editingPageId) === item.id"
+              :draft-title="draftPage.title"
+              :register-menu-anchor="registerMenuAnchor"
+              :parent-key="pagesStore.getParentKey(item.parentId)"
+              :page-action-menu-id="overlayTopId"
+              :flash="String(recentlyMovedId) === String(item.id)"
+              :anchor-scope="'tree'"
+              @open="openPage"
+              @start-edit="startEdit"
+              @toggle-expand="handleToggleExpand"
+              @add-child="createNewPage(item.id)"
+              @open-menu="openPageActions"
+              @update:draftTitle="draftPage.title = $event"
+              @commit="commitEditTitle"
+              @cancel="cancelEditTitle"
+            />
           </template>
-      </RecursiveDraggableV0>-->
+        </DndController>
+      </div>
       <PageActionsController
         ref="pageActionsRef"
         :pageId="actionsPageId"
+        :scope="actionsPageScope"
         :anchorEl="actionsAnchorEl"
         placement="right"
         :lockScrollOnOpen="true"
@@ -395,6 +464,7 @@ onMounted(pagesStore.fetchPages);
       <PageTitlePopoverController
       ref="pageTitlePopoverRef"
       :pageId="actionsPageId"
+      :scope="actionsPageScope"
       :anchorEl="actionsAnchorEl"
       :lockScrollOnOpen="true" 
       anchorLocation="sidebar" 
@@ -405,6 +475,31 @@ onMounted(pagesStore.fetchPages);
 </template>
 
 <style scoped>
+
+.all-pages-zone {
+  position: relative;
+}
+
+/* overlay “highlight” */
+.all-pages-overlay {
+   pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  background: rgba(0,0,0,.03);
+  outline: 2px solid rgba(0,0,0,.08);
+  pointer-events: none; /* ✅ non blocca interazioni */
+  z-index: 2;
+}
+
+/* assicurati che la lista stia sopra/sotto come vuoi */
+.all-pages-zone :deep(.dnd-root),
+.all-pages-zone :deep(.page-row),
+.all-pages-zone :deep(.page-item) {
+  position: relative;
+  z-index: 3; /* sopra l’overlay */
+}
+
 
 
 :deep(li.page-item.drop-inside) { position: relative; }
@@ -474,8 +569,8 @@ onMounted(pagesStore.fetchPages);
   height: 100%;
   display: flex;
    flex-direction: column;
-  background: rgba(0,0,0,.03);
-  border-right: 1px solid rgba(0,0,0,.08);
+  background: var(--bg-secondary);
+  border-right: 1.5px solid var(--border-main);
   
 }
 .sidebar-header-pad{
@@ -491,6 +586,15 @@ onMounted(pagesStore.fetchPages);
   min-height: 0; 
   overflow: auto;
   padding: var(--bar-pad);
+  padding-left: var(--sidebar-pad-left);
+ /* padding-bottom: 80px;*/
+ scroll-padding-bottom: 80px;
+  
+}
+
+.favorites-zone {
+  padding-left: var(--sidebar-pad-left);
+  padding-right: var(--bar-pad) ;
 }
 
 .sidebar-title {
@@ -498,7 +602,7 @@ onMounted(pagesStore.fetchPages);
   font-weight: 700;
   letter-spacing: .08em;
   text-transform: uppercase;
-  color: rgba(0,0,0,.6);
+  color: var(--text-secondary);
   margin-bottom: 10px;
   margin-top: 12px;
 }
@@ -510,7 +614,7 @@ onMounted(pagesStore.fetchPages);
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 1px;
 }
 
 

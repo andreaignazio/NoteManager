@@ -4,19 +4,28 @@ import router from '@/router'
 import { storeToRefs } from 'pinia'
 import useAuthStore from '@/stores/auth'
 import usePagesStore from '@/stores/pages'
+import useBlocksStore from '@/stores/blocks'
 import { useUiStore } from '@/stores/ui'
 import { useOverlayStore } from '@/stores/overlay'
 import { useOverlayLayer } from '@/composables/useOverlayLayer'
-
-
+import { useOverlayBinding } from '@/composables/useOverlayBinding'
+import PieMenu from '@/components/menu/PieMenu.vue'
+import PieColorMenu from '@/components/menu/PieColorMenu.vue'
+ import { usePieMenuPolicy } from '@/composables/usePieMenuPolicy';
+import { usePieMenuController } from "@/composables/usePieMenuController"
 import FlyoutSidebar from '@/components/shell/FlyoutSidebar.vue'
 import PagesSidebar from '@/components/shell/PagesSidebar.vue'
 import Topbar from '@/components/shell/Topbar.vue'
+import { computeFloatingPosition } from "@/utils/computeFloatingPosition"
+import { useAppActions } from '@/actions/useAppActions'
+
 
 const authStore = useAuthStore()
 const pagesStore = usePagesStore()
+const blocksStore = useBlocksStore()
 const ui = useUiStore()
 const overlay = useOverlayStore()
+const actions = useAppActions()
 
 ui.hydrate()
 
@@ -34,7 +43,7 @@ const showBackdrop = computed(()=>{
 )
 
 function onBackdropPointerDown(e) {
-  
+  console.log("OnBackdropPointerDown")
   e.preventDefault()
   e.stopPropagation()
 
@@ -111,7 +120,28 @@ async function checkRouteAndFetchPages() {
   }
 }
 
-onMounted(checkRouteAndFetchPages)
+async function _init(){
+  ui.hydrate()
+  if (!authStore?.isAuthenticated) return
+  await fetchPages()
+  // apri l’ultima pagina aperta se esiste
+  const lastOpenedPageId = ui.lastOpenedPageId
+  console.log("Last opened page id:", lastOpenedPageId)
+  if (lastOpenedPageId && pagesStore.pagesById[lastOpenedPageId]) {
+    actions.pages.redirectToPage(lastOpenedPageId)
+  }
+  if(pagesStore.anyPage){
+    const firstPageId = pagesStore.childrenByParentId[null]?.[0] ?? null
+    if(firstPageId){
+      actions.pages.redirectToPage(firstPageId)
+    }
+  } else {
+    actions.pages.createChildAndActivate(null)
+  }
+
+}
+
+onMounted(_init)
 
 const handleLogout = async () => {
   try {
@@ -315,6 +345,301 @@ onUnmounted(() => {
 
 const isLoginRoute = computed(() => router.currentRoute.value?.name === 'login' || router.currentRoute.value?.path === '/login')
 
+// ====== PIE MENU CONTROLLER ======
+
+import { BG_TOKENS, TEXT_TOKENS, labelForBgToken,labelForTextToken, styleForBgToken,styleForTextToken } from '../theme/colorsCatalog'
+
+const pieOpen = ref(false)
+const pieKind = ref("context")
+const pieMode = ref("block")  // 'block' | 'ai'
+const pieArea = ref("main")   // 'main' | 'sidebar'
+const pieX = ref(0)
+const pieY = ref(0)
+const pieContext = ref(null)
+
+const mainMenuRef = ref(null)
+const colorPieRef = ref(null)
+
+function getMainMenuRef() {
+  return mainMenuRef.value
+}
+
+function getColorMenuRef() {
+  return colorPieRef
+}
+
+const pieRAD_MAP = {
+  hole: 26,
+  main_outer: 92,
+  color_inner:66,
+  color_outer:106,
+}
+
+const pieAnchorX = ref(0)
+const pieAnchorY = ref(0)
+
+let PIE_MAX_DIAM = computed(() => {
+  const max = Math.max(...Object.values(pieRAD_MAP))
+  return (max) *2
+}
+)
+PIE_MAX_DIAM = 260 //fisso per ora
+
+const pieCenter = computed(() => {
+  if (!pieOpen.value) return { x: pieAnchorX.value, y: pieAnchorY.value }
+  return computeFloatingPosition({
+    x: pieAnchorX.value,
+    y: pieAnchorY.value,
+    w: PIE_MAX_DIAM,
+    h: PIE_MAX_DIAM,
+    tx: 0.5,
+    ty: 0.5,
+    margin: 10,
+  })
+})
+
+
+function openPie({ kind="context", mode, area, x, y, context }) {
+  console.log("pieCenter before open:", pieCenter.value)
+  pieKind.value = kind
+  pieMode.value = mode
+  pieArea.value = area
+
+
+  pieAnchorX.value = x
+  pieAnchorY.value = y
+
+  // lascia anche pieX/pieY se ti serve, ma meglio usarli come anchor
+  pieX.value = x
+  pieY.value = y
+
+  pieContext.value = context ?? { area }
+  pieOpen.value = true
+}
+
+function closePie() {
+  pieOpen.value = false
+}
+
+// ---- central policy: rightclick opens pie ----
+usePieMenuPolicy({
+  isOpen: () => pieOpen.value,
+  close: closePie,
+  open: openPie,
+
+  // (optional) override context extraction if you want more data
+  // getContextAt: (e) => ({ area: ..., blockId: ... })
+})
+
+async function onPieAction(actionId, ctxFromEvent) {
+  const ctx = ctxFromEvent ?? pieContext.value ?? {}
+  console.log("[PIE] action:", actionId, ctx)
+
+  // route by area
+  if (ctx.area === "sidebar") {
+    const pageId = ctx.pageId
+    switch (actionId) {
+      case "share":
+        console.log("[PIE][sidebar] share", ctx)
+        break
+      case "ai":
+        console.log("[PIE][sidebar] ai tools", ctx)
+        break
+      case "newPage":
+        console.log("[PIE][sidebar] new page", ctx)
+        console.log("PIE context:", ctx.pageId)
+        //actions.pages.createChildAndActivate(null)
+        actions.pages.createPageAfterAndActivate(pageId)
+        break 
+      default:
+        console.log("[PIE][sidebar] action:", actionId, ctx)
+    }
+    return
+  }
+
+  // main (blocks)
+  const blockId = ctx.blockId
+  if (!blockId) {
+    console.log("[PIE][main] no blockId, ignore", actionId, ctx)
+    return
+  }
+
+  const pageId = blocksStore.blocksById[blockId]?.pageId ?? null
+
+  switch (actionId) {
+    case "duplicate":
+      if (pageId) blocksStore.duplicateBlockInPlace(pageId, blockId)
+      console.log("[PIE][main] duplicate", blockId)
+      break
+
+    case "color":
+      // NON apri qui il color menu: lo fa il controller via dwell stack
+      console.log("[PIE][main] color", blockId)
+      break
+
+    case "highlight":
+      console.log("[PIE][main] highlight", blockId)
+      break
+
+    case "moveTo":
+      // NON armi qui: lo fa il controller via dwellMoveToId
+      console.log("[PIE][main] moveTo", blockId)
+      break
+
+    case "changeType":
+      console.log("[PIE][main] changeType", blockId)
+      break
+
+    // ai preset
+    case "ai":
+      console.log("[PIE][main] ai tools", blockId)
+      break
+    case "share":
+      console.log("[PIE][main] share", blockId)
+      break
+    case "copy":
+      console.log("[PIE][main] copy", blockId)
+      break
+    case "paste":
+      console.log("[PIE][main] paste", blockId)
+      break
+
+    default:
+      console.log("[PIE][main] action:", actionId, blockId, ctx)
+  }
+}
+
+const pieController = usePieMenuController({
+  pieOpen, pieKind, pieMode, pieArea, pieX, pieY, pieContext,
+  closePie,
+
+  mainMenuRef: getMainMenuRef,
+  colorMenuRef: getColorMenuRef,
+
+  dwellMs: 300,
+  submenuIds: ["color"],
+  dwellMoveToId: "moveTo",
+
+  onAction: async (id, ctx) => {
+    // moveTo commit
+    if (id === "moveToCommit") {
+      const targetPageId = ctx?.targetPageId
+      const blockId = ctx?.blockId
+      const fromPageId = blockId ? (blocksStore.blocksById[blockId]?.pageId ?? null) : null
+      if (blockId && targetPageId && fromPageId) {
+        await blocksStore.transferSubtreeToPage({
+          fromPageId: String(fromPageId),
+          toPageId: String(targetPageId),
+          rootId: String(blockId),
+        })
+      }
+      return
+    }
+
+    // tutte le altre azioni pie main
+    await onPieAction(id, ctx)
+  },
+
+  onSetTextToken: async (token, ctx) => {
+    const blockId = ctx?.blockId
+    if (!blockId) return
+    const pageId = blocksStore.blocksById[blockId]?.pageId ?? null
+    if (!pageId) return
+
+    const stylePatch = { textColor: String(token) }
+    // 👇 usa la tua action reale
+    await blocksStore.updateBlockStyle(blockId, stylePatch)
+  },
+
+  onSetBgToken: async (token, ctx) => {
+    const blockId = ctx?.blockId
+    if (!blockId) return
+    const pageId = blocksStore.blocksById[blockId]?.pageId ?? null
+    if (!pageId) return
+
+    const stylePatch = { bgColor: String(token) }
+    await blocksStore.updateBlockStyle(blockId, stylePatch)
+  },
+})
+
+const currentBg = computed(() => {
+  const blockId = pieContext.value?.blockId
+  if (!blockId) return null
+  return blocksStore.blocksById[blockId]?.props?.style?.bgColor ?? null
+})
+
+const currentText = computed(() => {
+  const blockId = pieContext.value?.blockId
+  if (!blockId) return null
+  return blocksStore.blocksById[blockId]?.props?.style?.textColor ?? null
+})
+
+const labelForBg = (t) => BG_TOKENS.map(t=> labelForBgToken(t))
+const labelForText = (t) => TEXT_TOKENS.map(t=> labelForTextToken(t))
+const letterStyleForText = (token) => styleForTextToken(token)
+const swatchStyleForBg = (token) => styleForBgToken(token)  
+
+const pieTop = pieController.top
+
+/*watch(pieOpen, (open) => {
+  
+    console.log("mainMenuRef", mainMenuRef.value)
+    console.log("setCursor?", typeof mainMenuRef.value?.setCursor)
+    console.log("getActiveItem?", typeof mainMenuRef.value?.getActiveItem)
+    console.log("commit?", typeof mainMenuRef.value?.commit)
+  
+})*/
+
+function getPieMenuEl() {
+  // 1) se mainMenuRef è un HTMLElement diretto:
+  // return mainMenuRef.value
+
+  // 2) se è un componente Vue:
+  const mainEl = mainMenuRef.value?.$el ?? null
+  const colorEl = colorPieRef.value?.$el ?? null
+  // usa quello visibile in base a pieTop
+  return (pieTop.value === 'color' ? colorEl : mainEl) ?? null
+}
+
+function getPieMenuInteractionScope() {
+  console.log("getPieMenuInteractionScope:", pieController.interactionScope.value)
+  return pieController.interactionScope.value
+}
+
+useOverlayBinding({
+  id: 'pie',
+  kind: 'pie',
+  priority: 3,
+  behaviour: 'exclusiveKinds',
+  exclusiveKinds: ['hoverbar', 'dropdown'],
+   // dropdown opzionale
+  isOpen: () => pieOpen.value,
+  requestClose: (reason) => {
+    closePie()
+  },
+  canOpen: () => {
+    const top = overlay.top
+    if (!top) return true
+    const topP = top.priority ?? 0
+    return topP <= 3
+  },
+  getMenuEl: () => getPieMenuEl(),
+
+  getInteractionScope: () => (pieController.interactionScope.value),
+  
+  options: {
+    closeOnOutside: true,
+    closeOnEsc: true,
+    restoreFocus: true,
+    stopPointerOutside: true,
+    allowAnchorClick: false, // di solito per pie non serve
+    lockScroll: false,
+  },
+})
+
+
+
+
 </script>
 
 <template>
@@ -324,9 +649,11 @@ const isLoginRoute = computed(() => router.currentRoute.value?.name === 'login' 
     <div class="layout">
       <!-- DOCKED SIDEBAR (100vh) -->
       <div
+        data-pie-area="sidebar"
         v-if="isDocked"
-        class="sidebar-docked"
+        class="sidebar-docked test"
         :style="{ width: ui.sidebarWidth + 'px' }"
+        :class="{ 'pie-move-armed': ui.SidebarMoveToArmed }"
       >
         <PagesSidebar @logout="handleLogout" ref="dockedSidebarRef" variant="docked" :indentPx="24" />
 
@@ -342,7 +669,8 @@ const isLoginRoute = computed(() => router.currentRoute.value?.name === 'login' 
       </div>
 
       <!-- CONTENT AREA (Topbar + router view) -->
-      <div class="content-area">
+      <div class="content-area"
+      data-pie-area="main">
 
         <Topbar
         class="app-topbar" :class="{ hidden: ui.topbarHidden }"
@@ -350,7 +678,7 @@ const isLoginRoute = computed(() => router.currentRoute.value?.name === 'login' 
        
         </Topbar>
 
-        <main class="content">
+        <main class="content" @pointerdown="onBlankPointer">
           <div class="content-scroll scrollbar-auto ">
             <div v-if="errorMsg" class="error">{{ errorMsg }}</div>
             <router-view />
@@ -384,17 +712,74 @@ const isLoginRoute = computed(() => router.currentRoute.value?.name === 'login' 
       <PagesSidebar ref="flyoutSidebarRef" variant="flyout" :indentPx="24" />
     </FlyoutSidebar>
   </div>
+
+  <Teleport to="body">
+  <PieMenu
+  ref="mainMenuRef"
+  v-show="pieOpen && overlay.has('pie') && pieTop === 'main'"
+  :open="pieOpen  && overlay.has('pie')"
+  :x="pieAnchorX"
+  :y="pieAnchorY"
+  :centerX="pieCenter.x"
+  :centerY="pieCenter.y"
+  :context="pieContext"
+  :mode="pieMode"
+  :area="pieArea"
+  :onRegisterApi="pieController.registerMenuApi"
+  :onUnregisterApi="pieController.unregisterMenuApi"
+/>
+
+<PieColorMenu
+  ref="colorPieRef"
+  v-show="pieOpen && overlay.has('pie') && pieTop === 'color'"
+  :open="pieOpen && overlay.has('pie') && pieTop === 'color'"
+  :onRegisterApi="pieController.registerMenuApi"
+  :onUnregisterApi="pieController.unregisterMenuApi"
+  :x="pieAnchorX"
+  :y="pieAnchorY"
+  :centerX="pieCenter.x"
+  :centerY="pieCenter.y"
+  :context="pieContext"
+  :textTokens="TEXT_TOKENS"
+  :bgTokens="BG_TOKENS"
+  :currentText="currentText"
+  :currentBg="currentBg"
+  :labelForText="labelForText"
+  :labelForBg="labelForBg"
+  :letterStyleForText="letterStyleForText"
+  :swatchStyleForBg="swatchStyleForBg"
+/>
+</Teleport>
   <Teleport to="body">
    <div
     v-if="!isLoginRoute && showBackdrop"
     class="overlay-backdrop"
+    data-pie-overlay="true"
+    :style="{ pointerEvents: overlay.top?.interactionScope === 'global' ? 'none' : 'auto' }"
     @pointerdown.capture="onBackdropPointerDown"
     @wheel.capture="onBackdropWheel"
     @touchmove.capture.prevent.stop
-  /></Teleport>
+  />
+  </Teleport>
 </template>
 
 <style scoped>
+/*SIDEBAR HIGHLIGHT WHEN MOVE-TO ARMED*/
+  .sidebar.pie-move-armed {
+    outline: 2px solid rgba(0,0,0,.12);
+    background: rgba(255,255,255,.35);
+  }
+  .sidebar.pie-move-armed [data-page-id] {
+    transition: background .08s ease;
+  }
+  .sidebar.pie-move-armed [data-page-id].pie-drop-hover {
+    background: rgba(0,0,0,.06);
+  }
+
+  .test::after{
+    background: blue;
+  }
+
   .overlay-backdrop {
   position: fixed;
   inset: 0;
@@ -409,8 +794,8 @@ const isLoginRoute = computed(() => router.currentRoute.value?.name === 'login' 
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #fff;
-  color: #111;
+  background: var(--bg-main); /*#fff*/
+  color: var(--text-main); /*#111*/
   overflow: hidden;
 }
 
@@ -482,7 +867,7 @@ const isLoginRoute = computed(() => router.currentRoute.value?.name === 'login' 
 .content-scroll {
   height: 100%;
   overflow: auto;
-  padding: 24px;
+  padding: 0px;
 }
 
 /* hit area invisibile per flyout */

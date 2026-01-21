@@ -4,9 +4,22 @@ import RecursiveDraggable from '@/components/draggableList/RecursiveDraggable.vu
 
 const props = defineProps({
   items: { type: Array, required: true },
+  allowInside: { type: Boolean, default: true },
+  indent: {type:Number, default: 0},
+  canDropInside: { type: Function, default: null },
+
+  overlayInsetX: { type: Number, default: 0 },
+  lineInsetX: { type: Number, default: 12 },
+
+  // nuove (override se presenti)
+  overlayInsetLeft:  { type: Number, default: null },
+  overlayInsetRight: { type: Number, default: null },
+
+  lineInsetLeft:  { type: Number, default: null },
+  lineInsetRight: { type: Number, default: null },
 })
 
-const emit = defineEmits(['intent-commit'])
+const emit = defineEmits(['intent-commit','addChildToggle'])
 
 // bounds per overlay “fantasma”
 const boundsEl = ref(null)
@@ -29,6 +42,20 @@ function clearTimer() {
   if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null }
 }
 
+function resolveInsets(containerRect, {
+  insetX,
+  insetLeft,
+  insetRight,
+}) {
+  const left  = insetLeft  != null ? insetLeft  : insetX ?? 0
+  const right = insetRight != null ? insetRight : insetX ?? 0
+
+  const x = containerRect.left + left
+  const w = Math.max(0, containerRect.width - left - right)
+
+  return { left: x, width: w }
+}
+
 function hideOverlays() {
   if (lineEl.value) lineEl.value.style.opacity = '0'
   if (bgEl.value) bgEl.value.style.opacity = '0'
@@ -36,9 +63,12 @@ function hideOverlays() {
 }
 
 function showLineAt(rowRect, containerRect, where) {
-  const LINE_PADDING = 12
-  const left = containerRect.left + LINE_PADDING
-  const width = Math.max(0, containerRect.width - LINE_PADDING * 2)
+  const { left, width } = resolveInsets(containerRect, {
+    insetX: props.lineInsetX,
+    insetLeft: props.lineInsetLeft,
+    insetRight: props.lineInsetRight,
+  })
+
   const y = where === 'top' ? rowRect.top : rowRect.bottom
 
   lineEl.value.style.left = `${left}px`
@@ -48,19 +78,51 @@ function showLineAt(rowRect, containerRect, where) {
 }
 
 function showBgAt(rowRect, containerRect) {
-  bgEl.value.style.left = `${containerRect.left}px`
-  bgEl.value.style.width = `${Math.max(0, containerRect.width)}px`
+  const { left, width } = resolveInsets(containerRect, {
+    insetX: props.overlayInsetX,
+    insetLeft: props.overlayInsetLeft,
+    insetRight: props.overlayInsetRight,
+  })
+
+  bgEl.value.style.left = `${left}px`
+  bgEl.value.style.width = `${width}px`
   bgEl.value.style.top = `${rowRect.top}px`
   bgEl.value.style.height = `${rowRect.height}px`
   bgEl.value.style.opacity = '1'
 }
 
 function showDescendantsAt(itemRect, containerRect) {
-  descEl.value.style.left = `${containerRect.left}px`
-  descEl.value.style.width = `${Math.max(0, containerRect.width)}px`
+  const { left, width } = resolveInsets(containerRect, {
+    insetX: props.overlayInsetX,
+    insetLeft: props.overlayInsetLeft,
+    insetRight: props.overlayInsetRight,
+  })
+
+  descEl.value.style.left = `${left}px`
+  descEl.value.style.width = `${width}px`
   descEl.value.style.top = `${itemRect.top}px`
   descEl.value.style.height = `${itemRect.height}px`
   descEl.value.style.opacity = '1'
+}
+
+function findItemById(list, id) {
+  const stack = [...(list ?? [])]
+  while (stack.length) {
+    const n = stack.pop()
+    if (String(n.id) === String(id)) return n
+    if (n.children?.length) stack.push(...n.children)
+  }
+  return null
+}
+
+function isInsideAllowedForTarget(targetId) {
+  if (!props.allowInside) return false
+  if (!props.canDropInside) return true // ✅ comportamento legacy
+
+  const target = findItemById(props.items, targetId)
+  const dragged = draggedId ? findItemById(props.items, draggedId) : null
+
+  return !!props.canDropInside({ targetId, draggedId, target, dragged })
 }
 
 function pickRowFromPoint(x, y) {
@@ -85,10 +147,17 @@ function pickRowFromPoint(x, y) {
 function computeIntentForRow(rowEl, x, y) {
   const rect = rowEl.getBoundingClientRect()
   const yRel01 = rect.height ? (y - rect.top) / rect.height : 0
-
   const EDGE = 0.20
-  if (yRel01 > EDGE && yRel01 < 1 - EDGE) {
-    return { mode: 'inside', rect }
+
+  const itemEl = rowEl.closest('.draggable-item')
+  const targetId = itemEl?.dataset?.id
+
+  const insideAllowed = !!targetId && isInsideAllowedForTarget(targetId)
+
+  if (insideAllowed) {
+    if (yRel01 > EDGE && yRel01 < 1 - EDGE) {
+      return { mode: 'inside', rect }
+    }
   }
 
   const mid = rect.top + rect.height / 2
@@ -142,6 +211,7 @@ function onDragOver(e) {
     const intent = computeIntentForRow(rowEl, x, y)
 
     if (intent.mode === 'inside') {
+      if (!props.allowInside) return
       if (lastMode === 'inside') return
       lastMode = 'inside'
 
@@ -228,15 +298,16 @@ const dndOptions = {
 
 <template>
   <div ref="boundsEl" class="dnd-bounds">
-    <RecursiveDraggable :items="items" :dnd-options="dndOptions">
+    <RecursiveDraggable :items="items" :dnd-options="dndOptions" :indent="indent" 
+    @addChildToggle="(...args) => $emit('addChildToggle', ...args)">
       <template #row="slotProps">
         <slot name="row" v-bind="slotProps" />
       </template>
     </RecursiveDraggable>
   </div>
 
-  <div ref="bgEl" class="drop-bg-overlay"></div>
-  <div ref="descEl" class="drop-desc-overlay"></div>
+  <div v-if="allowInside" ref="bgEl" class="drop-bg-overlay"></div>
+  <div v-if="allowInside" ref="descEl" class="drop-desc-overlay"></div>
   <div ref="lineEl" class="drop-line-overlay"></div>
 </template>
 

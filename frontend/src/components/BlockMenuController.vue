@@ -11,6 +11,12 @@ import ActionMenuDB from '@/components/ActionMenuDB.vue'
 import BlockColorMenuDB from '@/components/BlockColorMenuDB.vue'
 import { styleForTextToken, styleForBgToken } from '@/theme/colorsCatalog'
 
+import MoveToPageTreeMenuDB from '@/components/MoveToPageTreeMenuDB.vue'
+
+import usePagesStore from '@/stores/pages'
+
+const pagesStore = usePagesStore()
+
 import {
   TEXT_TOKENS,
   BG_TOKENS,
@@ -43,7 +49,9 @@ const blocksStore = useBlocksStore()
 const rootOpen = ref(false)
 const typeOpen = ref(false)
 const colorOpen = ref(false)
-const anyOpen = computed(() => rootOpen.value || typeOpen.value || colorOpen.value)
+const moveOpen = ref(false)
+const anyOpen = computed(() => rootOpen.value || typeOpen.value || colorOpen.value || moveOpen.value)
+
 
 // root anchor
 const anchorResolved = computed(() => unref(props.anchorEl) ?? null)
@@ -53,12 +61,16 @@ const { anchorRect: rootRect, scheduleUpdate: bumpRoot } = useLiveAnchorRect(anc
 const rootCompRef = ref(null)
 const typeCompRef = ref(null)
 const colorMenuRef = ref(null)
+const moveMenuRef = ref(null)
+
+
 
 // DOM of root menu
 const rootMenuEl = computed(() => rootCompRef.value?.menuRef?.value?.$el ?? null)
 //const typeMenuEl = computed(() => typeCompRef.value?.menuRef?.value?.$el ?? null)
 const typeMenuEl = typeCompRef.value?.getMenuEl()
 const colorMenuEl = computed(() => colorMenuRef.value?.$el ?? null)
+const moveMenuEl = computed(() => moveMenuRef.value?.getMenuEl?.() ?? moveMenuRef.value?.$el ?? null)
 
 function getRootItemEl(id) {
   /*const el = rootMenuEl.value
@@ -68,9 +80,11 @@ function getRootItemEl(id) {
 
 const typeAnchorEl = computed(() => getRootItemEl('submenu:type'))
 const colorAnchorEl = computed(() => getRootItemEl('submenu:color'))
+const moveAnchorEl = computed(() => getRootItemEl('move_to'))
 
 const { anchorRect: typeRect, scheduleUpdate: bumpType } = useLiveAnchorRect(typeAnchorEl, typeOpen)
 const { anchorRect: colorRect, scheduleUpdate: bumpColor } = useLiveAnchorRect(colorAnchorEl, colorOpen)
+const { anchorRect: moveRect, scheduleUpdate: bumpMove } = useLiveAnchorRect(moveAnchorEl, moveOpen)
 
 // overlay layer id
 const layerId = computed(() => {
@@ -80,6 +94,7 @@ const layerId = computed(() => {
 
 // topmost element for overlay
 const activeMenuEl = computed(() => {
+  if (moveOpen.value) return moveMenuEl.value
   if (colorOpen.value) return colorMenuEl.value
   if (typeOpen.value) return typeMenuEl.value
   if (rootOpen.value) return rootMenuEl.value
@@ -88,6 +103,7 @@ const activeMenuEl = computed(() => {
 
 function requestCloseTopmost() {
   console.log("request close","COLOR:",colorOpen.value,"TYPE:",typeOpen.value)
+  if (moveOpen.value) { moveOpen.value = false; return }
   if (colorOpen.value) { colorOpen.value = false; return }
   if (typeOpen.value) { typeOpen.value = false; return }
   if (rootOpen.value) doCloseAll()
@@ -98,6 +114,7 @@ function doOpen() {
   rootOpen.value = true
   typeOpen.value = false
   colorOpen.value = false
+  moveOpen.value = false
   nextTick(() => bumpRoot())
 }
 function doCloseAll() {
@@ -105,6 +122,7 @@ function doCloseAll() {
   rootOpen.value = false
   typeOpen.value = false
   colorOpen.value = false
+  moveOpen.value = false
   emit('close')
 }
 function toggle() {
@@ -125,7 +143,7 @@ async function waitForRootItem(id, tries = 6) {
 defineExpose({ open: doOpen, close: doCloseAll, toggle })
 
 // -------- ROOT ITEMS --------
-const rootItems = computed(() => ([
+/*const rootItems = computed(() => ([
   { type: 'item', id: 'submenu:type', label: 'Block type…', icon: '↪', submenu: true },
   { type: 'item', id: 'submenu:color', label: 'Color…', icon: '🎨', submenu: true },
   { type: 'separator' },
@@ -135,7 +153,52 @@ const rootItems = computed(() => ([
   { type: 'item', id: 'comment', label: 'Comment', icon: '💬', disabled: !props.enableComment },
   { type: 'separator' },
   { type: 'item', id: 'delete', label: 'Delete block', icon: '🗑️', danger: true },
-]))
+]))*/
+/*const rootItems = computed(() => ([
+  { type: 'item', id: 'submenu:type', label: 'Block style', iconId: 'lucide:blocks', submenu: true },
+  { type: 'item', id: 'submenu:color', label: 'Color', iconId: 'lucide:palette', submenu: true },
+  { type: 'separator' },
+  { type: 'item', id: 'move_to', label: 'Move to…', iconId: 'lucide:folder-input', disabled: false },
+  { type: 'item', id: 'duplicate', label: 'Duplicate', iconId: 'lucide:copy', disabled: false },
+  { type: 'item', id: 'copy_link', label: 'Copy link to block', iconId: 'lucide:link', disabled: !props.enableCopyLink },
+  { type: 'item', id: 'comment', label: 'Comment', iconId: 'lucide:message-circle', disabled: !props.enableComment },
+  { type: 'separator' },
+  { type: 'item', id: 'delete', label: 'Delete block', iconId: 'lucide:trash-2', danger: true },
+]))*/
+
+const MENU_BASE = [
+  { type: 'item', id: 'submenu:type', label: 'Block style', iconId: 'lucide:blocks', submenu: true },
+  { type: 'item', id: 'submenu:color', label: 'Color', iconId: 'lucide:palette', submenu: true },
+  { type: 'separator' },
+  { type: 'item', id: 'move_to', label: 'Move to…', iconId: 'lucide:folder-input', disabled: false },
+  { type: 'item', id: 'duplicate', label: 'Duplicate', iconId: 'lucide:copy', disabled: false },
+  { type: 'item', id: 'copy_link', label: 'Copy link to block', iconId: 'lucide:link', disabled: !props.enableCopyLink },
+  { type: 'item', id: 'comment', label: 'Comment', iconId: 'lucide:message-circle', disabled: !props.enableComment },
+  { type: 'separator' },
+  { type: 'item', id: 'delete', label: 'Delete block', iconId: 'lucide:trash-2', danger: true },
+]
+
+const MENU_RULES = {
+  code: { hide: ['submenu:color'] },
+}
+
+function compactSeparators(items) {
+  const res = []
+  for (const it of items) {
+    if (it.type === 'separator' && (res.length === 0 || res.at(-1).type === 'separator')) continue
+    res.push(it)
+  }
+  while (res.at(-1)?.type === 'separator') res.pop()
+  return res
+}
+
+const rootItems = computed(() => {
+  const type = blocksStore.blocksById[props.blockId]?.type ?? 'default'
+  const hide = new Set(MENU_RULES[type]?.hide ?? [])
+
+  const filtered = MENU_BASE.filter((it) => it.type === 'separator' || !hide.has(it.id))
+  return compactSeparators(filtered)
+})
 
 // -------- TYPE MENU --------
 const typeItems = computed(() => ([
@@ -188,6 +251,21 @@ async function openColorMenu() {
   bumpColor()
 }
 
+async function openMoveMenu() {
+  if (!rootOpen.value) return
+
+  typeOpen.value = false
+  colorOpen.value = false
+
+  const el = await waitForRootItem('move_to')
+  if (!el) return
+
+  moveOpen.value = true
+  await nextTick()
+  bumpMove()
+}
+
+
 // -------- HANDLERS --------
 async function onRootAction({ id }) {
   const blockId = props.blockId
@@ -201,6 +279,21 @@ async function onRootAction({ id }) {
     doCloseAll()
     return
   }
+
+  if (id === 'move_to') { 
+  await openMoveMenu()
+  return
+}
+ if (id === 'duplicate') { 
+  try{
+  await blocksStore.duplicateBlockInPlace(props.pageId, blockId)
+  } catch(e){
+    console.error("Error duplicating block:", e)
+  }
+  doCloseAll()
+  return
+}
+
 
   // TODO: implement
   if (id === 'move_to' || id === 'duplicate' || id === 'copy_link' || id === 'comment') {
@@ -240,23 +333,7 @@ function setBgColor(token) {
   blocksStore.updateBlockStyle(props.blockId, { bgColor: token })
   doCloseAll()
 }
-
-// overlay
-/*const { syncOpen } = useOverlayLayer(layerId, () => ({
-  getMenuEl: () => activeMenuEl.value,
-  getAnchorEl: () => anchorResolved.value,
-  close: requestCloseTopmost,
-  options: {
-    closeOnEsc: true,
-    closeOnOutside: true,
-    stopPointerOutside: true,
-    lockScroll: !!props.lockScrollOnOpen,
-    restoreFocus: true,
-    allowAnchorClick: true,
-  },
-}))
-
-syncOpen(computed(() => !!layerId.value && anyOpen.value))*/
+// -------- OVERLAY LAYERS --------
 
 const baseLayerId = computed(() => {
   if (!props.pageId || !props.blockId) return null
@@ -321,6 +398,34 @@ const { syncOpen: syncColorOpen } = useOverlayLayer(colorLayerId, () => ({
 }))
 syncColorOpen(computed(() => !!colorLayerId.value && colorOpen.value))
 
+const moveLayerId = computed(() => (baseLayerId.value ? `${baseLayerId.value}:move` : null))
+
+const { syncOpen: syncMoveOpen } = useOverlayLayer(moveLayerId, () => ({
+  getMenuEl: () => moveMenuRef.value?.getMenuEl?.() ?? null,
+  getAnchorEl: () => moveAnchorEl.value,
+  close: () => { moveOpen.value = false },
+  options: {
+    closeOnEsc: true,
+    closeOnOutside: true,
+    stopPointerOutside: true,
+    lockScroll: false,
+    restoreFocus: false,
+    allowAnchorClick: true,
+  },
+}))
+syncMoveOpen(computed(() => !!moveLayerId.value && moveOpen.value))
+
+
+async function onMoveToSelect(toPageId) {
+  await blocksStore.transferSubtreeToPage({
+    fromPageId: props.pageId,
+    toPageId,
+    rootId: props.blockId,
+    toParentId: null,
+    afterBlockId: null,
+  })
+  doCloseAll()
+}
 </script>
 
 <template>
@@ -381,5 +486,20 @@ syncColorOpen(computed(() => !!colorLayerId.value && colorOpen.value))
         @done="doCloseAll"
       />
     </ActionMenuDB>
+    <!-- MOVE TO SUBMENU -->
+    <MoveToPageTreeMenuDB
+      ref="moveMenuRef"
+      :open="moveOpen"
+      :anchorRect="moveRect"
+      :anchorEl="moveAnchorEl"
+      :currentPageId="pageId"
+      placement="left-start"
+      :minWidth="340"
+      :gap="6"
+      :sideOffsetX="0"
+      
+      @select="onMoveToSelect"
+      @close="() => (moveOpen = false)"
+    />
   </Teleport>
 </template>

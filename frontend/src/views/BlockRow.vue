@@ -1,9 +1,13 @@
 <script setup>
    import BlockEditor from '@/views/BlockEditor.vue';
    import { useBlocksStore } from '@/stores/blocks'
-   import { nextTick, computed, ref, onMounted,onUnmounted, toRef,watch } from 'vue';
+   import { nextTick, computed, ref, onMounted,onBeforeUnmount, toRef,watch, useAttrs } from 'vue';
   import { classForTextToken, classForBgToken } from '@/theme/colorsCatalog'
-   
+   import CodeToolbarButtons from '@/components/CodeToolbarButtons.vue'
+  
+   defineOptions({ inheritAttrs: false })
+  const attrs = useAttrs()
+
   const blocksStore = useBlocksStore()
 
    const props = defineProps({
@@ -13,28 +17,74 @@
     parentKey: String,
     registerMenuAnchor: Function,
     blockActionMenuId: String,
+    lastEmptyRootId: { type: [String, Number, null], default: null },
+    registerRowEl: Function,
    })
 
    const menuBtn = ref(null)
    const langBtn = ref(null)
    const isCallout = computed(() => props.block.type === 'callout')
+   const isToggle = computed(() => props.block.type === 'toggle')
 
+    const dragHandleRef = ref(null)
+
+   const isExpanded = computed(()=> blocksStore.isExpanded(props.block.id))
+   function handleToggleExpand(e){
+    e?.stopPropagation?.()
+    blocksStore.toggleExpandBlock?.(props.block.id)
+   }
+
+   const toolbarRef = ref(null)
    onMounted(() => {
-  if (menuBtn.value) {props.registerMenuAnchor?.(props.block.id,menuBtn.value,'actions')}
+  /*if (menuBtn.value) {props.registerMenuAnchor?.(props.block.id,menuBtn.value,'actions')}
   if (props.block.type === 'code' && langBtn.value) {
-    props.registerMenuAnchor?.(props.block.id,langBtn.value,'lang')}
+    props.registerMenuAnchor?.(props.block.id,langBtn.value,'lang')}*/
+    props.registerMenuAnchor?.(props.block.id, toolbarRef.value?.getDotsEl?.(), 'actions')
+    props.registerMenuAnchor?.(props.block.id, dragHandleRef, 'dragHandleActions')
+  if (props.block.type === 'code') {
+    props.registerMenuAnchor?.(props.block.id, toolbarRef.value?.getLangEl?.(), 'lang')
+   }
+ })
+
+ watch(
+  () => props.block.type,
+  (t) => {
+    // deregistra tutto e registra solo quello che serve
+    props.registerMenuAnchor?.(props.block.id, toolbarRef.value?.getDotsEl?.() ?? null, 'actions')
+
+    if (t === 'code') {
+      props.registerMenuAnchor?.(props.block.id, toolbarRef.value?.getLangEl?.() ?? null, 'lang')
+    } else {
+      props.registerMenuAnchor?.(props.block.id, null, 'lang')
+      // props.registerMenuAnchor?.(props.block.id, null, 'wrap')
+    }
+  }
+)
+onMounted(() => {
+    props.registerRowEl?.(props.block.id, rowElement.value)
+  })
+
+onBeforeUnmount(() => {
+  props.registerRowEl?.(props.block.id, null)
+  props.registerMenuAnchor?.(props.block.id, null, 'actions')
+  props.registerMenuAnchor?.(props.block.id, null, 'lang')
+  props.registerMenuAnchor?.(props.block.id, null, 'dragHandleActions')
+  // props.registerMenuAnchor?.(props.block.id, null, 'wrap')
 })
 
-  onUnmounted(() => {
+
+
+
+ /* onUnmounted(() => {
 
     props.registerMenuAnchor?.(props.block.id,null,'actions')
     props.registerMenuAnchor?.(props.block.id,null,'lang' )
-  })
+  })*/
   //===COLOR PICKER====
   const styleClasses = computed(() => {
   const s = props.block?.props?.style ?? {}
-  console.log("BLOCKROW:", s.bgColor)
-  console.log(classForBgToken(s.bgColor))
+ // console.log("BLOCKROW:", s.bgColor)
+  //console.log(classForBgToken(s.bgColor))
  
   return [
     classForTextToken(s.textColor ?? 'default'),
@@ -67,10 +117,20 @@ watch(props.block?.props?.style, (newStyle) => {
    const emit = defineEmits(['open-menu', 'open-lang-menu'])
 
    function handleOpenMenu(e) {
-    emit('open-menu', props.block.id)
+    console.log("OPEN MENU for block:", props.block.id)
+    emit('open-menu', props.block.id, e)
    }
+   
+
    function handleOpenLangMenu() {
     emit('open-lang-menu', props.block.id)
+  }
+
+ 
+
+  function handleToggleWrap() {
+    console.log("TOGGLE WRAP for block:", props.block.id)
+    blocksStore.updateBlockContent(props.block.id, { wrap: !(props.block.content?.wrap ?? true) })
   }
 
    async function handleInsertAfter() {
@@ -83,7 +143,8 @@ watch(props.block?.props?.style, (newStyle) => {
       blocksStore.requestFocus(newId, 0)
     }
 
-const INDENT = 24   
+let INDENT = 24  
+
 
 const isHighlighted = ref(false)
 
@@ -99,6 +160,8 @@ watch(
   },
   { immediate: true }
 )
+
+const rowElement = ref(null)
 </script>
 
  
@@ -111,6 +174,7 @@ watch(
   >
     <!-- GUTTER -->
     <div class="gutter">
+       
       <button
         class="plus"
         type="button"
@@ -121,59 +185,113 @@ watch(
       </button>
 
       <button
+        ref="dragHandleRef"
         class="drag-handle"
         type="button"
         title="Drag"
-        @click.stop
+        @click.stop="handleOpenMenu('dragHandleActions')"
       >
         ⋮⋮
       </button>
     </div>
 
     <!-- CONTENT ROW -->
-    <div
+     <div
+      ref="rowElement"
       class="row"
       :class="[
         { highlighted: isHighlighted },
         { 'is-code-card': block.type === 'code' },
-        {'is-callout': isCallout}
-      ]"
-      :style="{background: `var(--${classForBgToken(block.props.style.bgColor)})`,}"
-    >
-      <div class="blockContent" :class="styleClasses"
-      :style="{ color: `var(--${classForTextToken(block.props.style.textColor)})`,
-         background: `var(--c-text-${block.props.style.bgColor})` }">
-        <BlockEditor :block="block" :pageId="pageId" />
-      </div>
+        {'is-callout': isCallout},
+        {'is-toggle': isToggle}
+      ]" >
+        <div class="rowLeft" :class="{ 'has-toggle': isToggle }">
+          <button
+            v-if="isToggle"
+            class="chevron"
+            :class="{ expanded: isExpanded }"
+            type="button"
+            :title="isExpanded ? 'Collapse' : 'Expand'"
+            @click.stop="handleToggleExpand"
+          >
+            ▸
+          </button>
 
-      <div class="blockActions">
-        <!-- Language pill (solo code) -->
-        <button
-          v-if="block.type === 'code'"
-          ref="langBtn"
-          class="lang-pill"
-          type="button"
-          @click.stop="handleOpenLangMenu"
-        >
-          {{ block.content?.language ?? 'plaintext' }} 
-        </button>
 
-        <!-- Dots (sempre) -->
-        <button
-          ref="menuBtn"
-          class="dots"
-          type="button"
-          @click.stop="handleOpenMenu"
-        >
-          ⋯
-        </button>
+          <div class="blockContent" :class="styleClasses"
+          :style="{ color: `var(--${classForTextToken(block.props.style.textColor)})`,
+             }">
+            <BlockEditor :block="block" :pageId="pageId" 
+            :lastEmptyRootId="lastEmptyRootId"
+             v-bind="attrs"
+             />
+          </div>
+        </div>
+      <div class="blockActions"
+       v-if="block.type==='code'">
+        <CodeToolbarButtons
+          ref="toolbarRef"
+          :isCode="block.type === 'code'"
+          :languageLabel="block.content?.language ?? 'plaintext'"
+          :wrapOn="block.content?.wrap ?? true"
+          @wrap="handleToggleWrap"
+          @lang="handleOpenLangMenu"
+          @dots="handleOpenMenu('actions')"
+        />
+
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
+ .chevron{
+  width: 22px;
+  height: 22px;
+  align-self: start;
+  margin-top: 2px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+
+  transform: rotate(0deg);
+  transition: transform 140ms 
+  cubic-bezier(.2,.8,.2,1), 
+  background-color 120ms ease, color 120ms ease;
+  will-change: transform;
+}
+
+/* sempre visibile sul toggle */
+.rowLeft.has-toggle .chevron{
+  opacity: 1;
+  pointer-events: auto;
+ 
+}
+
+.chevron.expanded{
+  transform: rotate(90deg);
+}
+
+
+.chevron:hover{
+  background: var(--bg-icon-hover);
+  color: var(--text-main);
+}
+
+/* IMPORTANT: flex child shrink */
+.blockContent{
+  min-height: 0;
+  width: 100%;
+  min-width: 0;
   
+}
+
+
+
 .block-item {
   display: grid;
   grid-template-columns: var(--block-gutter) 1fr;
@@ -185,38 +303,91 @@ watch(
 /* GUTTER */
 .gutter {
   display: flex;
-  align-items: center;
+  align-items: start;
+  padding-top: 3px;
+  padding-right: 10px;
   justify-content: center;
   gap: 6px;
 }
 
 /* ROW (hover area) */
 /* ROW base: grid con colonna azioni fissa */
+
 .row {
+  min-width: 70px;
   display: grid;
   grid-template-columns: 1fr var(--block-actions-w);
   align-items: stretch;
   gap: 6px;
-
-  padding: 0 0 4px var(--block-row-pad-x);
-  border-radius: 5px;
+  
+  padding: 0 0 0px var(--block-row-pad-x);
+  border-radius: 2px;
   padding-right: 4px;
   padding-top:4px;
   padding-bottom:4px;
+  padding-left: 3px;
+  cursor: text;
+}
+.rowLeft{
+  position: relative;
+  display: grid;
+  align-items: stretch;
+  min-width: 0;
+  padding: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: transparent !important;
+ 
+}
+/* solo se toggle: aggiungi spazio tra chevron e testo */
+.rowLeft.has-toggle{
+  gap: 6px;
+}
+.row.is-toggle{
+  padding-left: 0px;   /* o 2px */
 }
 
 /* ========== CODE CARD ========== */
 .row.is-code-card {
   /* card styling in tema chiaro */
   border: 0px solid rgba(0,0,0,.10);
-  background: rgba(0,0,0,.02);
+  background:transparent;
   border-radius: 12px;
+  overflow: hidden;
 
   /* qui diamo un po' più respiro */
   padding-bottom: 8px;
+  padding-left: 6px;
+  padding-right: 0px;
   margin-top: 5px;
   margin-bottom: 5px;
 }
+.code-pills{
+  position: absolute;
+  top: var(--code-toolbar-top);
+  right: calc(var(--block-actions-w) + var(--code-actions-gap));
+  display: inline-flex;
+  gap: 6px;
+  opacity: 0;
+  pointer-events: none;
+}
+.block-item:hover .code-pills,
+.block-item:focus-within .code-pills{
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* wrap-pill e lang-pill ora NON più absolute */
+.wrap-pill, .lang-pill{
+  position: static;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+
+
+
+/* ========== CALLOUT ========== */
 
 .row.is-callout{
 
@@ -242,6 +413,7 @@ watch(
 /* Handle + plus: solo su hover */
 .drag-handle,
 .plus {
+  
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms ease, background-color 120ms ease;
@@ -255,44 +427,47 @@ watch(
 
 /* PLUS — quadrato su hover */
 .plus {
-  width: 20px;
-  height: 20px;
+  width: 30px;
+  height: 25px;
   border-radius: 6px; /* quadrato morbido */
   border: 0;
   background: transparent;
   cursor: pointer;
   display: grid;
   place-items: center;
-  
+  transform: translateY(2.5px);
   align-items: center;
   justify-items: center;
-  color: rgba(0,0,0,.35);
-  font-size: 14px;
+  color: var(--text-muted);
+  font-size: 18px;
 }
 
 .plus:hover {
   background: rgba(0,0,0,.08);
-  color: rgba(0,0,0,.65);
+  color: var(--text-main);
 }
 
 /* DRAG HANDLE */
 .drag-handle {
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 30px;
+  padding-left: 4px;
+  padding-right: 4px;
   border-radius: 6px;
   border: 0;
   background: transparent;
   cursor: grab;
   display: grid;
-  place-items: center;
-  color: rgba(0,0,0,.35);
-  font-size: 12px;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 22px;
+  
 }
 
 .drag-handle:hover {
   /*background: rgba(0,0,0,.08);*/
-  background: rgba(0,0,0,.00);
-  color: rgba(0,0,0,.65);
+  background: var(--bg-icon-hover);
+  color: var(--text-main);
 }
 
 .drag-handle:active {
@@ -301,8 +476,10 @@ watch(
 
 /* Contenuto */
 .blockContent {
+  position: relative;
   min-width: 0;
   border-radius: 12px;
+   
 }
 
 /* Actions column sempre uguale (allineamento dots) */

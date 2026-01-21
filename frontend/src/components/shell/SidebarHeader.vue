@@ -10,7 +10,7 @@ const props = defineProps({
   displayName: { type: String, default: '' },
 })
 
-const emit = defineEmits(['new-page', 'profile', 'logout'])
+const emit = defineEmits(['new-page', 'profile', 'logout', 'toggleTheme'])
 
 //===USER ACTION MENU===
 
@@ -68,7 +68,7 @@ const avatarRef = ref(null)
   ref="userActionMenuRef"
   :anchorEl="avatarRef"
   :displayName="displayName"
-  
+  @toggleTheme="$emit('toggleTheme')"
   @logout="$emit('logout')"
 />
 
@@ -89,7 +89,7 @@ const avatarRef = ref(null)
   background: transparent;
 }
 .sidebar-header:hover{
-  background: rgba(0,0,0,.04);
+  background: var(--bg-hover);
 }
 
 .identity {
@@ -105,16 +105,17 @@ const avatarRef = ref(null)
   text-align: left;
 }
 
-.avatar {
+:deep(.avatar) {
   width: 28px;
   height: 28px;
   border-radius: 9px;
   display: grid;
   place-items: center;
 
-  background: rgba(0,0,0,.10);
+  background: var(--bg-icon-dark);
   font-weight: 700;
   font-size: 13px;
+  color:var(--text-secondary);
 }
 
 .name {
@@ -124,6 +125,7 @@ const avatarRef = ref(null)
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--text-main);
 }
 
 .actions {
@@ -138,14 +140,13 @@ const avatarRef = ref(null)
   border-radius: var(--bar-radius);
   padding: 0 10px;
   
-  border: 1px solid rgba(0,0,0,.12);
-  background: rgba(255,255,255,.75);
+  border: 0px solid rgba(0,0,0,.12);
+  color:var(--icon-main);
+  background: var(--bg-icon-transp);
   cursor: pointer;
   font-size: 14px;
   line-height: 1;
 }
 
-.icon-btn:hover {
-  background: #fff;
-}
+
 </style>

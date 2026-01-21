@@ -9,7 +9,27 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.10.1",
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-html": "^6.4.11",
+    "@codemirror/lang-javascript": "^6.2.4",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/lang-python": "^6.2.1",
+    "@codemirror/lang-sql": "^6.10.0",
+    "@codemirror/language": "^6.12.1",
+    "@codemirror/state": "^6.5.4",
+    "@codemirror/view": "^6.39.11",
+    "@lezer/highlight": "^1.2.3",
+    "@tiptap/core": "^3.15.3",
+    "@tiptap/extension-bubble-menu": "^3.15.3",
+    "@tiptap/extension-link": "^3.15.3",
+    "@tiptap/extension-placeholder": "^3.15.3",
+    "@tiptap/extension-underline": "^3.15.3",
+    "@tiptap/starter-kit": "^3.15.3",
+    "@tiptap/vue-3": "^3.15.3",
     "axios": "^1.13.2",
+    "codemirror": "^6.0.2",
     "fractional-indexing": "^3.2.0",
     "lucide-vue-next": "^0.562.0",
     "pinia": "^3.0.4",
@@ -21,7 +41,10 @@
     "vuedraggable": "^4.1.0"
   },
   "devDependencies": {
+    "@types/node": "^25.0.9",
     "@vitejs/plugin-vue": "^6.0.1",
-    "vite": "^7.2.4"
+    "typescript": "^5.9.3",
+    "vite": "^7.2.4",
+    "vue-tsc": "^3.2.2"
   }
 }

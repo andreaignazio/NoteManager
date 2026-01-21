@@ -114,14 +114,17 @@ defineExpose({
 
 .popover {
   border-radius: 12px;
-  border: 1px solid rgba(0,0,0,.10);
-  background: rgba(255,255,255,.95);
-  box-shadow: 0 10px 30px rgba(0,0,0,.10);
+  border: 0px solid rgba(0,0,0,.10);
+  background: transparent;
+ /* box-shadow: 0 10px 30px rgba(0,0,0,.10);*/
   backdrop-filter: blur(8px);
   padding: 10px;
+  position: relative;
+  
 }
 
 .row {
+  position: relative;
   display: grid;
   grid-template-columns: 34px 1fr;
   gap: 10px;
@@ -132,43 +135,45 @@ defineExpose({
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  border: 1px solid rgba(0,0,0,.10);
-  background: rgba(0,0,0,.02);
+  border: 0px solid var(--border-menu);
+  background: var(--bg-icon-dark);
   display: flex;
   align-items: center;
   justify-content: center;
   outline: none;
   cursor: pointer;
   padding: 0;
+  color: var(--text-secondary);
 }
 
-.icon-btn:hover { background: rgba(0,0,0,.04); }
+.icon-btn:hover { background: var(--bg-icon-dark-hover); }
 .icon-btn:focus {
-  border-color: rgba(0,0,0,.25);
-  background: rgba(0,0,0,.03);
+  border-color: var(--border-menu);
+  background: var(--bg-icon-dark-hover);
 }
 
 .title-input {
   height: 34px;
   border-radius: 10px;
-  border: 1px solid rgba(0,0,0,.10);
-  background: rgba(0,0,0,.02);
+  border: 1px solid var(--border-menu );
+  background: var(--bg-input);
   padding: 0 10px;
   font-size: 13px;
   font-weight: 650;
-  color: rgba(0,0,0,.80);
+  color: var(--text-main);
   outline: none;
 }
 
 .title-input:focus {
-  border-color: rgba(0,0,0,.25);
-  background: rgba(0,0,0,.03);
+  border-color: var(--border-menu-focus);
+  background: var(--bg-input-focus);
 }
 
 .hint {
   margin-top: 8px;
   font-size: 11px;
-  color: rgba(0,0,0,.45);
+  color: var(--text-secondary);
+
   user-select: none;
 }
 </style>

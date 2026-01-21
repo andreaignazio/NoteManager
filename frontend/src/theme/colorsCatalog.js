@@ -102,6 +102,6 @@ export function styleForTextToken(token) {
 
 export function styleForBgToken(token) {
   if (token === 'default') return { backgroundColor: 'transparent' }
-  console.log("FROMcATALOG:",`var(--${COLOR_CATALOG.bg[token].class})`)
+ // console.log("FROMcATALOG:",`var(--${COLOR_CATALOG.bg[token].class})`)
   return { backgroundColor: `var(--${COLOR_CATALOG.bg[token].class})` }
 }

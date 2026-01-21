@@ -3,7 +3,7 @@ import { computed, nextTick, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useUiStore } from '@/stores/ui'
 import usePagesStore from '@/stores/pages'
-
+import FavoriteButton from '@/components/FavoriteButton.vue'
 import PageActionsController from '@/components/PageActionsController.vue'
 import PageTitlePopoverController from '@/components/PageTitlePopoverController.vue'
 import { getIconComponent } from '@/icons/catalog'
@@ -17,6 +17,10 @@ const pageTitle = computed(() => pagesStore.pagesById[currentPageId.value]?.titl
 //const pageIcon = computed(() => pagesStore.pagesById[currentPageId.value]?.icon || '📄')
  const pageIcon = computed(() => getIconComponent(pagesStore.pagesById[currentPageId.value]?.icon))
 
+ const isFavorite = computed(() => {
+  const page = pagesStore.pagesById[currentPageId.value]
+  return page ? page.favorite : false
+})
 // ===== Title Popover =====
 const titleBtnEl = ref(null)
 const pageTitlePopoverRef = ref(null)
@@ -42,6 +46,14 @@ function togglePageMenu() {
 
 function onRenameFromMenu() {
   openTitlePopover()
+}
+
+function handleToggleMode() {
+  ui.toggleTheme()
+} 
+
+function handleToggleFavorite() {
+  pagesStore.toggleFavorite(currentPageId.value)
 }
 </script>
 
@@ -75,8 +87,10 @@ function onRenameFromMenu() {
 
     <!-- RIGHT -->
     <div class="right">
+     <!--  <button class="icon-btn" type="button"  title="Mode (coming soon)" @click="handleToggleMode">*</button>-->
       <button class="icon-btn" type="button" disabled title="Share (coming soon)">⤴︎</button>
-      <button class="icon-btn" type="button" disabled title="Favorite (coming soon)">☆</button>
+     <!-- <button class="icon-btn" type="button"   title="Favorite" @click="handleToggleFavorite"  >☆</button>-->
+      <FavoriteButton :is-favorite="isFavorite" @toggle="handleToggleFavorite" />
 
       <button
         ref="menuBtnEl"
@@ -89,7 +103,7 @@ function onRenameFromMenu() {
         ⋯
       </button>
 
-      <!-- Smart controller (no UI itself, it teleports its menus to body) -->
+      
       <PageActionsController
         ref="actionsRef"
         :anchorEl="menuBtnEl"
@@ -104,7 +118,7 @@ function onRenameFromMenu() {
       :pageId="currentPageId"
       :anchorEl="titleBtnEl"
       :lockScrollOnOpen="true" 
-      anchorLocation="sidebar" 
+      anchorLocation="topbar" 
       
       />
     </div>
@@ -137,9 +151,9 @@ function onRenameFromMenu() {
   height: 34px;
   width: 34px;
   border-radius: var(--bar-radius);
-
+  color: var(--icon-main);
   border: 0px solid rgba(0, 0, 0, 0.12);
-  background: rgba(255, 255, 255, 0.55);
+  background: var(--bg-icon-transp);
   cursor: pointer;
   display: grid;
   place-items: center;
@@ -148,7 +162,7 @@ function onRenameFromMenu() {
 }
 
 .icon-btn:hover {
-  background: var(--bar-btn-color);
+  background: var(--bg-bar-btn-hover);
 }
 
 .icon-btn:disabled {
@@ -161,7 +175,7 @@ function onRenameFromMenu() {
   max-width: 520px;
   border-radius: 10px;
   border: 0px solid rgba(0, 0, 0, 0.1);
-  background: rgba(255, 255, 255, 0.45);
+  background: var(--bg-icon-transp);
   padding: 0 10px;
   cursor: pointer;
 
@@ -172,7 +186,7 @@ function onRenameFromMenu() {
 }
 
 .title-btn:hover {
-  background: var(--bar-btn-color);
+  background: var(--bg-bar-btn-hover);
 }
 
 .title-icon {
@@ -181,12 +195,13 @@ function onRenameFromMenu() {
   font-size: 14px;
   line-height: 1;
   opacity: 0.85;
+  color:var(--icon-main);
 }
 
 .title-text {
   font-size: 13px;
   font-weight: 650;
-  color: rgba(0, 0, 0, 0.72);
+  color: var(--text-main);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

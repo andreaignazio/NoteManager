@@ -78,14 +78,14 @@ const emit = defineEmits(['setText', 'setBg', 'close', 'done'])
 <style scoped>
 .menu {
   padding: 6px;
-  min-width: 280px;
+  max-width: 260px;
 }
 
 /* Titoli sezione */
 .sectionTitle {
   font-size: 12px;
   font-weight: 600;
-  color: rgba(0,0,0,.55);
+  color: var(--text-secondary);
   padding: 8px 10px 6px;
 }
 
@@ -93,7 +93,7 @@ const emit = defineEmits(['setText', 'setBg', 'close', 'done'])
 .divider {
   height: 1px;
   margin: 8px 8px;
-  background: rgba(0,0,0,.08);
+  background: var(--border-menu);
 }
 
 /* Riga */
@@ -111,10 +111,10 @@ const emit = defineEmits(['setText', 'setBg', 'close', 'done'])
   text-align: left;
 }
 
-.row:hover { background: rgba(0,0,0,.04); }
-.row:active { background: rgba(0,0,0,.06); }
+.row:hover { background: var(--bg-hover); }
+.row:active { background: var(--bg-hover); }
 
-.row.active { background: rgba(0,0,0,.03); }
+.row.active { background: var(--bg-hover); }
 
 .row:focus-visible {
   outline: 2px solid rgba(0,0,0,.12);
@@ -131,7 +131,7 @@ const emit = defineEmits(['setText', 'setBg', 'close', 'done'])
 
 .label {
   font-size: 14px;
-  color: rgba(0,0,0,.85);
+  color: var(--text-main);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -158,10 +158,11 @@ const emit = defineEmits(['setText', 'setBg', 'close', 'done'])
   font-size: 14px;
 
   background: rgba(0,0,0,.02);
-  border: 1px solid rgba(0,0,0,.10);
+  border: 1px solid var(--border-menu);
 
   /* la lettera prende il colore dal tuo inline style */
   color: inherit;
+  opacity: 0.4;
 }
 
 
@@ -170,10 +171,11 @@ const emit = defineEmits(['setText', 'setBg', 'close', 'done'])
   width: 26px;
   height: 26px;
   border-radius: 7px;
-  border: 1px solid rgba(0,0,0,.10);
+  border: 1px solid var(--border-menu);
 
   /* il riempimento lo fa l’inline style backgroundColor */
   background: transparent;
+  opacity: .5;
 }
 
 
@@ -182,4 +184,5 @@ const emit = defineEmits(['setText', 'setBg', 'close', 'done'])
   outline: 2px solid rgba(255,255,255,.18);
   outline-offset: 2px;
 }
+
 </style>

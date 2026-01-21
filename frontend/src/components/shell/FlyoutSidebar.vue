@@ -267,8 +267,8 @@ const bridgeStyle = computed(() => ({
 
 .flyout-panel {
   position: relative;
-  background: #fff;
-  border-right: 1px solid rgba(0,0,0,.08);
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-main);
   box-shadow: 0 10px 30px rgba(0,0,0,.12);
   /*overflow: auto;*/
 
@@ -295,7 +295,11 @@ const bridgeStyle = computed(() => ({
   touch-action: none;
   pointer-events: auto;
   z-index: 5;
+  transition: all 0.2s;
+  
 }
+.flyout-resize-handle:hover {
+  background: var(--border-main);}
 
 .flyout-resize-handle::after {
   content: '';

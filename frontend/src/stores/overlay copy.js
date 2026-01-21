@@ -93,7 +93,7 @@ export const useOverlayStore = defineStore('overlay', {
     },
 
     _onKeydown(e) {
-      console.log("onKeyDown")
+      
       const top = this.top
       if (!top) return
       if (e.key !== 'Escape') return
@@ -106,7 +106,7 @@ export const useOverlayStore = defineStore('overlay', {
 
     _onPointerDown(e) {
       
-      console.log("OVERLAYS:onPointerDown")
+      
       const top = this.top
       if (!top) return
 

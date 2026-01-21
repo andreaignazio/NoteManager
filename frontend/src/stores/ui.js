@@ -10,11 +10,23 @@ export const useUiStore = defineStore('ui', {
     sidebarMode: 'docked', // 'docked' | 'hidden'
     sidebarWidth: 280,
 
-    themeMode: 'system', // 'system' | 'light' | 'dark'
+    //themeMode: 'system', // 'system' | 'light' | 'dark'
 
+    themeMode: 'light',
+    lastOpenedPageId: null,
    
     _hydrated: false,
     topbarHidden: false,
+
+    pageViewOnPointer: [],
+
+    SidebarMoveToArmed: false,
+    SidebarMoveToHoverPageId: null,
+
+    recentlyAddedPageId: null,
+
+    pendingSidebarScrollToPageId: null,
+
   }),
 
   getters: {
@@ -24,16 +36,74 @@ export const useUiStore = defineStore('ui', {
   },
 
   actions: {
-    getSystemTheme() {
+    armMoveTo() {
+      this.SidebarMoveToArmed = true
+      this.SidebarMoveToHoverPageId = null
+    },
+    disarmMoveTo() {
+      this.SidebarMoveToArmed = false
+      this.SidebarMoveToHoverPageId = null
+    },
+    setMoveToHoverPageId(id) {
+      this.SidebarMoveToHoverPageId = id
+    },
+
+    requestScrollToPage(pageId) {
+      this.pendingSidebarScrollToPageId = pageId
+    },
+    consumeScrollToPageRequest(pageId) {
+      if (this.pendingSidebarScrollToPageId === pageId) {
+        this.pendingSidebarScrollToPageId = null
+        return true
+      }
+      return false
+    },
+   /* getSystemTheme() {
       return window.matchMedia?.('(prefers-color-scheme: dark)')?.matches ? 'dark' : 'light'
     },
 
     applyThemeToDom(mode) {
       const resolved = mode === 'system' ? getSystemTheme() : mode
       document.documentElement.dataset.theme = resolved // <html data-theme="dark">
-    },
+    },*/
     setTopbarHidden(v) { this.topbarHidden = !!v },
 
+    applyTheme(mode) {
+      const html = document.documentElement;
+      if(mode==='dark') {
+        html.setAttribute('data-theme', 'dark')
+        //localStorage.setItem('theme', 'dark')
+      } else if(mode==='light') {
+        html.setAttribute('data-theme', 'light')
+        //localStorage.setItem('theme', 'light')
+      } else {return}
+    },
+
+    toggleTheme() {
+      if(this.themeMode==='light') {
+        this.themeMode='dark'
+        this.applyTheme('dark')
+        this.persist()
+      } else {
+        this.themeMode='light'
+        this.applyTheme('light')
+        this.persist()
+      }   
+    },
+    setLastAddedPageId(id){
+      this.recentlyAddedPageId = id
+      let t = setTimeout(()=>{
+        this.recentlyAddedPageId = null
+        clearTimeout(t)
+      }, 500)
+    },
+    resetLstAddedPageId(){
+      this.recentlyAddedPageId = null
+    },
+    getLastAddedPageId(){
+      return this.recentlyAddedPageId ?? null
+    },
+    
     hydrate() {
       if (this._hydrated) return
       this._hydrated = true
@@ -52,7 +122,10 @@ export const useUiStore = defineStore('ui', {
         if (data?.themeMode === 'light' || data?.themeMode === 'dark' || data?.themeMode === 'system') {
           this.themeMode = data.themeMode
         }
-        applyThemeToDom(this.themeMode)
+        if(typeof data?.lastOpenedPageId === 'string'){
+          this.lastOpenedPageId = data.lastOpenedPageId
+        }
+        this.applyTheme(this.themeMode)
       } catch {
         // ignore
       }
@@ -66,6 +139,7 @@ export const useUiStore = defineStore('ui', {
             sidebarMode: this.sidebarMode,
             sidebarWidth: this.sidebarWidth,
             themeMode: this.themeMode,
+            lastOpenedPageId: this.lastOpenedPageId,
           })
         )
       } catch {
@@ -93,6 +167,15 @@ export const useUiStore = defineStore('ui', {
       applyThemeToDom(mode)
       this.persist()
     },
+
+    registerPageView(fn){
+      this.pageViewOnPointer.push(fn)
+    },
+
+    callPageView(e){
+      this.pageViewOnPointer?.at(-1)?.(e)
+    }
+
   },
 })
 

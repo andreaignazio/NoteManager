@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
+import { getIconComponent } from '@/icons/catalog'
 
 const props = defineProps({
   // compat: può essere Array<string> (vecchio) oppure Array<IconItem> (nuovo)
@@ -61,7 +62,9 @@ function pick(item) {
         placeholder="Search"
         autocomplete="off"
       />
-      <button class="x" type="button" @click="$emit('close')">✕</button>
+       <button class="x" type="button" @click="$emit('close')">
+       <component :is="getIconComponent('lucide:x')" :size="18" />
+       </button> 
     </div>
 
     <div class="grid" role="list">
@@ -100,16 +103,20 @@ function pick(item) {
   flex: 1;
   height: 32px;
   border-radius: 10px;
-  border: 1px solid rgba(0,0,0,.10);
-  background: rgba(0,0,0,.02);
+  border: 1.2px solid var(--border-menu);
+  background: var(--bg-search) !important;
   padding: 0 10px;
   outline: none;
   font-size: 13px;
+  color: var(--text-secondary);
+  transition: color 0.2s, background 0.2s, border 0.2s ease-in-out;
 }
 
 .search:focus {
-  border-color: rgba(0,0,0,.25);
-  background: rgba(0,0,0,.03);
+  border: 1px solid;
+  border-color: var(--border-menu-focus);
+  color: var(--text-main);
+  background: var(--bg-search-focus);
 }
 
 .x {
@@ -117,11 +124,16 @@ function pick(item) {
   height: 32px;
   border-radius: 10px;
   border: 0;
-  background: rgba(0,0,0,.06);
+  background: var(--bg-icon-dark);
   cursor: pointer;
+  color:var(--text-secondary);
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.x:hover { background: rgba(0,0,0,.10); }
+.x:hover { background: var(--bg-icon-dark-hover); }
 
 .grid {
   display: grid;
@@ -136,17 +148,20 @@ function pick(item) {
   height: 32px;
   border-radius: 10px;
   border: 0;
-  background: transparent;
+  background: var(--bg-icon-transp);
   cursor: pointer;
   font-size: 18px;
   line-height: 1;
-
+  color: var(--text-secondary);
   /* centra bene le icone lucide */
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.cell:hover { background: rgba(0,0,0,.06); }
-.cell:active { background: rgba(0,0,0,.10); }
+.cell:hover { 
+  color:var(--text-main);
+  background: var(--bg-icon-hover); 
+}
+.cell:active { background: var(--bg-icon-hover); }
 </style>

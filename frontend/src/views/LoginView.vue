@@ -79,7 +79,7 @@ const handleRegister = async () => { try{
         </div>
 
         <div class="hint">
-          Tip: press Tab to switch fields · Enter to submit (optional)
+          Tab to switch fields · Enter to submit
         </div>
       </div>
     </div>

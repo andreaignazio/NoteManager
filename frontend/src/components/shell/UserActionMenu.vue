@@ -3,6 +3,10 @@ import { computed, ref, unref, nextTick } from 'vue'
 import ActionMenuDB from '@/components/ActionMenuDB.vue'
 import useLiveAnchorRect from '@/composables/useLiveAnchorRect'
 import { useOverlayLayer } from '@/composables/useOverlayLayer'
+import ThemeToggleButton from '@/components/buttons/ThemeToggleButton.vue'
+import { useUiStore } from '@/stores/ui'
+import { storeToRefs } from 'pinia'
+const ui = useUiStore()
 
 const props = defineProps({
   anchorEl: { type: [Object, null], default: null }, // HTMLElement | ref
@@ -20,6 +24,8 @@ const { anchorRect, scheduleUpdate } = useLiveAnchorRect(anchorResolved, isOpen)
 // ref al componente ActionMenuDB (che espone .el)
 const userMenuRef = ref(null)
 
+const {mode: theme} = storeToRefs(ui)
+
 // id univoco per evitare conflitti se SidebarHeader esiste 2 volte (docked + flyout)
 const layerId = `userMenu:${Math.random().toString(36).slice(2)}`
 
@@ -34,6 +40,10 @@ function close() {
 function toggle() {
   isOpen.value ? close() : open()
 }
+
+function handleToggleMode() {
+  ui.toggleTheme()
+} 
 
 defineExpose({ open, close, toggle })
 
@@ -81,9 +91,12 @@ const initial = computed(() => {
           <span class="name" :title="displayName">{{ displayName || 'User' }}</span>
         </button>
 
-        <button class="icon-ghost" type="button" disabled title="Settings (soon)">
+      <div class="theme-toggle" >
+        <ThemeToggleButton :theme="theme" @toggle="handleToggleMode" />
+        </div>
+        <!--<button class="icon-ghost" type="button" disabled title="Settings (soon)">
           ⚙︎
-        </button>
+        </button>--> 
       </div>
 
       <div class="sep" aria-hidden="true"></div>
@@ -103,6 +116,17 @@ const initial = computed(() => {
 
 <style scoped>
 /* sezioni interne al menu */
+
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  margin-top: 4px;
+  margin-bottom: 4px;
+  border: 0px;
+  
+}
 .sec {
   padding: 8px;
   display: flex;
@@ -156,10 +180,17 @@ const initial = computed(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--text-main);  
 }
 
 /* logout full-width */
 .btn-ghost {
   width: 100%;
+  color: var(--text-main);
+}
+.btn-ghost:hover {
+  color: var(--text-danger) !important;
+  background:var(--bg-menu-danger)!important;
+
 }
 </style>

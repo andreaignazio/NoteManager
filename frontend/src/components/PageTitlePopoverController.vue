@@ -25,6 +25,7 @@ const props = defineProps({
   iconSideOffsetX: { type: Number, default: 0 },
   lockScrollOnOpen: { type: Boolean, default: false },
   anchorLocation: {type: String, default: ''},
+  scope: { type: String, default: 'tree' },
 })
 
 const emit = defineEmits(['close', 'commit'])
@@ -57,14 +58,18 @@ function requestCloseTopmost() {
   if (titleOpen.value) closeAll()
 }
 
-const layerId = computed(() => props.pageId ? `${props.anchorLocation}:page-title:${props.pageId}` : null)
+onMounted(() => {
+  console.log('[PageTitlePopover] mounted, registering overlay close handler. PageId:', props.pageId)
+})
+
+const layerId = computed(() => props.pageId ? `${props.anchorLocation}:page-title:${props.pageId}:${props.scope}` : null)
 
 const { syncOpen } = useOverlayLayer(
   layerId,
   () => ({
-    getMenuEl: () => activeMenuEl.value,
+    getMenuEl: () => titleMenuRef.value?.getMenuEl?.() ?? null,
     getAnchorEl: () => titleAnchorResolved.value,
-    close: () => requestCloseTopmost(),
+    close: () => closeTitle(),
     options: {
       closeOnEsc: true,
       closeOnOutside: true,
@@ -76,7 +81,30 @@ const { syncOpen } = useOverlayLayer(
   })
 )
 //const test = computed(() => !!layerId.value && anyOpen.value)
-syncOpen(computed(() => !!layerId.value && anyOpen.value))
+syncOpen(computed(() => !!layerId.value && titleOpen.value))
+
+let layerIdIcon = computed(() => props.pageId ? `${props.anchorLocation}:page-actions:${props.pageId}:${props.scope}` : null)
+
+//layerIdIcon = "blblblfdldlf"
+
+const { syncOpen: syncOpenIcon } = useOverlayLayer(
+  layerIdIcon,
+  () => ({
+    getMenuEl: () => iconMenuRef.value?.getMenuEl?.() ?? null,
+    getAnchorEl: () => titleAnchorResolved.value,
+    close: () => closeIconPicker(),
+    options: {
+      closeOnEsc: true,
+      closeOnOutside: true,
+      stopPointerOutside: true,
+      lockScroll: !!props.lockScrollOnOpen,
+      restoreFocus: true,
+      allowAnchorClick: true,
+    },
+  })
+)
+//const test = computed(() => !!layerId.value && anyOpen.value)
+syncOpenIcon(computed(() => !!layerIdIcon && iconOpen.value))
 
 
 
@@ -218,7 +246,7 @@ async function onCommit({ icon, title }) {
       />
     </ActionMenuDB>
 
-    <!-- Icon picker popover (layered) -->
+    <!-- Icon picker popover (layered) --> 
     <ActionMenuDB
     ref="iconMenuRef"
       :open="iconOpen"
@@ -229,13 +257,23 @@ async function onCommit({ icon, title }) {
       :minWidth="iconMinWidth"
       :gap="iconGap"
       :sideOffsetX="iconSideOffsetX"
+
+      :scroll="true"
+      :maxHeight="200"
+
       @close="closeIconPicker"
     >
       <IconPickerDB
         :icons="ICONS"
+        
         @select="onSelectIcon"
         @close="closeIconPicker"  
       />
     </ActionMenuDB>
   </Teleport>
 </template>
+
+<style scoped>
+
+
+</style>

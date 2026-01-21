@@ -3,16 +3,19 @@ import api from '@/services/api'
 import { posBetween } from '@/domain/position'
 import { useBlocksStore } from '@/stores/blocks'
 
+
+
 function normalizePage(raw) {
     return {
         id: raw.id,
-        title: raw.title ? raw.title : 'New Page',
+        title: raw.title ? raw.title : 'Untitled',
         parentId: raw.parent,
         position: raw.position,
         createdAt: raw.created_at,
         updatedAt: raw.updated_at,
         icon: raw.icon,
-        favorite: raw.favorite
+        favorite: raw.favorite,
+        favorite_position: raw.favorite_position,
 
     }
 }
@@ -21,7 +24,7 @@ const KEY_ROOT = 'root'
 const parentKeyOf = (parentId) => parentId == null ? KEY_ROOT : String(parentId)
 
 
-const usePagesStore = defineStore('pagesStore', {
+export const usePagesStore = defineStore('pagesStore', {
     state: () => ({
         //Data
         pages: [],
@@ -33,6 +36,8 @@ const usePagesStore = defineStore('pagesStore', {
         editingPageId: null,
         draftPage: {title: "", },
         originalPage: {title: "", },
+        
+        pendingFocusTitlePageId: null,
 
         //Context Menu
         contextMenu: {
@@ -102,6 +107,17 @@ const usePagesStore = defineStore('pagesStore', {
         },
         setContextMenuRect(anchorRect){
             this.contextMenu.anchorRect = anchorRect
+        },
+
+        requestTitleFocus(pageId){
+            this.pendingFocusTitlePageId = pageId
+        },
+        consumeTitleFocusRequest(pageId){
+            if (this.pendingFocusTitlePageId === pageId) {
+                this.pendingFocusTitlePageId = null
+                return true
+            }
+            return false
         },
 
         async fetchPagesK(){
@@ -202,6 +218,55 @@ const usePagesStore = defineStore('pagesStore', {
                 }
 
         },
+        async addPageAfterId(prevPageId) {
+            try {
+                const prev = this.pagesById[prevPageId]
+                if (!prev) {
+                // fallback: ricarico e riprovo una volta
+                await this.fetchPages()
+                const prev2 = this.pagesById[prevPageId]
+                if (!prev2) throw new Error(`addPageAfterId: prevPageId ${prevPageId} not found`)
+                return await this.addPageAfterId(prevPageId)
+                }
+
+                const parentId = prev.parentId ?? null
+                const parentKey = parentKeyOf(parentId)
+
+                const siblingIds = this.childrenByParentId[parentKey] ?? []
+                // assicuro ordine per position
+                const ordered = [...siblingIds].sort((idA, idB) => {
+                const posA = this.pagesById[idA]?.position ?? "\uffff"
+                const posB = this.pagesById[idB]?.position ?? "\uffff"
+                const cmp = posA < posB ? -1 : posA > posB ? 1 : 0
+                return cmp !== 0 ? cmp : String(idA).localeCompare(String(idB))
+                })
+
+                const idx = ordered.indexOf(prevPageId)
+                // se non lo trovo tra i siblings (stato non allineato), meglio rifetch
+                if (idx === -1) {
+                await this.fetchPages()
+                return await this.addPageAfterId(prevPageId)
+                }
+
+                const nextId = ordered[idx + 1] ?? null
+                const prevPos = this.pagesById[prevPageId]?.position ?? null
+                const nextPos = nextId ? (this.pagesById[nextId]?.position ?? null) : null
+
+                const newPos = posBetween(prevPos, nextPos)
+
+                const res = await api.post("/pages/", {
+                parent: parentId,
+                position: newPos,
+                })
+
+                await this.fetchPages()
+
+                return res.data.id
+            } catch (error) {
+                console.warn("Error in addPageAfterId:", error)
+                throw error
+            }
+            },
 
         async movePageInside(pageId, newParentId){
             let newPos = null
@@ -236,6 +301,7 @@ const usePagesStore = defineStore('pagesStore', {
         },
 
         async patchPage(pageId, payload){
+            if(String(payload.title).trim()==='') payload.title = 'Untitled'
            const res =  await api.patch(`/pages/${pageId}/`, payload)
            return res
 
@@ -343,266 +409,303 @@ const usePagesStore = defineStore('pagesStore', {
             return false
             },
             
-            async duplicatePageDeep(sourcePageId) {
-                const blocksStore = useBlocksStore()
+        async duplicatePageDeep(sourcePageId) {
+            const blocksStore = useBlocksStore()
 
-                const src = this.pagesById[String(sourcePageId)]
-                if (!src) throw new Error('Source page not found')
+            const src = this.pagesById[String(sourcePageId)]
+            if (!src) throw new Error('Source page not found')
 
-                // 1) compute new page position (immediately after)
-                const parentId = src.parentId ?? null
-                const parentKey = parentKeyOf(parentId)
-                const siblings = [...(this.childrenByParentId[parentKey] ?? [])].map(String)
+            // 1) compute new page position (immediately after)
+            const parentId = src.parentId ?? null
+            const parentKey = parentKeyOf(parentId)
+            const siblings = [...(this.childrenByParentId[parentKey] ?? [])].map(String)
 
-                const idx = siblings.indexOf(String(sourcePageId))
-                const nextId = idx >= 0 ? (siblings[idx + 1] ?? null) : null
+            const idx = siblings.indexOf(String(sourcePageId))
+            const nextId = idx >= 0 ? (siblings[idx + 1] ?? null) : null
 
-                const nextPos = nextId ? (this.pagesById[String(nextId)]?.position ?? null) : null
-                const newPos = posBetween(src.position ?? null, nextPos)
+            const nextPos = nextId ? (this.pagesById[String(nextId)]?.position ?? null) : null
+            const newPos = posBetween(src.position ?? null, nextPos)
 
-                // 2) create new page (same parent, icon, title)
-                const payload = {
-                    title: `Copy of ${src.title || 'Untitled'}`,
-                    icon: src.icon ?? '',
-                    parent: parentId,
-                    position: newPos,
+            // 2) create new page (same parent, icon, title)
+            const payload = {
+                title: `Copy of ${src.title || 'Untitled'}`,
+                icon: src.icon ?? '',
+                parent: parentId,
+                position: newPos,
+            }
+
+            // ⬇️ adatta a come crei pagine oggi
+            // es: const created = await api.post('/pages/', payload)
+            const created = await api.post('/pages/', payload)
+            const newPage = created.data
+            const newPageId = String(newPage.id)
+
+            // IMPORTANT: inserisci la pagina nello store + siblings order
+            // (adatta alle tue funzioni esistenti)
+            this.pagesById[newPageId] = normalizePage(newPage)
+            // insert right after src
+            if (idx >= 0) {
+                const nextSibs = siblings.slice()
+                nextSibs.splice(idx + 1, 0, newPageId)
+                this.childrenByParentId[parentKey] = nextSibs
+            }
+
+            // 3) fetch blocks for source page if needed
+            await blocksStore.fetchBlocksForPage(String(sourcePageId))
+
+            // 4) get preorder rows (parents before children)
+            const rows = blocksStore.renderRowsForPage(String(sourcePageId))
+
+            // 5) clone blocks into new page preserving parent mapping
+            const idMap = new Map() // oldBlockId -> newBlockId
+
+            for (const row of rows) {
+                const b = row.block
+                const oldId = String(b.id)
+                const oldParentId = b.parentId != null ? String(b.parentId) : null
+                const newParentId = oldParentId ? idMap.get(oldParentId) ?? null : null
+
+                const createPayload = {
+                type: b.type,
+                content: b.content,           // copia JSON
+                position: b.position,         // mantieni fractional index
+                parentId: newParentId,        // rimappato
                 }
 
-                // ⬇️ adatta a come crei pagine oggi
-                // es: const created = await api.post('/pages/', payload)
-                const created = await api.post('/pages/', payload)
-                const newPage = created.data
-                const newPageId = String(newPage.id)
+                // ⬇️ adatta all’endpoint che usi per creare blocchi
+                // esempio: POST /pages/:pageId/blocks/
+                const res = await api.post(`/pages/${newPageId}/blocks/`, createPayload)
+                const newBlock = res.data
+                idMap.set(oldId, String(newBlock.id))
+            }
 
-                // IMPORTANT: inserisci la pagina nello store + siblings order
-                // (adatta alle tue funzioni esistenti)
-                this.pagesById[newPageId] = normalizePage(newPage)
-                // insert right after src
-                if (idx >= 0) {
-                    const nextSibs = siblings.slice()
-                    nextSibs.splice(idx + 1, 0, newPageId)
-                    this.childrenByParentId[parentKey] = nextSibs
-                }
+            // 6) fetch blocks for new page (così UI è consistente)
+            await blocksStore.fetchBlocksForPage(newPageId)
 
-                // 3) fetch blocks for source page if needed
-                await blocksStore.fetchBlocksForPage(String(sourcePageId))
+            return newPageId
+        },
 
-                // 4) get preorder rows (parents before children)
-                const rows = blocksStore.renderRowsForPage(String(sourcePageId))
+        getNextPageIdAfterDelete(pageId) {
+        const id = String(pageId)
+        const p = this.pagesById[id]
+        if (!p) return null
 
-                // 5) clone blocks into new page preserving parent mapping
-                const idMap = new Map() // oldBlockId -> newBlockId
+        const parentId = p.parentId ?? null
+        const key = parentKeyOf(parentId)
+        const sibs = [...(this.childrenByParentId[key] ?? [])].map(String)
+        const idx = sibs.indexOf(id)
 
-                for (const row of rows) {
-                    const b = row.block
-                    const oldId = String(b.id)
-                    const oldParentId = b.parentId != null ? String(b.parentId) : null
-                    const newParentId = oldParentId ? idMap.get(oldParentId) ?? null : null
-
-                    const createPayload = {
-                    type: b.type,
-                    content: b.content,           // copia JSON
-                    position: b.position,         // mantieni fractional index
-                    parentId: newParentId,        // rimappato
-                    }
-
-                    // ⬇️ adatta all’endpoint che usi per creare blocchi
-                    // esempio: POST /pages/:pageId/blocks/
-                    const res = await api.post(`/pages/${newPageId}/blocks/`, createPayload)
-                    const newBlock = res.data
-                    idMap.set(oldId, String(newBlock.id))
-                }
-
-                // 6) fetch blocks for new page (così UI è consistente)
-                await blocksStore.fetchBlocksForPage(newPageId)
-
-                return newPageId
-            },
-
-            getNextPageIdAfterDelete(pageId) {
+        // 1) sorella successiva
+        if (idx !== -1 && idx + 1 < sibs.length) return sibs[idx + 1]
+        // 2) sorella precedente
+        if (idx !== -1 && idx - 1 >= 0) return sibs[idx - 1]
+        // 3) parent
+        if (parentId != null) return String(parentId)
+        // 4) fallback: prima root
+        const rootSibs = [...(this.childrenByParentId[parentKeyOf(null)] ?? [])].map(String)
+        return rootSibs[0] ?? null
+        },
+        async reparentChildrenToParent(pageId) {
+                console.log("reparenting")
             const id = String(pageId)
             const p = this.pagesById[id]
-            if (!p) return null
+            if (!p) return
 
-            const parentId = p.parentId ?? null
-            const key = parentKeyOf(parentId)
-            const sibs = [...(this.childrenByParentId[key] ?? [])].map(String)
-            const idx = sibs.indexOf(id)
+            const fromParentKey = parentKeyOf(id)
+            const children = [...(this.childrenByParentId[fromParentKey] ?? [])].map(String)
+            if (!children.length) return
 
-            // 1) sorella successiva
-            if (idx !== -1 && idx + 1 < sibs.length) return sibs[idx + 1]
-            // 2) sorella precedente
-            if (idx !== -1 && idx - 1 >= 0) return sibs[idx - 1]
-            // 3) parent
-            if (parentId != null) return String(parentId)
-            // 4) fallback: prima root
-            const rootSibs = [...(this.childrenByParentId[parentKeyOf(null)] ?? [])].map(String)
-            return rootSibs[0] ?? null
-            },
-            async reparentChildrenToParent(pageId) {
-                    console.log("reparenting")
-                const id = String(pageId)
-                const p = this.pagesById[id]
-                if (!p) return
+            const newParentId = p.parentId ?? null
+            const toKey = parentKeyOf(newParentId)
+            console.log("toKey:", toKey)
+            const dest = [...(this.childrenByParentId[toKey] ?? [])].map(String)
 
-                const fromParentKey = parentKeyOf(id)
-                const children = [...(this.childrenByParentId[fromParentKey] ?? [])].map(String)
-                if (!children.length) return
+            // posizione in fondo: tra lastPos e null
+            const lastId = dest.length ? dest[dest.length - 1] : null
+            let prevPos = lastId ? (this.pagesById[lastId]?.position ?? null) : null
+                console.log("prevPos:",prevPos)
+            for (const childId of children) {
+                const child = this.pagesById[childId]
+                //console.log("child:",child)
+                if (!child) continue
 
-                const newParentId = p.parentId ?? null
-                const toKey = parentKeyOf(newParentId)
-                console.log("toKey:", toKey)
-                const dest = [...(this.childrenByParentId[toKey] ?? [])].map(String)
+                const newPos = posBetween(prevPos, null)
+                prevPos = newPos
 
-                // posizione in fondo: tra lastPos e null
-                const lastId = dest.length ? dest[dest.length - 1] : null
-                let prevPos = lastId ? (this.pagesById[lastId]?.position ?? null) : null
-                    console.log("prevPos:",prevPos)
-                for (const childId of children) {
-                    const child = this.pagesById[childId]
-                    //console.log("child:",child)
-                    if (!child) continue
-
-                    const newPos = posBetween(prevPos, null)
-                    prevPos = newPos
-
-                    // optimistic local
-                    child.parentId = newParentId
-                    child.position = newPos
-                    console.log("child:",child, "pos:", newPos, "newParent:", newParentId)
-                    // aggiorna strutture in memoria
-                    // rimuovi da old children list
-                    // (ci penserai magari dopo con rebuild, ma facciamolo bene)
-                    // NB: usiamo arrays locali e poi riassegniamo
-                    // (per reattività pinia)
-                    this.childrenByParentId[fromParentKey] = (this.childrenByParentId[fromParentKey] ?? []).filter(x => String(x) !== childId)
-                    this.childrenByParentId[toKey] = [...(this.childrenByParentId[toKey] ?? []).map(String), childId]
-
-                    // persist
-                    await this.patchPage(childId, { parent: newParentId, position: newPos })
-                }
-            },
-            async movePageToParentAppend(pageId, newParentId) {
-                const id = String(pageId)
-                const page = this.pagesById[id]
-                if (!page) return
-
-                const nextParentId = newParentId == null ? null : String(newParentId)
-
-                // ✅ no-op
-                if (String(page.parentId ?? '') === String(nextParentId ?? '')) return
-
-                // ✅ block cycles (usa la tua funzione esistente)
-                if (this.wouldCreateCycle_Page?.(id, nextParentId)) return
-
-                const oldParentKey = parentKeyOf(page.parentId ?? null)
-                const newParentKey = parentKeyOf(nextParentId)
-
-                const oldSibs = [...(this.childrenByParentId[oldParentKey] ?? [])].map(String)
-                const newSibs = [...(this.childrenByParentId[newParentKey] ?? [])].map(String)
-
-                // posizione in fondo
-                const lastId = newSibs.length ? newSibs[newSibs.length - 1] : null
-                const lastPos = lastId ? (this.pagesById[lastId]?.position ?? null) : null
-                const newPos = posBetween(lastPos, null)
-
-                // optimistic: rimuovi da old, appendi a new
-                this.childrenByParentId[oldParentKey] = oldSibs.filter(x => x !== id)
-                this.childrenByParentId[newParentKey] = [...newSibs, id]
-
-                page.parentId = nextParentId
-                page.position = newPos
+                // optimistic local
+                child.parentId = newParentId
+                child.position = newPos
+                console.log("child:",child, "pos:", newPos, "newParent:", newParentId)
+                // aggiorna strutture in memoria
+                // rimuovi da old children list
+                // (ci penserai magari dopo con rebuild, ma facciamolo bene)
+                // NB: usiamo arrays locali e poi riassegniamo
+                // (per reattività pinia)
+                this.childrenByParentId[fromParentKey] = (this.childrenByParentId[fromParentKey] ?? []).filter(x => String(x) !== childId)
+                this.childrenByParentId[toKey] = [...(this.childrenByParentId[toKey] ?? []).map(String), childId]
 
                 // persist
-                await this.patchPage(id, { parent: nextParentId, position: newPos })
-            },
-            ensureVisible(pageId) {
-            const id = String(pageId)
-            let cur = this.pagesById[id]
-            if (!cur) return
-
-            // espandi tutti i parent fino a root
-            let parentId = cur.parentId ?? null
-            while (parentId != null) {
-                const pid = String(parentId)
-                this.expandedById[pid] = true
-                const p = this.pagesById[pid]
-                parentId = p?.parentId ?? null
+                await this.patchPage(childId, { parent: newParentId, position: newPos })
             }
-            },
+        },
+        async movePageToParentAppend(pageId, newParentId) {
+            const id = String(pageId)
+            const page = this.pagesById[id]
+            if (!page) return
 
-            updatePageLocationOptimistic(pageId, { newParentId, newPosition }) {
-                const page = this.pagesById[pageId];
-                if (!page) return; // Safety check
-                const oldParentKey = page.parentId || KEY_ROOT;
-                const newParentKey = newParentId || KEY_ROOT;
+            const nextParentId = newParentId == null ? null : String(newParentId)
 
-             
-                page.parentId = newParentId; 
-                page.position = newPosition;
+            // ✅ no-op
+            if (String(page.parentId ?? '') === String(nextParentId ?? '')) return
+
+            // ✅ block cycles (usa la tua funzione esistente)
+            if (this.wouldCreateCycle_Page?.(id, nextParentId)) return
+
+            const oldParentKey = parentKeyOf(page.parentId ?? null)
+            const newParentKey = parentKeyOf(nextParentId)
+
+            const oldSibs = [...(this.childrenByParentId[oldParentKey] ?? [])].map(String)
+            const newSibs = [...(this.childrenByParentId[newParentKey] ?? [])].map(String)
+
+            // posizione in fondo
+            const lastId = newSibs.length ? newSibs[newSibs.length - 1] : null
+            const lastPos = lastId ? (this.pagesById[lastId]?.position ?? null) : null
+            const newPos = posBetween(lastPos, null)
+
+            // optimistic: rimuovi da old, appendi a new
+            this.childrenByParentId[oldParentKey] = oldSibs.filter(x => x !== id)
+            this.childrenByParentId[newParentKey] = [...newSibs, id]
+
+            page.parentId = nextParentId
+            page.position = newPos
+
+            // persist
+            await this.patchPage(id, { parent: nextParentId, position: newPos })
+        },
+        ensureVisible(pageId) {
+        const id = String(pageId)
+        let cur = this.pagesById[id]
+        if (!cur) return
+
+        // espandi tutti i parent fino a root
+        let parentId = cur.parentId ?? null
+        while (parentId != null) {
+            const pid = String(parentId)
+            this.expandedById[pid] = true
+            const p = this.pagesById[pid]
+            parentId = p?.parentId ?? null
+        }
+        },
+
+        updatePageLocationOptimistic(pageId, { newParentId, newPosition }) {
+            const page = this.pagesById[pageId];
+            if (!page) return; // Safety check
+            const oldParentKey = page.parentId || KEY_ROOT;
+            const newParentKey = newParentId || KEY_ROOT;
 
             
-                if (this.childrenByParentId[oldParentKey]) {
-                    this.childrenByParentId[oldParentKey] = this.childrenByParentId[oldParentKey]
-                        .filter(id => id !== pageId);
-                }
+            page.parentId = newParentId; 
+            page.position = newPosition;
 
-             
-                if (!this.childrenByParentId[newParentKey]) {
-                    this.childrenByParentId[newParentKey] = [];
-                }
-                
-           
-                if (!this.childrenByParentId[newParentKey].includes(pageId)) {
-                    this.childrenByParentId[newParentKey].push(pageId);
-                }
-
-            
-                this.childrenByParentId[newParentKey].sort((idA, idB) => {
-                    const posA = this.pagesById[idA]?.position || '';
-                    const posB = this.pagesById[idB]?.position || '';
-                    
-                    // Comparazione stringhe standard (funziona con fractional indexing)
-                    if (posA < posB) return -1;
-                    if (posA > posB) return 1;
-                    return 0;
-                });
-
-         
-            },
-            isCircularMove(draggedId, targetParentId, pagesById) {
-                // Se stiamo spostando nella root (null), non può esserci ciclo
-                if (!targetParentId || targetParentId === 'root') return false;
-
-                // Se stiamo cercando di droppare su se stessi (impossibile da UI, ma per sicurezza)
-                if (draggedId === targetParentId) return true;
-
-                let currentParentId = targetParentId;
-                
-                while (currentParentId) {
-                 
-                    if (currentParentId === draggedId) return true;
-
-                  
-                    const parentNode = pagesById[currentParentId];
-                    
-                    
-                    if (!parentNode) break;
-                    currentParentId = parentNode.parentId;
-                }
-
-                return false;
-            },
-            childrenOf(parentId) {
-                const key = parentId == null ? 'root' : String(parentId)
-                return (this.childrenByParentId[key] ?? [])
-                    .map(id => this.pagesById[String(id)])
-                    .filter(Boolean)
-                    .sort((a, b) => a.position.localeCompare(b.position))
-                }
         
-    
-    
+            if (this.childrenByParentId[oldParentKey]) {
+                this.childrenByParentId[oldParentKey] = this.childrenByParentId[oldParentKey]
+                    .filter(id => id !== pageId);
+            }
+
+            
+            if (!this.childrenByParentId[newParentKey]) {
+                this.childrenByParentId[newParentKey] = [];
+            }
+            
+        
+            if (!this.childrenByParentId[newParentKey].includes(pageId)) {
+                this.childrenByParentId[newParentKey].push(pageId);
+            }
+
+        
+            this.childrenByParentId[newParentKey].sort((idA, idB) => {
+                const posA = this.pagesById[idA]?.position || '';
+                const posB = this.pagesById[idB]?.position || '';
+                
+                // Comparazione stringhe standard (funziona con fractional indexing)
+                if (posA < posB) return -1;
+                if (posA > posB) return 1;
+                return 0;
+            });
+
+        
+        },
+        isCircularMove(draggedId, targetParentId, pagesById) {
+            // Se stiamo spostando nella root (null), non può esserci ciclo
+            if (!targetParentId || targetParentId === 'root') return false;
+
+            // Se stiamo cercando di droppare su se stessi (impossibile da UI, ma per sicurezza)
+            if (draggedId === targetParentId) return true;
+
+            let currentParentId = targetParentId;
+            
+            while (currentParentId) {
+                
+                if (currentParentId === draggedId) return true;
+
+                
+                const parentNode = pagesById[currentParentId];
+                
+                
+                if (!parentNode) break;
+                currentParentId = parentNode.parentId;
+            }
+
+            return false;
+        },
+        childrenOf(parentId) {
+            const key = parentId == null ? 'root' : String(parentId)
+            return (this.childrenByParentId[key] ?? [])
+                .map(id => this.pagesById[String(id)])
+                .filter(Boolean)
+                .sort((a, b) => a.position.localeCompare(b.position))
+            },
+        
+        async duplicatePageTransactional(sourcePageId) {
+            const blocksStore = useBlocksStore()
+            console.log("DUPLICATE PAGE TRANSACTIONAL:", sourcePageId)
+            const res = await api.post(`/pages/${sourcePageId}/duplicate-deep/`, {
+            include_children: true, // o false
+            })
+            const newPageId = res.data.new_page_id
+
+            await this.fetchPages()
+            await blocksStore.fetchBlocksForPage(newPageId)
+            return res.data.new_page_id
+        },
+
+        async toggleFavorite(pageId) {
+            const id = String(pageId)
+            const page = this.pagesById[id]
+            if (!page) return
+            const newFavoriteStatus = !page.favorite
+
+            // Optimistic update
+            page.favorite = newFavoriteStatus
+            try {
+                await this.patchPage(id, { favorite: newFavoriteStatus })
+            } catch (error) {
+                // Revert in case of error
+                page.favorite = !newFavoriteStatus
+                console.error("Error toggling favorite status:", error)
+            }
+        },
+
+        hasFavoritePages() {
+            return Object.values(this.pagesById).some(page => page.favorite)
+        },
+        anyPage(){
+            return Object.keys(this.pagesById).length > 0
+        }
+
+
+
 }
 
         
