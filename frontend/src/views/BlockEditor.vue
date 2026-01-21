@@ -16,7 +16,7 @@ import Placeholder from '@tiptap/extension-placeholder'
 
 import Link from '@tiptap/extension-link'
 import Underline from '@tiptap/extension-underline'
-
+import Highlight from '@tiptap/extension-highlight'
 
 import {useBlockFocus} from '@/composables/block/useBlockFocus'
 import {useBlockSplit } from '@/composables/block/useBlockSplit'
@@ -77,6 +77,7 @@ const editor = useEditor({
       showOnlyWhenEditable: true,
       showOnlyCurrent: true,
     }),
+    Highlight.configure({ multicolor: true }),
   ],
   editorProps: {
     attributes: {

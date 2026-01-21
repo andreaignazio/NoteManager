@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, ref, watch, useAttrs  } from 'vue'
 import ActionMenuDB from '@/components/ActionMenuDB.vue'
+import PagePickerList from '@/components/PagePickerList.vue'
 import { getIconComponent } from '@/icons/catalog'
 import usePagesStore from '@/stores/pages'
 
@@ -173,40 +174,12 @@ function select(targetPageId) {
     :xPost="16" :yPost="200"
     @close="$emit('close')"
   >
-    <div class="move-pop">
-      <div class="move-header">{{ title }}</div>
-
-      <div v-if="enableSearch" class="move-search">
-        <input v-model="q" class="move-search-input" type="text" placeholder="Search pages…" />
-      </div>
-
-      <button
-        v-for="r in rows"
-        :key="r.id"
-        class="move-row"
-        type="button"
-        :disabled="r.disabled"
-        :style="{ paddingLeft: `${10 + r.level * 14}px` }"
-        @click="select(r.id)"
-      >
-        <span
-          v-if="!q && r.hasKids"
-          class="caret"
-          @click.stop="toggleExpanded(r.id)"
-          :title="r.expanded ? 'Collapse' : 'Expand'"
-        >
-          {{ r.expanded ? '▾' : '▸' }}
-        </span>
-        <span v-else class="caret-spacer"></span>
-
-        <component :is="getIconComponent(r.iconId)" :size="16" />
-        <span class="label">{{ r.title }}</span>
-      </button>
-
-      <div v-if="rows.length === 0" class="empty">
-        No pages
-      </div>
-    </div>
+    <PagePickerList
+      ref="listRef"
+      title="Move to…"
+      :currentPageId="currentPageId"
+      @select="(id) => { $emit('select', id); $emit('close') }"
+    />
   </ActionMenuDB>
 </template>
 

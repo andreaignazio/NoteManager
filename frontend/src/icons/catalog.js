@@ -68,6 +68,10 @@ import {
   ClipboardPaste,
   Highlighter,
   Type,
+  Bold,
+  Italic,
+  Strikethrough,
+  Underline,
 } from "lucide-vue-next"
 
 
@@ -117,7 +121,7 @@ export const ICONS = [
   { id: "lucide:pin", label: "In evidenza", icon: Pin, category: "tags" },
 
   // ===== Links / Web =====
-  { id: "lucide:link", label: "Link", icon: Link, category: "web" },
+  //{ id: "lucide:link", label: "Link", icon: Link, category: "web" },
   { id: "lucide:globe", label: "Web", icon: Globe, category: "web" },
 
   // ===== Utility / System =====
@@ -144,6 +148,13 @@ export const ICONS = [
   { id: "lucide:sparkles", label: "AI tools", icon: Sparkles, category: "actions" },
 
   { id: "lucide:message-circle", label: "Commento", icon: MessageCircle, category: "actions" },
+
+  // ===== Text formatting =====
+  { id: "lucide:bold", label: "Grassetto", icon: Bold, category: "actions" },
+  { id: "lucide:italic", label: "Corsivo", icon: Italic, category: "actions" },
+  { id: "lucide:strikethrough", label: "Barrato", icon: Strikethrough, category: "actions" },
+  { id: "lucide:underline", label: "Sottolineato", icon: Underline, category: "actions" },
+  { id: "lucide:link", label: "Link", icon: Link, category: "actions" },
 
 
 ]

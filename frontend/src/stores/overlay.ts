@@ -416,7 +416,7 @@ export const useOverlayStore = defineStore('overlay', {
     _onPointerDown(e: PointerEvent) {
       
       const top = this.top
-      console.log('[overlay] top', top?.id, top?.kind, 'scope=', top?.interactionScope)
+     // console.log('[overlay] top', top?.id, top?.kind, 'scope=', top?.interactionScope)
       if (!top) return
 
       const scope = resolveScope(top.interactionScope)

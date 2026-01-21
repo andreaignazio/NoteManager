@@ -16,6 +16,7 @@ const props = defineProps({
   area: { type: String, default: 'main' },  // 'main'|'sidebar'
   onRegisterApi: Function,
   onUnregisterApi: Function,
+  highlightSwatch: { type: String, default: null }
 
 
 })
@@ -51,6 +52,14 @@ const PRESETS = {
       { id:'copy', label:'Copy', iconId:'lucide:copy' },
       { id:'paste', label:'Paste', iconId:'lucide:clipboard-paste' },
     ],
+    text: [
+      { id:'bold', label:'Bold', iconId:'lucide:bold' },
+      { id:'italic', label:'Italic', iconId:'lucide:italic' },
+      { id:'strike', label:'Strike', iconId:'lucide:strikethrough' },
+      { id:'underline', label:'Underline', iconId:'lucide:underline' },
+      { id:'link', label:'Link', iconId:'lucide:link' },
+    ],
+    
   },
   sidebar: {
     block: [
@@ -115,8 +124,9 @@ function pickIndex(px, py) {
   const dy = py - center.value.y
   const d = Math.hypot(dx, dy)
 
+  const R_MAX = R_OUT + 400
   if (d < R_IN) return -1
-  if (d > R_OUT + 46) return -1
+  if (d > R_MAX) return -1
 
   const a = angleDegClockFromNoon(dx, dy)
   const n = resolvedItems.value.length
@@ -213,7 +223,13 @@ function commit() {
   return { type: "action", id: it.id, context: props.context }
 }
 
-const api = { setCursor, getActiveItem, commit }
+function reset() {
+  cursor.value = { x: center.value.x, y: center.value.y }
+  activeIndex.value = -1
+  clearDwell?.() // se ce l’hai, altrimenti ignora
+}
+
+const api = { setCursor, getActiveItem, commit, reset }
 
 watch(
   () => props.open,
@@ -234,6 +250,7 @@ defineExpose({
   getActiveItem,
   commit,
   center, // optional
+  reset,
 })
 
 /*watch(activeIndex, (v) => console.log("[PIE] activeIndex", v))
@@ -290,6 +307,11 @@ watch(center, (v) => console.log("[PIE] center", v))*/
       >
         <component v-if="w.Icon" :is="w.Icon" class="icon" :size="18" />
         <!--<div class="lbl">{{ w.label }}</div>-->
+        <span
+          v-if="w.id === 'highlight'"
+          class="swatch"
+          :style="{ '--swatch': props.highlightSwatch || '#FFEE58' }"
+        />
       </div>
     </div>
   </div>
@@ -325,6 +347,24 @@ watch(center, (v) => console.log("[PIE] center", v))*/
 .center{
   fill-opacity: 0;
   stroke-opacity: .5;
+}
+.swatch{
+  --c: var(--swatch);
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  right: -2px;
+  bottom: -2px;
+
+  background: var(--c);
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,.85),
+    0 2px 10px rgba(0,0,0,.18);
+  border: 1px solid rgba(0,0,0,.18);
+
+  opacity: .98;
+  pointer-events: none;
 }
 
 /*

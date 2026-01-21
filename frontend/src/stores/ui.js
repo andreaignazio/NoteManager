@@ -27,6 +27,11 @@ export const useUiStore = defineStore('ui', {
 
     pendingSidebarScrollToPageId: null,
 
+    lastHighlightColor: null, // esadecimale stringa tipo '#ff0000'
+
+    richClipboard: { html: null, text: null, ts: 0 },
+    requestLinkPopover: null,
+
   }),
 
   getters: {

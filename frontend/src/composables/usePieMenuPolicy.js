@@ -1,6 +1,11 @@
 // usePieMenuPolicy.js
 import { onMounted, onBeforeUnmount } from "vue"
 
+//type ModKey = "altKey" | "ctrlKey" | "metaKey" | "shiftKey"
+
+let MOD_KEY = "ctrlKey" 
+let MOD_KEY_TEXT = "Ctrl"
+
 export function usePieMenuPolicy({
   isOpen = () => false,
   open,
@@ -23,6 +28,15 @@ export function usePieMenuPolicy({
       timer = null
     }
   }
+
+  function isModifierPressed(e) {
+  return !!e[MOD_KEY]
+}
+
+function isTextModifierPressed(e) {
+  return e.ctrlKey && e.shiftKey
+}
+
 
   function getAreaFromEvent(e) {
     const t = e.target
@@ -72,10 +86,18 @@ export function usePieMenuPolicy({
 
       const area = getAreaFromEvent(e)
       const context = (getContextAt ?? defaultGetContextAt)(e)
-
+       
+     let mode = 'block'
+     if(isTextModifierPressed(e)) {
+       mode = "text"
+     }
+     else if (isModifierPressed(e)){
+        mode = "ai"
+     }
+      
       open({
         kind: "dynamic",
-        mode: e.altKey ? "ai" : "block",
+        mode: mode,
         area,
         x: down.x,
         y: down.y,
@@ -124,9 +146,17 @@ export function usePieMenuPolicy({
     const area = getAreaFromEvent(e)
     const context = (getContextAt ?? defaultGetContextAt)(e)
 
+    let mode = 'block'
+     if(isTextModifierPressed(e)) {
+       mode = "text"
+     }
+     else if (isModifierPressed(e)){
+        mode = "ai"
+     }
+
     open({
       kind: "context",
-      mode: e.altKey ? "ai" : "block",
+      mode: mode,
       area,
       x: down.x,
       y: down.y,

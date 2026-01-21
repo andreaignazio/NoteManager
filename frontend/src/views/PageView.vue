@@ -28,7 +28,7 @@
   import {usePageTitleEditor} from '@/composables/page/usePageTitleEditor'
   import {useMenuAnchors} from '@/composables/menu/useMenuAnchors'
   import {useEditorRegistry} from '@/composables/page/useEditorRegistry'
-
+  import { useEditorRegistryStore } from '@/stores/editorRegistry'
   import { useOverlayBinding } from '@/composables/useOverlayBinding'
 
 
@@ -280,7 +280,12 @@ const {onPagePointerDown,
 
 //====EDITOR REGISTRY + ACTIVE EDITOR====
 const { currentBlockId } = storeToRefs(blocksStore)
-const { registerEditor, activeEditor } = useEditorRegistry(() => currentBlockId.value)
+/*const { registerEditor, activeEditor } = useEditorRegistry(() => currentBlockId.value)*/
+
+const editorRegStore = useEditorRegistryStore()
+
+const activeEditor = computed(() => editorRegStore.getEditor(currentBlockId.value))
+const registerEditor = editorRegStore.registerEditor
 
 //====TOOLBAR + SELECTION RELATED EVENTS===
 

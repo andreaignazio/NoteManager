@@ -11,6 +11,7 @@ import { useOverlayLayer } from '@/composables/useOverlayLayer'
 import { useOverlayBinding } from '@/composables/useOverlayBinding'
 import PieMenu from '@/components/menu/PieMenu.vue'
 import PieColorMenu from '@/components/menu/PieColorMenu.vue'
+import PieHighlightMenu from '@/components/menu/PieHighlightMenu.vue'
  import { usePieMenuPolicy } from '@/composables/usePieMenuPolicy';
 import { usePieMenuController } from "@/composables/usePieMenuController"
 import FlyoutSidebar from '@/components/shell/FlyoutSidebar.vue'
@@ -18,7 +19,7 @@ import PagesSidebar from '@/components/shell/PagesSidebar.vue'
 import Topbar from '@/components/shell/Topbar.vue'
 import { computeFloatingPosition } from "@/utils/computeFloatingPosition"
 import { useAppActions } from '@/actions/useAppActions'
-
+import { useEditorRegistryStore } from '@/stores/editorRegistry'
 
 const authStore = useAuthStore()
 const pagesStore = usePagesStore()
@@ -26,6 +27,7 @@ const blocksStore = useBlocksStore()
 const ui = useUiStore()
 const overlay = useOverlayStore()
 const actions = useAppActions()
+const editorRegStore = useEditorRegistryStore()
 
 ui.hydrate()
 
@@ -359,6 +361,8 @@ const pieContext = ref(null)
 
 const mainMenuRef = ref(null)
 const colorPieRef = ref(null)
+const highlightPieRef = ref(null)
+
 
 function getMainMenuRef() {
   return mainMenuRef.value
@@ -414,6 +418,8 @@ function openPie({ kind="context", mode, area, x, y, context }) {
   pieY.value = y
 
   pieContext.value = context ?? { area }
+  pieContext.value = { ...(context ?? { area }), 
+        lastHighlightColor: ui.lastHighlightColor }
   pieOpen.value = true
 }
 
@@ -430,6 +436,11 @@ usePieMenuPolicy({
   // (optional) override context extraction if you want more data
   // getContextAt: (e) => ({ area: ..., blockId: ... })
 })
+
+function isInvertKey(ctx){
+  return ctx?.mods?.alt
+}
+
 
 async function onPieAction(actionId, ctxFromEvent) {
   const ctx = ctxFromEvent ?? pieContext.value ?? {}
@@ -478,7 +489,19 @@ async function onPieAction(actionId, ctxFromEvent) {
       break
 
     case "highlight":
-      console.log("[PIE][main] highlight", blockId)
+      console.log("[PIE][main] highlight (default)", ui.lastHighlightColor, blockId)
+      
+      const ed = editorRegStore.getEditor(blockId)
+      if (!ed) return
+
+      console.log("PIE CONEXT:", ctx.mods.alt)
+      if (isInvertKey(ctx)) {
+        console.log("[PIE][main] highlight unset (invert key)")
+        ed.commands.unsetHighlight()
+        //ed.chain().focus().unsetHighlight().run()
+      } else {
+        ed.chain().focus().toggleHighlight({ color: ui.lastHighlightColor }).run()
+      }
       break
 
     case "moveTo":
@@ -497,13 +520,36 @@ async function onPieAction(actionId, ctxFromEvent) {
     case "share":
       console.log("[PIE][main] share", blockId)
       break
+      
     case "copy":
       console.log("[PIE][main] copy", blockId)
+      await actions.text.copyBlockRich(blockId)
       break
     case "paste":
+      await actions.text.pasteSmart(blockId)
       console.log("[PIE][main] paste", blockId)
       break
+    
+    case "bold":
+      actions.text.toggleBold(blockId)
+      break
 
+    case "italic":
+      actions.text.toggleItalic(blockId)
+      break
+
+    case "strike":
+      actions.text.toggleStrike(blockId)
+      break
+
+    case "underline":
+      actions.text.toggleUnderline(blockId)
+      break
+
+    case "link":
+      actions.text.openLinkPopover(blockId) // apriremo popover
+      break
+      
     default:
       console.log("[PIE][main] action:", actionId, blockId, ctx)
   }
@@ -515,9 +561,11 @@ const pieController = usePieMenuController({
 
   mainMenuRef: getMainMenuRef,
   colorMenuRef: getColorMenuRef,
-
+  highlightMenuRef: () => highlightPieRef.value,
   dwellMs: 300,
-  submenuIds: ["color"],
+  submenuIds: 
+  computed(() => (pieMode.value === 'block' ? ['color','highlight'] : [] )).value,
+
   dwellMoveToId: "moveTo",
 
   onAction: async (id, ctx) => {
@@ -560,6 +608,13 @@ const pieController = usePieMenuController({
     const stylePatch = { bgColor: String(token) }
     await blocksStore.updateBlockStyle(blockId, stylePatch)
   },
+  onSetHighlightColor: async (color, ctx) => {
+    // 1) salva last color nello ui store
+    ui.lastHighlightColor = color
+    const ed = editorRegStore.getEditor(ctx?.blockId)
+    ed?.chain().focus().toggleHighlight({ color }).run()
+    console.log("[PIE][main] setHighlight", color, ctx)
+  },
 })
 
 const currentBg = computed(() => {
@@ -581,14 +636,6 @@ const swatchStyleForBg = (token) => styleForBgToken(token)
 
 const pieTop = pieController.top
 
-/*watch(pieOpen, (open) => {
-  
-    console.log("mainMenuRef", mainMenuRef.value)
-    console.log("setCursor?", typeof mainMenuRef.value?.setCursor)
-    console.log("getActiveItem?", typeof mainMenuRef.value?.getActiveItem)
-    console.log("commit?", typeof mainMenuRef.value?.commit)
-  
-})*/
 
 function getPieMenuEl() {
   // 1) se mainMenuRef è un HTMLElement diretto:
@@ -637,6 +684,10 @@ useOverlayBinding({
   },
 })
 
+const HIGHLIGHT_COLORS = [
+  '#FFEE58', '#FFD54F', '#FFAB91', '#F48FB1',
+  '#CE93D8', '#90CAF9', '#80DEEA', '#A5D6A7',
+]
 
 
 
@@ -717,12 +768,13 @@ useOverlayBinding({
   <PieMenu
   ref="mainMenuRef"
   v-show="pieOpen && overlay.has('pie') && pieTop === 'main'"
-  :open="pieOpen  && overlay.has('pie')"
+  :open="pieOpen  && overlay.has('pie') && pieTop === 'main'"
   :x="pieAnchorX"
   :y="pieAnchorY"
   :centerX="pieCenter.x"
   :centerY="pieCenter.y"
   :context="pieContext"
+  :highlightSwatch="ui.lastHighlightColor"
   :mode="pieMode"
   :area="pieArea"
   :onRegisterApi="pieController.registerMenuApi"
@@ -748,6 +800,20 @@ useOverlayBinding({
   :labelForBg="labelForBg"
   :letterStyleForText="letterStyleForText"
   :swatchStyleForBg="swatchStyleForBg"
+/>
+<PieHighlightMenu
+  ref="highlightPieRef"
+  v-show="pieOpen && overlay.has('pie') && pieTop === 'highlight'"
+  :open="pieOpen && overlay.has('pie') && pieTop === 'highlight'"
+  :onRegisterApi="pieController.registerMenuApi"
+  :onUnregisterApi="pieController.unregisterMenuApi"
+  :x="pieAnchorX"
+  :y="pieAnchorY"
+  :centerX="pieCenter.x"
+  :centerY="pieCenter.y"
+  :context="pieContext"
+  :colors="HIGHLIGHT_COLORS"
+  :current="ui.lastHighlightColor"
 />
 </Teleport>
   <Teleport to="body">

@@ -54,6 +54,8 @@ const clampedCenter = computed(() => {
 //const center = computed(() => ({ x: clampedCenter.value.x, y: clampedCenter.value.y }))
 const center = computed(() => ({ x: props.centerX, y: props.centerY }))
 
+
+
 function angleDegClockFromNoon(dx, dy) {
   const a = Math.atan2(dx, -dy) * (180 / Math.PI)
   return (a + 360) % 360
@@ -67,6 +69,17 @@ function pick(px, py) {
   if (d < R0) return { ring: null, index: -1 }
   const a = angleDegClockFromNoon(dx, dy)
 
+   let ring = null
+  if (d <= R_BG_OUT) ring = "bg"
+  else ring = "text"
+
+  const n = ring === "bg" ? (props.bgTokens.length || 1) : (props.textTokens.length || 1)
+  const s = 360 / n
+  const index = n ? (Math.floor(a / s) % n) : -1
+  return { ring, index }
+  
+
+  /*
   // bg ring
   if (d >= R0 && d <= R_BG_OUT) {
     const n = props.bgTokens.length || 1
@@ -81,7 +94,7 @@ function pick(px, py) {
     return { ring: "text", index: n ? (Math.floor(a / s) % n) : -1 }
   }
 
-  return { ring: null, index: -1 }
+  return { ring: null, index: -1 }*/
 }
 
 

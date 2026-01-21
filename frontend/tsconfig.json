@@ -18,6 +18,7 @@
     }
   },
   "include": ["src/**/*.ts",
+   "src/**/*.d.ts",
   "src/**/*.js",
    "src/**/*.vue",
     "src/composables/block/*.js",

@@ -1,4 +1,4 @@
-import { computed, onMounted, onBeforeUnmount, ref } from "vue"
+import { computed, onMounted, onBeforeUnmount, ref, nextTick } from "vue"
 import { storeToRefs } from "pinia"
 import useUiStore from "@/stores/ui"
 
@@ -9,16 +9,20 @@ export function usePieMenuController({
   // refs ai componenti menu (template ref)
   mainMenuRef,
   colorMenuRef,
+  highlightMenuRef,
 
   // applicazioni azioni (dispatcher)
   onAction,          // (id, ctx) => void|Promise
   onSetTextToken,    // (token, ctx) => void|Promise
   onSetBgToken,      // (token, ctx) => void|Promise
-
+  onSetHighlightColor, // (color, ctx) => void|Promise
   // submenu policy
   dwellMs = 300,
   submenuIds = ["color"],     // estendibile
   dwellMoveToId = "moveTo",   // intent speciale
+
+  backDwellMs = 500,
+  backHoleRadius = 56,
 }) {
   const ui = useUiStore()
   const { SidebarMoveToArmed, SidebarMoveToHoverPageId } = storeToRefs(ui)
@@ -48,8 +52,14 @@ export function usePieMenuController({
   let dwellLocked = false
   let lastHoverId = null
 
+  let backDwellTimer = null
+
   function clearDwell() {
     if (dwellTimer) { clearTimeout(dwellTimer); dwellTimer = null }
+  }
+
+  function clearBackDwell() {
+    if (backDwellTimer) { clearTimeout(backDwellTimer); backDwellTimer = null }
   }
 
   function resetStack() {
@@ -57,6 +67,7 @@ export function usePieMenuController({
     dwellLocked = false
     lastHoverId = null
     clearDwell()
+    clearBackDwell()
     SidebarMoveToArmed.value = false
     SidebarMoveToHoverPageId.value = null
     activeApi.value = null
@@ -68,16 +79,11 @@ export function usePieMenuController({
     dwellLocked = true // sticky finché non chiudi/esc/up
   }
 
-  // --- Hit-test router: chi è il menu attivo?
-  /*function activeMenuApi() {
-  if (!pieOpen?.value) return null
+  function getActiveCenter() {
+    //console.log("getActiveCenter()", activeApi.value.getCenter())
+    return activeApi.value?.getCenter?.() ?? activeApi.value?.getCenter?.() ?? null
+  }
 
-  const main = mainMenuRef?.value ?? null
-  const color = colorMenuRef?.value ?? null
-console.log("[PIE]CONTROLLER activeMenuApi Main:", main, "Color:", color)
-  if (top.value === "color") return color || main
-  return main || color
-}*/
 
   // --- pointermove: aggiorna cursor nel menu top + dwell
   function onPointerMove(e) {
@@ -88,12 +94,6 @@ console.log("[PIE]CONTROLLER activeMenuApi Main:", main, "Color:", color)
     if (!api) return
     api.setCursor?.(e.clientX, e.clientY)
     
-   // if (!pieOpen.value) return
-
-    
-    //console.log("[PIE]CONTROLLER activeMenuApi", api)
-   
-
     // moveTo tracking sidebar (se armato)
     if (SidebarMoveToArmed.value) {
       SidebarMoveToHoverPageId.value = pickPageIdAt(e.clientX, e.clientY)
@@ -101,8 +101,42 @@ console.log("[PIE]CONTROLLER activeMenuApi Main:", main, "Color:", color)
       return
     }
 
+    if (top.value !== "main") {
+      console.log("not main dwell - go back")
+      const c = getActiveCenter()
+      //console.log("center:", c)
+      if (c) {
+        const dx = e.clientX - c.x
+        const dy = e.clientY - c.y
+        const d = Math.hypot(dx, dy)
+
+        if (d < backHoleRadius) {
+          if (!backDwellTimer) {
+            backDwellTimer = setTimeout(() => {
+              // torna al main (senza chiudere il pie)
+              stack.value = ["main"]
+              nextTick(() => {
+              const main = 
+              (typeof mainMenuRef === "function" ? mainMenuRef() : null)
+              const c = main?.center?.value ?? main?.center
+              if (c) main?.setCursor?.(c.x, c.y)
+              main?.reset?.()
+
+            })
+              dwellLocked = false
+              lastHoverId = null
+              clearDwell()
+              clearBackDwell()
+            }, backDwellMs)
+          }
+        } else {
+          clearBackDwell()
+        }
+      }
+    }
+
     // dwell solo sul main e solo se non locked
-    if (top.value !== "main") return
+    //if (top.value !== "main") return
     if (dwellLocked) return
 
     //const it = mainMenuRef.value?.getActiveItem?.()
@@ -130,10 +164,14 @@ console.log("[PIE]CONTROLLER activeMenuApi Main:", main, "Color:", color)
       // submenu
       push(hoverId) // es: 'color'
     }, dwellMs)
+
+
   }
 
   // --- pointerup: commit top menu in dynamic OR commit moveTo
   async function onPointerUp(e) {
+    const mods = { shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey, meta: e.metaKey }
+
     //console.log("[PIE] up", "pieOpen", pieOpen.value, "kind", pieKind.value, "isDynamic", isDynamic.value)
 
     if (!pieOpen.value) return
@@ -161,25 +199,32 @@ console.log("[PIE]CONTROLLER activeMenuApi Main:", main, "Color:", color)
 
     // main: action generic
     if (res.type === "action") {
-      await onAction?.(res.id, res.context ?? pieContext.value)
+      await onAction?.(res.id, { ...(res.context ?? pieContext.value), mods })
       closePie(); resetStack(); return
     }
 
     // color
     if (res.type === "setText") {
-      await onSetTextToken?.(res.token, pieContext.value)
+      await onSetTextToken?.(res.token, { ...pieContext.value, mods })
       closePie(); resetStack(); return
     }
     if (res.type === "setBg") {
-      await onSetBgToken?.(res.token, pieContext.value)
+      await onSetBgToken?.(res.token, { ...pieContext.value, mods })
       closePie(); resetStack(); return
     }
 
+    // highlight menu
+    if (res.type === "setHighlight") {
+       await onSetHighlightColor?.(res.color, { ...pieContext.value, mods })
+        closePie(); resetStack(); return
+    }
     closePie(); resetStack()
   }
 
   // --- pointerdown: solo per context (click sinistro conferma)
   async function onPointerDown(e) {
+    const mods = { shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey, meta: e.metaKey }
+
     if (!pieOpen.value) return
     if (isDynamic.value) return
     if (e.button !== 0) return
@@ -191,20 +236,25 @@ console.log("[PIE]CONTROLLER activeMenuApi Main:", main, "Color:", color)
     if (!res) return
 
     if (res.type === "action") {
-      await onAction?.(res.id, res.context ?? pieContext.value)
+      await onAction?.(res.id, { ...(res.context ?? pieContext.value), mods })
       closePie(); resetStack(); return
     }
     if (res.type === "setText") {
-      await onSetTextToken?.(res.token, pieContext.value)
+      await onSetTextToken?.(res.token, { ...pieContext.value, mods })
       closePie(); resetStack(); return
     }
     if (res.type === "setBg") {
-      await onSetBgToken?.(res.token, pieContext.value)
+      await onSetBgToken?.(res.token, { ...pieContext.value, mods })
       closePie(); resetStack(); return
     }
     if (res.type === "close") {
       closePie(); resetStack(); return
     }
+    if (res.type === "setHighlight") {
+      await onSetHighlightColor?.(res.color, { ...pieContext.value, mods })
+      closePie(); resetStack(); return
+    }
+
   }
 
   function onKeyDown(e) {
@@ -263,6 +313,7 @@ console.log("[PIE]CONTROLLER activeMenuApi Main:", main, "Color:", color)
     window.removeEventListener("pointerdown", onPointerDown, true)
     window.removeEventListener("keydown", onKeyDown)
     clearDwell()
+    clearBackDwell()
   })
 
   // quando chiudi pie: reset
