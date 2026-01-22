@@ -121,6 +121,9 @@ function computePosition(anchorRect, menuW, menuH) {
   } else if (place === 'right') {
     left = anchorRect.right + gap + offsetX
     top = anchorRect.top + offsetY
+  } else if (place === 'right-center') {
+    left = anchorRect.right + gap + offsetX
+    top = anchorRect.top + (anchorRect.height - menuH) / 2 + offsetY
   } else if (place === 'bottom-start') {
     left = anchorRect.left + offsetX
     top = anchorRect.bottom + gap + offsetY

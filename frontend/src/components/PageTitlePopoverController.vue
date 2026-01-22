@@ -7,11 +7,13 @@ import PageTitlePopoverDB from '@/components/PageTitlePopoverDB.vue'
 import IconPickerDB from '@/components/IconPickerDB.vue'
 import { useOverlayLayer } from '@/composables/useOverlayLayer'
 import { ICONS } from "@/icons/catalog"
+import { anchorKey } from '@/ui/anchorsKeyBind'
+import { useAnchorRegistryStore } from '@/stores/anchorRegistry'
 
 const props = defineProps({
   pageId: { type: [String, Number], default: null },
   anchorEl: { type: [Object, null], default: null }, // HTMLElement | ref
-
+  anchorKey: { type: [String, Number], default: null }, // anchor registry key
   // title popover positioning
   placement: { type: String, default: 'bottom-start' },
   minWidth: { type: Number, default: 320 },
@@ -31,13 +33,18 @@ const props = defineProps({
 const emit = defineEmits(['close', 'commit'])
 
 const pagesStore = usePagesStore()
+const anchorsStore = useAnchorRegistryStore()
 
 const titleOpen = ref(false)
 const iconOpen = ref(false)
 const anyOpen = computed(() => titleOpen.value || iconOpen.value)
 
 // --- anchor rect live: title ---
-const titleAnchorResolved = computed(() => unref(props.anchorEl) ?? null)
+const titleAnchorResolved = computed(() => {
+  if (props.anchorKey) return anchorsStore.getAnchorEl(props.anchorKey)
+  return unref(props.anchorEl) ?? null
+})
+//const titleAnchorResolved = computed(() => unref(props.anchorEl) ?? null)
 const { anchorRect: titleAnchorRect, scheduleUpdate: bumpTitleRect } =
   useLiveAnchorRect(titleAnchorResolved, titleOpen)
 
@@ -135,7 +142,7 @@ const page = computed(() => {
 
 //===OPEN/CLOSE===
 function open() {
-  
+  console.log('[PageTitlePopover] open called, pageId:', props.pageId, titleAnchorResolved.value)
   if (!props.pageId) return
   titleOpen.value = true
   iconOpen.value = false

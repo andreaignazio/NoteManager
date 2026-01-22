@@ -4,11 +4,16 @@
    import { nextTick, computed, ref, onMounted,onBeforeUnmount, toRef,watch, useAttrs } from 'vue';
   import { classForTextToken, classForBgToken } from '@/theme/colorsCatalog'
    import CodeToolbarButtons from '@/components/CodeToolbarButtons.vue'
+
+   import { anchorKey, anchorKind } from '@/ui/anchorsKeyBind'
+   import { useRegisterAnchors } from '@/composables/useRegisterAnchors';
+   import { useUIOverlayStore } from '@/stores/uioverlay';
   
    defineOptions({ inheritAttrs: false })
   const attrs = useAttrs()
 
   const blocksStore = useBlocksStore()
+  const uiOverlay = useUIOverlayStore()
 
    const props = defineProps({
     block: Object,
@@ -21,12 +26,59 @@
     registerRowEl: Function,
    })
 
-   const menuBtn = ref(null)
+  const dragHandleRef = ref(null)
+  const toolbarRef = ref(null)
+
+  const dragHandle_key = anchorKey(anchorKind(
+  'block',
+  'dragHandle',
+  'blockRow',
+  'gutter'
+  ), props.block.id)
+
+
+  useRegisterAnchors({
+    [dragHandle_key]: dragHandleRef,
+    
+  })
+
+  function openBlockMenuFromHandle() {
+    uiOverlay.requestOpen({
+    menuId: 'block.menu',
+    anchorKey: dragHandle_key,
+    payload: {
+      blockId: props.block.id,
+      placement: 'right-center',
+    }
+  })
+  }
+  function openBlockMenuFromDots() {
+    uiOverlay.requestOpen({
+    menuId: 'block.menu',
+    anchorKey: toolbarRef.value?.dots_key,
+    payload: {
+      blockId: props.block.id,
+      placement: 'left',
+    }
+  })
+  }
+  function openLangMenu() {
+    uiOverlay.requestOpen({
+    menuId: 'block.codeLanguageMenu',
+    anchorKey: toolbarRef.value?.lang_key,
+    payload: {
+      blockId: props.block.id,
+      placement: 'bottom-end',
+    }
+  })
+  }
+
+
    const langBtn = ref(null)
    const isCallout = computed(() => props.block.type === 'callout')
    const isToggle = computed(() => props.block.type === 'toggle')
 
-    const dragHandleRef = ref(null)
+    
 
    const isExpanded = computed(()=> blocksStore.isExpanded(props.block.id))
    function handleToggleExpand(e){
@@ -34,7 +86,7 @@
     blocksStore.toggleExpandBlock?.(props.block.id)
    }
 
-   const toolbarRef = ref(null)
+   
    onMounted(() => {
   /*if (menuBtn.value) {props.registerMenuAnchor?.(props.block.id,menuBtn.value,'actions')}
   if (props.block.type === 'code' && langBtn.value) {
@@ -114,18 +166,6 @@ watch(props.block?.props?.style, (newStyle) => {
 )
 
 
-   const emit = defineEmits(['open-menu', 'open-lang-menu'])
-
-   function handleOpenMenu(e) {
-    console.log("OPEN MENU for block:", props.block.id)
-    emit('open-menu', props.block.id, e)
-   }
-   
-
-   function handleOpenLangMenu() {
-    emit('open-lang-menu', props.block.id)
-  }
-
  
 
   function handleToggleWrap() {
@@ -189,7 +229,7 @@ const rowElement = ref(null)
         class="drag-handle"
         type="button"
         title="Drag"
-        @click.stop="handleOpenMenu('dragHandleActions')"
+        @click.stop="openBlockMenuFromHandle"
       >
         ⋮⋮
       </button>
@@ -231,12 +271,13 @@ const rowElement = ref(null)
        v-if="block.type==='code'">
         <CodeToolbarButtons
           ref="toolbarRef"
+          :blockId="block.id"
           :isCode="block.type === 'code'"
           :languageLabel="block.content?.language ?? 'plaintext'"
           :wrapOn="block.content?.wrap ?? true"
           @wrap="handleToggleWrap"
-          @lang="handleOpenLangMenu"
-          @dots="handleOpenMenu('actions')"
+          @lang="openLangMenu"
+          @dots="openBlockMenuFromDots"
         />
 
       </div>

@@ -425,8 +425,6 @@ async function setBlockTypeFromToolbar(nextType) {
               :blockActionMenuId="overlayTopId"
               :lastEmptyRootId="lastEmptyRootId"
               :registerRowEl="registerRowEl"
-              @open-menu="onOpenBlockMenu"
-              @open-lang-menu="onOpenLangMenu"
             />
            </template>
         </DndController> 
@@ -435,7 +433,7 @@ async function setBlockTypeFromToolbar(nextType) {
     </div>
     </div>
     
-<BlockMenuController
+<!--<BlockMenuController
   ref="blockMenuRef"
   :pageId="id"
   :blockId="blockMenuBlockId"
@@ -457,7 +455,7 @@ async function setBlockTypeFromToolbar(nextType) {
   anchorLocation="blockRow"
   placement="bottom-end"
   :lockScrollOnOpen="false"
-/>
+/>-->
 
   </div>
   </div>

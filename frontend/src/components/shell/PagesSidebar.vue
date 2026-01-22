@@ -113,50 +113,6 @@ async function createNewPage(parentId = null) {
 const rootEl = ref(null)
 const sidebarScrollEl = ref(null)
 
-
-const menuAnchorByKey = new Map()
-
-const anchorKey = (scope, pageId) => `${scope}:${String(pageId)}`
-
-const registerMenuAnchor = (scope, pageId, el) => {
-  if (!pageId) return
-  const k = anchorKey(scope, pageId)
-  if (el) menuAnchorByKey.set(k, el)
-  else menuAnchorByKey.delete(k)
-}
-
-const pageActionsRef = ref(null)
-const pageTitlePopoverRef = ref(null)
-
-const actionsPageId = ref(null)   // string|number|null
-const actionsPageScope = ref(null) // string|null
-const actionsAnchorEl = ref(null) // HTMLElement|null
-
-const isActionsOpen = computed(() => actionsPageId.value != null)
-
-function openPageActions({ pageId, scope }) {
-  const el = menuAnchorByKey.get(anchorKey(scope, pageId))
-  if (!el) return
-
-  actionsPageId.value = pageId
-  actionsPageScope.value = scope
-  actionsAnchorEl.value = el
-  nextTick(() => pageActionsRef.value?.open?.())
-}
-
-function closePageActions() {
-  pageActionsRef.value?.close?.()
-  actionsPageId.value = null
-  actionsAnchorEl.value = null
-}
-
-function onRenameFromMenu(pageId,scope){
-  actionsPageId.value = pageId
-  actionsPageScope.value = scope
-  actionsAnchorEl.value = menuAnchorByKey.get(anchorKey(scope, pageId)) 
-  pageTitlePopoverRef.value?.open?.()
-}
-
 function onSidebarScroll() {
   //updateMenuRectIfOpen()
   setScrollingOn(sidebarScrollEl.value)
@@ -175,7 +131,6 @@ function containsTarget(t) {
 defineExpose({
   //updateMenuRectIfOpen,
   containsTarget,
-  onRenameFromMenu,
 })
 
 
@@ -379,7 +334,7 @@ watch(pendingSidebarScrollToPageId, async (pageId) => {
       <div v-if="hasFavoritePages" class="sidebar-title">Favorites</div>
       </div>
     
-      <div v-if="hasFavoritePages" class="favorites-zone" >
+      <div v-show="hasFavoritePages" class="favorites-zone" >
         <DndController
           :tree="favoritesTreeFlat"
           position-key="favorite_position"
@@ -395,13 +350,12 @@ watch(pendingSidebarScrollToPageId, async (pageId) => {
             :is-active="pagesStore.currentPageId === item.id"
             :is-editing="false"
             :draft-title="''"
-            :register-menu-anchor="registerMenuAnchor"
+            
             :parent-key="'favorites'"
             :page-action-menu-id="overlayTopId"
+            :anchor-scope="'favorites'"
             :data-anchor-scope="'favorites'"
             @add-child="createNewPage(item.id)"
-            @open="openFromFavorites"
-            @open-menu="openPageActions"
           />
         </template>
       </DndController>
@@ -435,16 +389,17 @@ watch(pendingSidebarScrollToPageId, async (pageId) => {
               :is-expanded="isExpanded"
               :is-editing="String(editingPageId) === item.id"
               :draft-title="draftPage.title"
-              :register-menu-anchor="registerMenuAnchor"
+             
               :parent-key="pagesStore.getParentKey(item.parentId)"
               :page-action-menu-id="overlayTopId"
               :flash="String(recentlyMovedId) === String(item.id)"
+              :anchor-scope="'tree'"
               :data-anchor-scope="'tree'"
               @open="openPage"
               @start-edit="startEdit"
               @toggle-expand="handleToggleExpand"
               @add-child="createNewPage(item.id)"
-              @open-menu="openPageActions"
+          
               @update:draftTitle="draftPage.title = $event"
               @commit="commitEditTitle"
               @cancel="cancelEditTitle"
@@ -452,7 +407,7 @@ watch(pendingSidebarScrollToPageId, async (pageId) => {
           </template>
         </DndController>
       </div>
-      <PageActionsController
+     <!-- <PageActionsController
         ref="pageActionsRef"
         :pageId="actionsPageId"
         :scope="actionsPageScope"
@@ -474,7 +429,7 @@ watch(pendingSidebarScrollToPageId, async (pageId) => {
       :lockScrollOnOpen="true" 
       anchorLocation="sidebar" 
       
-      />
+      />-->
     </div>
   </aside>
 </template>

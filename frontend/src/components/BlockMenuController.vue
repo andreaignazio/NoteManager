@@ -14,6 +14,7 @@ import { styleForTextToken, styleForBgToken } from '@/theme/colorsCatalog'
 import MoveToPageTreeMenuDB from '@/components/MoveToPageTreeMenuDB.vue'
 
 import usePagesStore from '@/stores/pages'
+import { useAnchorRegistryStore } from '@/stores/anchorRegistry'
 
 const pagesStore = usePagesStore()
 
@@ -23,11 +24,13 @@ import {
   labelForTextToken,
   labelForBgToken,
 } from '@/theme/colorsCatalog'
+import { anchorKey } from '@/ui/anchorsKeyBind'
 
 const props = defineProps({
   pageId: { type: [String, Number], required: true },
   blockId: { type: [String, Number], default: null },
   anchorEl: { type: [Object, null], default: null }, // HTMLElement | ref
+  anchorKey: { type: String, default: null },
 
   placement: { type: String, default: 'right' },
   sideOffsetX: { type: Number, default: -12 },
@@ -44,6 +47,7 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 
 const blocksStore = useBlocksStore()
+const anchorsStore = useAnchorRegistryStore()
 
 // open states
 const rootOpen = ref(false)
@@ -54,7 +58,11 @@ const anyOpen = computed(() => rootOpen.value || typeOpen.value || colorOpen.val
 
 
 // root anchor
-const anchorResolved = computed(() => unref(props.anchorEl) ?? null)
+//const anchorResolved = computed(() => unref(props.anchorEl) ?? null)
+const anchorResolved = computed(() => {
+  if (props.anchorKey) return anchorsStore.getAnchorEl(props.anchorKey)
+  return unref(props.anchorEl) ?? null
+})
 const { anchorRect: rootRect, scheduleUpdate: bumpRoot } = useLiveAnchorRect(anchorResolved, rootOpen)
 
 // refs (dumb components expose menuRef->ActionMenuDB)
@@ -142,29 +150,6 @@ async function waitForRootItem(id, tries = 6) {
 
 defineExpose({ open: doOpen, close: doCloseAll, toggle })
 
-// -------- ROOT ITEMS --------
-/*const rootItems = computed(() => ([
-  { type: 'item', id: 'submenu:type', label: 'Block type…', icon: '↪', submenu: true },
-  { type: 'item', id: 'submenu:color', label: 'Color…', icon: '🎨', submenu: true },
-  { type: 'separator' },
-  { type: 'item', id: 'move_to', label: 'Move to…', icon: '📂', disabled: !props.enableMoveTo },
-  { type: 'item', id: 'duplicate', label: 'Duplicate', icon: '📄', disabled: !props.enableDuplicate },
-  { type: 'item', id: 'copy_link', label: 'Copy link to block', icon: '🔗', disabled: !props.enableCopyLink },
-  { type: 'item', id: 'comment', label: 'Comment', icon: '💬', disabled: !props.enableComment },
-  { type: 'separator' },
-  { type: 'item', id: 'delete', label: 'Delete block', icon: '🗑️', danger: true },
-]))*/
-/*const rootItems = computed(() => ([
-  { type: 'item', id: 'submenu:type', label: 'Block style', iconId: 'lucide:blocks', submenu: true },
-  { type: 'item', id: 'submenu:color', label: 'Color', iconId: 'lucide:palette', submenu: true },
-  { type: 'separator' },
-  { type: 'item', id: 'move_to', label: 'Move to…', iconId: 'lucide:folder-input', disabled: false },
-  { type: 'item', id: 'duplicate', label: 'Duplicate', iconId: 'lucide:copy', disabled: false },
-  { type: 'item', id: 'copy_link', label: 'Copy link to block', iconId: 'lucide:link', disabled: !props.enableCopyLink },
-  { type: 'item', id: 'comment', label: 'Comment', iconId: 'lucide:message-circle', disabled: !props.enableComment },
-  { type: 'separator' },
-  { type: 'item', id: 'delete', label: 'Delete block', iconId: 'lucide:trash-2', danger: true },
-]))*/
 
 const MENU_BASE = [
   { type: 'item', id: 'submenu:type', label: 'Block style', iconId: 'lucide:blocks', submenu: true },

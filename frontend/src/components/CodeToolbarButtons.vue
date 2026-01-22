@@ -1,8 +1,11 @@
 <script setup>
 import { ref, defineExpose } from 'vue'
+import { anchorKey, anchorKind } from '@/ui/anchorsKeyBind'
+import { useRegisterAnchors } from '@/composables/useRegisterAnchors';
 
 const props = defineProps({
   // controlli visibilità/label dal parent
+  blockId: { type: String, required: true },
   isCode: { type: Boolean, default: false },
   languageLabel: { type: String, default: 'plaintext' },
   wrapOn: { type: Boolean, default: true },
@@ -14,10 +17,35 @@ const dotsEl = ref(null)
 const langEl = ref(null)
 const wrapEl = ref(null)
 
+
+
+const dots_key = anchorKey(anchorKind(
+  'block',
+  'dots',
+  'blockRow',
+  'codeToolbar'
+  ), props.blockId)
+
+const lang_key = anchorKey(anchorKind(
+  'block',
+  'lang',
+  'blockRow',
+  'codeToolbar'
+  ), props.blockId)
+
+useRegisterAnchors({
+  [dots_key]: dotsEl,
+  [lang_key]: langEl,
+})
+
+
+
 defineExpose({
   getDotsEl: () => dotsEl.value,
   getLangEl: () => langEl.value,
   getWrapEl: () => wrapEl.value,
+  dots_key,
+  lang_key,
 })
 </script>
 

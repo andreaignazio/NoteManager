@@ -7,9 +7,15 @@ import FavoriteButton from '@/components/FavoriteButton.vue'
 import PageActionsController from '@/components/PageActionsController.vue'
 import PageTitlePopoverController from '@/components/PageTitlePopoverController.vue'
 import { getIconComponent } from '@/icons/catalog'
+import { anchorKind, anchorKey } from '@/ui/anchorsKeyBind'
+
+import { useRegisterAnchors } from '@/composables/useRegisterAnchors' 
+import { useUIOverlayStore } from '@/stores/uioverlay'
+
 
 const ui = useUiStore()
 const pagesStore = usePagesStore()
+const uiOverlay = useUIOverlayStore()
 const { currentPageId } = storeToRefs(pagesStore)
 
 const isHidden = computed(() => ui.sidebarMode === 'hidden')
@@ -23,34 +29,68 @@ const pageTitle = computed(() => pagesStore.pagesById[currentPageId.value]?.titl
 })
 // ===== Title Popover =====
 const titleBtnEl = ref(null)
-const pageTitlePopoverRef = ref(null)
+const dotsEl = ref(null)
+
 
 const pageId = computed(() => currentPageId.value ?? null)
 
+const kind_title = anchorKind(
+  'page',
+  'title',
+  'topbar',
+  'pageTitle'
+)
+
+const key_title = anchorKey(kind_title, currentPageId.value)
+const key_dots = anchorKey(
+  anchorKind(
+    'page',
+    'dots',
+    'topbar',
+    'pageMenu'
+  ),
+  currentPageId.value
+)
+
+useRegisterAnchors({
+  [key_title]:titleBtnEl,
+  [key_dots]: dotsEl
+})
+
+/*
 function openTitlePopover() {
   if (!currentPageId.value) return
   pageTitlePopoverRef.value?.open?.()
+}*/
+function openTitlePopover() {
+uiOverlay.requestOpen({
+  menuId: 'page.titlePopover',
+  anchorKey: key_title,
+  payload: {
+    pageId: currentPageId.value,
+  }
+})
 }
+
+function openPageActions() {
+  uiOverlay.requestOpen({
+    menuId: 'page.actions',
+    anchorKey: key_dots,
+    payload: {
+      pageId: currentPageId.value,
+      placement: 'bottom-end',
+    }
+  })
+}
+
+
 
 function openDocked() {
   ui.setSidebarMode('docked')
 }
 
 // ===== Page Actions Controller integration =====
-const menuBtnEl = ref(null)
-const actionsRef = ref(null)
 
-function togglePageMenu() {
-  actionsRef.value?.toggle?.()
-}
-
-function onRenameFromMenu() {
-  openTitlePopover()
-}
-
-function handleToggleMode() {
-  ui.toggleTheme()
-} 
 
 function handleToggleFavorite() {
   pagesStore.toggleFavorite(currentPageId.value)
@@ -93,18 +133,18 @@ function handleToggleFavorite() {
       <FavoriteButton :is-favorite="isFavorite" @toggle="handleToggleFavorite" />
 
       <button
-        ref="menuBtnEl"
+        ref="dotsEl"
         class="icon-btn"
         type="button"
         aria-label="Page options"
         title="Page options"
-        @click="togglePageMenu"
+        @click="openPageActions"
       >
         ⋯
       </button>
 
       
-      <PageActionsController
+      <!--<PageActionsController
         ref="actionsRef"
         :anchorEl="menuBtnEl"
         :pageId="currentPageId"
@@ -120,7 +160,7 @@ function handleToggleFavorite() {
       :lockScrollOnOpen="true" 
       anchorLocation="topbar" 
       
-      />
+      />-->
     </div>
   </header>
 </template>

@@ -7,10 +7,15 @@ import useLiveAnchorRect from '@/composables/useLiveAnchorRect'
 import ActionMenuDB from '@/components/ActionMenuDB.vue'
 import { useOverlayLayer } from '@/composables/useOverlayLayer' 
 import { getIconComponent } from '@/icons/catalog'
+import { useUIOverlayStore } from '@/stores/uioverlay'
+import { useAnchorRegistryStore } from '@/stores/anchorRegistry'
+import { useAppActions } from '@/actions/useAppActions'
 
 const props = defineProps({
   pageId: { type: [String, Number], default: null },
   anchorEl: { type: [Object, null], default: null }, // HTMLElement | ref
+  anchorKey: { type: [String, Number], default: null },
+   // anchor registry key
   placement: { type: String, default: 'bottom-end' },
   minWidthDelete: { type: Number, default: 320 },
   lockScrollOnOpen: { type: Boolean, default: false },
@@ -21,7 +26,9 @@ const props = defineProps({
 const emit = defineEmits(['rename', 'deleted', 'duplicated', 'moved', 'close'])
 
 const pagesStore = usePagesStore()
-
+const uiOverlay = useUIOverlayStore()
+const anchorsStore = useAnchorRegistryStore()
+const actions = useAppActions()
 // open states
 const rectTriggerOpen = ref(false)
 const menuOpen = ref(false)
@@ -32,25 +39,15 @@ const keepChildren = ref(true)
 const anyOpen = computed(() => menuOpen.value || moveOpen.value || delOpen.value || rectTriggerOpen.value )
 
 // anchor rect live (wrapper responsibility)
-const anchorResolved = computed(() => unref(props.anchorEl) ?? null)
+//const anchorResolved = computed(() => unref(props.anchorEl) ?? null)
+const anchorResolved = computed(() => {
+  if (props.anchorKey) return anchorsStore.getAnchorEl(props.anchorKey)
+  return unref(props.anchorEl) ?? null
+})
 const { anchorRect, scheduleUpdate, updateNow } = useLiveAnchorRect(anchorResolved, anyOpen)
 
-// expose methods
-/*async function open() {
-  
-  if (!props.pageId) return
-  //rectTriggerOpen.value=true;
-  //anchorRect.value = anchorResolved.value.getBoundingClientRect().toJSON()
-  console.log("PAGEACTIONS_rect", anchorRect.value,"anchorEl:", anchorResolved.value)
-  
-  //updateNow()
-  await nextTick()
-  menuOpen.value = true
-  console.log("PAGEACTIONS_rect", anchorRect.value,"anchorEl:", anchorResolved.value)
-  scheduleUpdate()
-  await nextTick()
-  scheduleUpdate()
-}*/
+
+
 async function open() {
   if (!props.pageId) return
 
@@ -148,16 +145,7 @@ function openDeletePopover() {
   nextTick(() => scheduleUpdate())
 }
 
-// menu items
-/*const menuItems = computed(() => [
-  { type: 'item', id: 'rename', label: 'Rename', icon: '✏️' },
-  { type: 'item', id: 'duplicate', label: 'Duplicate', icon: '📄' },
-  { type: 'separator' },
-  { type: 'item', id: 'move to', label: 'Move to…', icon: '📁' },
-  { type: 'item', id: 'share', label: 'Share…', icon: '🔗', disabled: true },
-  { type: 'separator' },
-  { type: 'item', id: 'delete', label: 'Delete', icon: '🗑️', danger: true },
-])*/
+
 const menuItems = computed(() => [
   { type: 'item', id: 'rename', label: 'Rename', iconId: 'lucide:edit-3' },
   { type: 'item', id: 'duplicate', label: 'Duplicate',iconId: 'lucide:copy' },
@@ -226,13 +214,21 @@ async function onMenuAction({ id }) {
 
     if (id === 'rename') {
       close()
-      emit('rename', props.pageId, props.scope)
+      uiOverlay.requestOpen({
+        menuId: 'page.titlePopover',
+        anchorKey: props.anchorKey,
+        payload: {
+          pageId: props.pageId,
+        }
+      })
+      
       return
     }
 
     if (id === 'duplicate') {
       close()
-      try {
+      await actions.pages.duplicatePage(props.pageId)
+      /*try {
         //const newId = await pagesStore.duplicatePageDeep(props.pageId)
         const newId = await pagesStore.duplicatePageTransactional(props.pageId)
         emit('duplicated', newId)
@@ -240,7 +236,8 @@ async function onMenuAction({ id }) {
       } catch (e) {
         console.error('[PageActions] duplicatePageDeep failed', e)
       }
-      return
+      return*/
+
     }
 
     if (id === 'move') {

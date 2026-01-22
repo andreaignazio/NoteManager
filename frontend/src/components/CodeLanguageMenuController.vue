@@ -4,11 +4,14 @@ import { useBlocksStore } from '@/stores/blocks'
 import useLiveAnchorRect from '@/composables/useLiveAnchorRect'
 import { useOverlayLayer } from '@/composables/useOverlayLayer'
 import ActionMenuDB from '@/components/ActionMenuDB.vue'
+import  {useAnchorRegistryStore}  from '@/stores/anchorRegistry'
+
 
 const props = defineProps({
   pageId: { type: [String, Number], default: null },
   blockId: { type: [String, Number], default: null },
   anchorEl: { type: [Object, null], default: null }, // HTMLElement | ref
+  anchorKey: { type: String, default: null },
   placement: { type: String, default: 'bottom-end' },
   lockScrollOnOpen: { type: Boolean, default: false },
   anchorLocation: { type: String, default: '' },
@@ -17,12 +20,17 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 
 const blocksStore = useBlocksStore()
+const anchorsStore = useAnchorRegistryStore()
 
 const rectTriggerOpen = ref(false)
 const menuOpen = ref(false)
 const anyOpen = computed(() => menuOpen.value || rectTriggerOpen.value)
 
-const anchorResolved = computed(() => unref(props.anchorEl) ?? null)
+//const anchorResolved = computed(() => unref(props.anchorEl) ?? null)
+const anchorResolved = computed(() => {
+  if (props.anchorKey) return anchorsStore.getAnchorEl(props.anchorKey)
+  return unref(props.anchorEl) ?? null
+})
 const { anchorRect, scheduleUpdate, updateNow } = useLiveAnchorRect(anchorResolved, anyOpen)
 
 const menuRef = ref(null)

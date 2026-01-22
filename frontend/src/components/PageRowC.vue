@@ -2,6 +2,9 @@
 import { ref, watch, nextTick, onMounted, onUnmounted, computed, toRef } from 'vue'
 import { getIconComponent } from '@/icons/catalog'
 import { useUiStore } from '@/stores/ui'
+import { anchorKey, anchorKind } from '@/ui/anchorsKeyBind'
+import { useRegisterAnchors } from '@/composables/useRegisterAnchors'
+import { useUIOverlayStore } from '@/stores/uioverlay'
 
 const ui = useUiStore()
 
@@ -17,7 +20,7 @@ const props = defineProps({
 
   isExpanded: { type: Boolean, default: false },
 
-  registerMenuAnchor: { type: Function },
+  
   pagesMenu: { type: Object },
 
   parentKey: { type: String },
@@ -41,7 +44,75 @@ const emit = defineEmits([
 const inputEl = ref(null)
 const editorEl = ref(null)
 
+const uiOverlay = useUIOverlayStore()
+
 const PageIcon = computed(() => getIconComponent(props.page?.icon))
+
+const kind_title = anchorKind(
+  'page',
+  'title',
+  'sidebar',
+  String(props.anchorScope)
+)
+const kind_dots = anchorKind(
+  'page',
+  'dots',
+  'sidebar',
+  String(props.anchorScope)
+)
+const kind_plus = anchorKind(
+  'page',
+  'plus',
+  'sidebar',
+  String(props.anchorScope)
+)
+
+
+const key_title = anchorKey(kind_title, props.page.id)
+const key_dots = anchorKey(kind_dots, props.page.id)
+const key_plus = anchorKey(kind_plus, props.page.id)
+
+const dotsEl = ref(null)
+const plusEl = ref(null)
+const titleEl = ref(null)
+
+
+useRegisterAnchors({
+  [key_title]: titleEl,
+  [key_dots]: dotsEl,
+  [key_plus]: plusEl,
+})
+
+/*onUnmounted(() => {
+  //props.registerMenuAnchor?.(props.anchorScope, props.page.id, null)
+  anchorsStore.registerAnchor(key_title, null )
+  anchorsStore.registerAnchor(key_dots, null )
+  anchorsStore.registerAnchor(key_plus, null )
+})
+
+
+watch(
+  () => [dotsEl.value, plusEl.value, titleEl.value, props.anchorScope],
+  ([dots, plus, title]) => {
+    if (dots)
+      anchorsStore.registerAnchor(key_dots, dotsEl.value )
+
+    if (plus)
+      anchorsStore.registerAnchor(key_plus, plusEl.value )
+
+    if (title)
+      anchorsStore.registerAnchor(key_title, titleEl )
+  },
+  { immediate: true }
+)
+
+onMounted(() => {
+  console.log('Registering page row anchors:', key_title,)
+  anchorsStore.registerAnchor(key_title, titleEl )
+})*/
+
+
+
 
 function onOpen() {
   console.log("Clicked on page:", props.page.id, "Title:", props.page.title)
@@ -82,17 +153,6 @@ watch(
   { immediate: true }
 )
 
-const menuBtn = ref(null)
-
-
-watch(
-  () => menuBtn.value,
-  (el) => {
-    props.registerMenuAnchor?.(props.anchorScope, props.page.id, el)
-  },
-  { immediate: true }
-)
-
 const isLastAddedPage = computed(() => {
  
   const lastAddedPageId = ui.getLastAddedPageId()
@@ -110,8 +170,18 @@ onUnmounted(() => {
 })
 
 function onOpenMenu() {
-  if (!menuBtn.value) return
-  emit('open-menu', { pageId: props.page.id, scope: props.anchorScope })
+  console.log('Opening page actions menu for page:', props.page.id)
+  if (!dotsEl.value) return
+  uiOverlay.requestOpen({
+    menuId: 'page.actions',
+    anchorKey: key_dots,
+    payload: {
+      pageId: props.page.id,
+      placement: 'right',
+    }
+  })
+  //emit('open-menu', { pageId: props.page.id, scope: props.anchorScope })
+
 }
 </script>
 
@@ -161,7 +231,8 @@ function onOpenMenu() {
           </div>
 
           <!-- TITLE -->
-          <span class="page-title-text"
+          <span ref="titleEl"
+          class="page-title-text"
             :class="{ active: isActive }"
            :title="page.title">
             {{ String(page.title).trim() != '' ? page.title : 'Untitled' }}
@@ -174,8 +245,8 @@ function onOpenMenu() {
 
         <!-- ACTIONS -->
         <div class="row-actions" @click.stop>
-          <button class="icon-btn" @click="emit('add-child', page.id)">+</button>
-          <button ref="menuBtn" class="icon-btn menu-anchor" @click.stop="onOpenMenu">...</button>
+          <button ref="plusEl" class="icon-btn" @click="emit('add-child', page.id)">+</button>
+          <button ref="dotsEl" class="icon-btn menu-anchor" @click.stop="onOpenMenu">...</button>
         </div>
       </div>
 

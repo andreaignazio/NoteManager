@@ -65,13 +65,15 @@ const editor = useEditor({
       bulletList: false,
       orderedList: false,
       blockquote: false,
+      link: false, // Disable to avoid duplicate with custom Link below
+      underline: false, // Disable to avoid duplicate with custom Underline below
     }),
     Link.configure({
       openOnClick: false,
       autolink: true,
       linkOnPaste: true,
     }),
-    Underline, // se lo vuoi
+    Underline,
     Placeholder.configure({
       placeholder: () => placeholderText.value,
       showOnlyWhenEditable: true,

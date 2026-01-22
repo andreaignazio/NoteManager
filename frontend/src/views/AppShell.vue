@@ -22,6 +22,11 @@ import Topbar from '@/components/shell/Topbar.vue'
 import { computeFloatingPosition } from "@/utils/computeFloatingPosition"
 import { useAppActions } from '@/actions/useAppActions'
 import { useEditorRegistryStore } from '@/stores/editorRegistry'
+import OverlayHost from '@/components/shell/OverlayHost.vue'
+
+import { useUIOverlayStore } from '@/stores/uioverlay'
+import { useAnchorRegistryStore } from '@/stores/anchorRegistry'
+import { anchorKey, anchorKind } from '@/ui/anchorsKeyBind'
 
 
 const authStore = useAuthStore()
@@ -31,6 +36,7 @@ const ui = useUiStore()
 const overlay = useOverlayStore()
 const actions = useAppActions()
 const editorRegStore = useEditorRegistryStore()
+const uiOverlay = useUIOverlayStore()
 
 ui.hydrate()
 
@@ -471,7 +477,23 @@ async function onPieAction(actionId, ctxFromEvent) {
         actions.pages.createPageAfterAndActivate(pageId)
         break 
       case "renamePage":
-        dockedSidebarRef.value?.onRenameFromMenu(pageId, ctx.anchorScope)
+        const kind_title = anchorKind(
+          'page',
+          'title',
+          'sidebar',
+          ctx.anchorScope
+        )
+        const key_title = anchorKey(kind_title, pageId)
+        
+        uiOverlay.requestOpen({
+          menuId: 'page.titlePopover',
+          anchorKey: key_title,
+          payload: { pageId: pageId },
+        })
+
+
+
+        //dockedSidebarRef.value?.onRenameFromMenu(pageId, ctx.anchorScope)
         console.log("[PIE][sidebar] rename page", ctx)
         break
       case "duplicatePage":
@@ -940,6 +962,7 @@ ref="linkPopoverEl"
 :initialHref="linkPopoverState?.initialHref"
 />
 </Teleport>
+<OverlayHost/>
   <Teleport to="body">
    <div
     v-if="!isLoginRoute && showBackdrop"
