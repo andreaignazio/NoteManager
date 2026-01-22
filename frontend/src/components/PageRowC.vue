@@ -5,7 +5,9 @@ import { useUiStore } from '@/stores/ui'
 import { anchorKey, anchorKind } from '@/ui/anchorsKeyBind'
 import { useRegisterAnchors } from '@/composables/useRegisterAnchors'
 import { useUIOverlayStore } from '@/stores/uioverlay'
+import {useAppActions} from '@/actions/useAppActions'
 
+const actions = useAppActions()
 const ui = useUiStore()
 
 const props = defineProps({
@@ -30,8 +32,6 @@ const props = defineProps({
 })
 
 const emit = defineEmits([
-  'open',
-  'start-edit',
   'add-child',
   'toggle-expand',
   'delete',
@@ -83,46 +83,12 @@ useRegisterAnchors({
   [key_plus]: plusEl,
 })
 
-/*onUnmounted(() => {
-  //props.registerMenuAnchor?.(props.anchorScope, props.page.id, null)
-  anchorsStore.registerAnchor(key_title, null )
-  anchorsStore.registerAnchor(key_dots, null )
-  anchorsStore.registerAnchor(key_plus, null )
-})
-
-
-watch(
-  () => [dotsEl.value, plusEl.value, titleEl.value, props.anchorScope],
-  ([dots, plus, title]) => {
-    if (dots)
-      anchorsStore.registerAnchor(key_dots, dotsEl.value )
-
-    if (plus)
-      anchorsStore.registerAnchor(key_plus, plusEl.value )
-
-    if (title)
-      anchorsStore.registerAnchor(key_title, titleEl )
-  },
-  { immediate: true }
-)
-
-onMounted(() => {
-  console.log('Registering page row anchors:', key_title,)
-  anchorsStore.registerAnchor(key_title, titleEl )
-})*/
-
-
-
 
 function onOpen() {
   console.log("Clicked on page:", props.page.id, "Title:", props.page.title)
-  if (props.isEditing) return
-  emit('open', props.page.id)
+  actions.pages.redirectToPage(props.page.id)
 }
 
-function onInput(e) {
-  emit('update:draftTitle', e.target.value ?? '')
-}
 
 function onToggleExpand() {
   emit('toggle-expand', props.page.id)
@@ -138,6 +104,7 @@ watch(
     inputEl.value?.select?.()
   }
 )
+
 
 const isHighlighted = ref(false)
 const pageActionMenuId = toRef(props, 'pageActionMenuId')
@@ -161,14 +128,6 @@ const isLastAddedPage = computed(() => {
 
 
 
-/*onMounted(() => {
-  props.registerMenuAnchor?.(props.page.id, menuBtn.value)
-})*/
-
-onUnmounted(() => {
-  props.registerMenuAnchor?.(props.anchorScope, props.page.id, null)
-})
-
 function onOpenMenu() {
   console.log('Opening page actions menu for page:', props.page.id)
   if (!dotsEl.value) return
@@ -180,7 +139,7 @@ function onOpenMenu() {
       placement: 'right',
     }
   })
-  //emit('open-menu', { pageId: props.page.id, scope: props.anchorScope })
+
 
 }
 </script>

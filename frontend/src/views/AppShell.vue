@@ -1,91 +1,92 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import router from '@/router'
-import { storeToRefs } from 'pinia'
-import useAuthStore from '@/stores/auth'
-import usePagesStore from '@/stores/pages'
-import useBlocksStore from '@/stores/blocks'
-import { useUiStore } from '@/stores/ui'
-import { useOverlayStore } from '@/stores/overlay'
-import { useOverlayLayer } from '@/composables/useOverlayLayer'
-import { useOverlayBinding } from '@/composables/useOverlayBinding'
-import PieMenu from '@/components/menu/PieMenu.vue'
-import PieColorMenu from '@/components/menu/PieColorMenu.vue'
-import PieHighlightMenu from '@/components/menu/PieHighlightMenu.vue'
-import PieBlockTypeMenu from '@/components/menu/PieBlockTypeMenu.vue'
-import LinkPopover from '@/components/LinkPopover.vue'
-import { usePieMenuPolicy } from '@/composables/usePieMenuPolicy';
-import { usePieMenuController } from "@/composables/usePieMenuController"
-import FlyoutSidebar from '@/components/shell/FlyoutSidebar.vue'
-import PagesSidebar from '@/components/shell/PagesSidebar.vue'
-import Topbar from '@/components/shell/Topbar.vue'
-import { computeFloatingPosition } from "@/utils/computeFloatingPosition"
-import { useAppActions } from '@/actions/useAppActions'
-import { useEditorRegistryStore } from '@/stores/editorRegistry'
-import OverlayHost from '@/components/shell/OverlayHost.vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import router from "@/router";
+import { storeToRefs } from "pinia";
+import useAuthStore from "@/stores/auth";
+import usePagesStore from "@/stores/pages";
+import useBlocksStore from "@/stores/blocks";
+import { useUiStore } from "@/stores/ui";
+import { useOverlayStore } from "@/stores/overlay";
+import { useOverlayLayer } from "@/composables/useOverlayLayer";
+import { useOverlayBinding } from "@/composables/useOverlayBinding";
+import PieMenu from "@/components/menu/PieMenu.vue";
+import PieColorMenu from "@/components/menu/PieColorMenu.vue";
+import PieHighlightMenu from "@/components/menu/PieHighlightMenu.vue";
+import PieBlockTypeMenu from "@/components/menu/PieBlockTypeMenu.vue";
+import LinkPopover from "@/components/LinkPopover.vue";
+import { usePieMenuPolicy } from "@/composables/usePieMenuPolicy";
+import { usePieMenuController } from "@/composables/usePieMenuController";
+import FlyoutSidebar from "@/components/shell/FlyoutSidebar.vue";
+import PagesSidebar from "@/components/shell/PagesSidebar.vue";
+import Topbar from "@/components/shell/Topbar.vue";
+import { computeFloatingPosition } from "@/utils/computeFloatingPosition";
+import { useAppActions } from "@/actions/useAppActions";
+import { useEditorRegistryStore } from "@/stores/editorRegistry";
+import OverlayHost from "@/components/shell/OverlayHost.vue";
 
-import { useUIOverlayStore } from '@/stores/uioverlay'
-import { useAnchorRegistryStore } from '@/stores/anchorRegistry'
-import { anchorKey, anchorKind } from '@/ui/anchorsKeyBind'
+import { useUIOverlayStore } from "@/stores/uioverlay";
+import { useAnchorRegistryStore } from "@/stores/anchorRegistry";
+import { anchorKey, anchorKind } from "@/ui/anchorsKeyBind";
+import { useTempAnchors } from "@/actions/tempAnchors.actions";
 
+const authStore = useAuthStore();
+const pagesStore = usePagesStore();
+const blocksStore = useBlocksStore();
+const ui = useUiStore();
+const overlay = useOverlayStore();
+const actions = useAppActions();
+const editorRegStore = useEditorRegistryStore();
+const uiOverlay = useUIOverlayStore();
+const tempAnchors = useTempAnchors();
+ui.hydrate();
 
-const authStore = useAuthStore()
-const pagesStore = usePagesStore()
-const blocksStore = useBlocksStore()
-const ui = useUiStore()
-const overlay = useOverlayStore()
-const actions = useAppActions()
-const editorRegStore = useEditorRegistryStore()
-const uiOverlay = useUIOverlayStore()
+const errorMsg = ref("");
 
-ui.hydrate()
+const overlayHasAny = computed(() => overlay.hasAny);
+const closeOnOutside = computed(
+  () => overlay.top?.options?.closeOnOutside !== false,
+);
+const stopPointerOutside = computed(
+  () => overlay.top?.options?.stopPointerOutside !== false,
+);
 
-const errorMsg = ref('')
-
-
-const overlayHasAny = computed(() => overlay.hasAny)
-const closeOnOutside = computed(() => overlay.top?.options?.closeOnOutside !== false)
-const stopPointerOutside = computed(() => overlay.top?.options?.stopPointerOutside !== false)
-
-const showBackdrop = computed(()=>{
-  if(overlayHasAny.value && stopPointerOutside.value) return true
-  return false
-}
-)
+const showBackdrop = computed(() => {
+  if (overlayHasAny.value && stopPointerOutside.value) return true;
+  return false;
+});
 
 function onBackdropPointerDown(e) {
-  console.log("OnBackdropPointerDown")
-  e.preventDefault()
-  e.stopPropagation()
+  console.log("OnBackdropPointerDown");
+  e.preventDefault();
+  e.stopPropagation();
 
-  if (closeOnOutside.value) overlay.closeTop()
+  if (closeOnOutside.value) overlay.closeTop();
 }
 
 function onBackdropWheel(e) {
   // se vuoi bloccare scroll sotto mentre c’è overlay
   //if(stopPointerOutside.value){
-  e.preventDefault()
-  e.stopPropagation()
+  e.preventDefault();
+  e.stopPropagation();
 }
 
-const { editingPageId } = storeToRefs(pagesStore)
+const { editingPageId } = storeToRefs(pagesStore);
 
-
-const dockedSidebarRef = ref(null)
+const dockedSidebarRef = ref(null);
 
 //===FLYOUT-OVERLAY===
-const flyoutId = 'flyout'
-const flyoutSidebarRef = ref(null) //Dumb DOM element
-const flyoutOpen = ref(false) //Reference that know when flyout is open
-const flyoutHitArea = ref(null) //Area that trigger flyout opening
+const flyoutId = "flyout";
+const flyoutSidebarRef = ref(null); //Dumb DOM element
+const flyoutOpen = ref(false); //Reference that know when flyout is open
+const flyoutHitArea = ref(null); //Area that trigger flyout opening
 
 function onFlyoutClose() {
-  flyoutOpen.value = false
+  flyoutOpen.value = false;
 }
 
 //const flyoutActive = computed(()=> overlay.activeId === flyoutId)
 
-const flyoutLayer = useOverlayLayer('flyout', () => ({
+const flyoutLayer = useOverlayLayer("flyout", () => ({
   getMenuEl: () => flyoutSidebarRef.value?.panelEl?.value ?? null,
   getAnchorEl: () => flyoutHitArea.value,
   close: onFlyoutClose,
@@ -96,312 +97,310 @@ const flyoutLayer = useOverlayLayer('flyout', () => ({
     lockScroll: false,
     restoreFocus: false,
   },
-}))
+}));
 
-flyoutLayer.syncOpen(flyoutOpen)
-const flyoutActive = flyoutLayer.isActive
+flyoutLayer.syncOpen(flyoutOpen);
+const flyoutActive = flyoutLayer.isActive;
 
-
-
-const isDocked = computed(() => ui.sidebarMode === 'docked')
-const isHidden = computed(() => ui.sidebarMode === 'hidden')
+const isDocked = computed(() => ui.sidebarMode === "docked");
+const isHidden = computed(() => ui.sidebarMode === "hidden");
 
 const activeSidebarRef = computed(() => {
-  if (isDocked.value) return dockedSidebarRef.value
-  if (flyoutOpen.value) return flyoutSidebarRef.value
-  return null
-})
+  if (isDocked.value) return dockedSidebarRef.value;
+  if (flyoutOpen.value) return flyoutSidebarRef.value;
+  return null;
+});
 
 async function fetchPages() {
   try {
-    await pagesStore.fetchPages()
+    await pagesStore.fetchPages();
   } catch {
-    errorMsg.value = 'Error while loading pages'
+    errorMsg.value = "Error while loading pages";
   }
 }
 
 async function checkRouteAndFetchPages() {
-  if (!authStore?.isAuthenticated) return
-  await fetchPages()
-  const routeId = router.currentRoute.value?.params?.id ?? null
+  if (!authStore?.isAuthenticated) return;
+  await fetchPages();
+  const routeId = router.currentRoute.value?.params?.id ?? null;
   if (routeId && !pagesStore.pagesById[routeId]) {
-    router.push('/')
+    router.push("/");
   } else {
-    pagesStore.ensureVisible(routeId)
+    pagesStore.ensureVisible(routeId);
   }
 }
 
-async function _init(){
-  ui.hydrate()
-  if (!authStore?.isAuthenticated) return
-  await fetchPages()
+async function _init() {
+  ui.hydrate();
+  if (!authStore?.isAuthenticated) return;
+  await fetchPages();
   // apri l’ultima pagina aperta se esiste
-  const lastOpenedPageId = ui.lastOpenedPageId
-  console.log("Last opened page id:", lastOpenedPageId)
+  const lastOpenedPageId = ui.lastOpenedPageId;
+  console.log("Last opened page id:", lastOpenedPageId);
   if (lastOpenedPageId && pagesStore.pagesById[lastOpenedPageId]) {
-    actions.pages.redirectToPage(lastOpenedPageId)
+    actions.pages.redirectToPage(lastOpenedPageId);
   }
-  if(pagesStore.anyPage){
-    const firstPageId = pagesStore.childrenByParentId[null]?.[0] ?? null
-    if(firstPageId){
-      actions.pages.redirectToPage(firstPageId)
+  if (pagesStore.anyPage) {
+    const firstPageId = pagesStore.childrenByParentId[null]?.[0] ?? null;
+    if (firstPageId) {
+      actions.pages.redirectToPage(firstPageId);
     }
   } else {
-    actions.pages.createChildAndActivate(null)
+    actions.pages.createChildAndActivate(null);
   }
-
 }
 
-onMounted(_init)
+onMounted(_init);
 
 const handleLogout = async () => {
   try {
-    overlay.clear?.()      
-    flyoutOpen.value = false
-    await authStore.logout()
-    router.push('/login')
+    overlay.clear?.();
+    flyoutOpen.value = false;
+    await authStore.logout();
+    router.push("/login");
   } catch {
-    errorMsg.value = 'Logout error'
+    errorMsg.value = "Logout error";
   }
-}
+};
 
 // ====== Sidebar mode toggling policy ======
 function closeAllSidebarTransientUi() {
   // chiudi menu e editing per sicurezza (policy semplice)
-  pagesStore.closeContextMenu()
-  if (editingPageId.value !== null) pagesStore.cancelEdit()
+  pagesStore.closeContextMenu();
+  if (editingPageId.value !== null) pagesStore.cancelEdit();
 
-  flyoutOpen.value = false
+  flyoutOpen.value = false;
 }
-
-
 
 watch(
   () => ui.sidebarMode,
   (mode) => {
-    if (mode === 'hidden') {
+    if (mode === "hidden") {
       // quando vai hidden, chiudi roba volatile
-      closeAllSidebarTransientUi()
+      closeAllSidebarTransientUi();
     } else {
       // docked: flyout non serve
-      flyoutOpen.value = false
+      flyoutOpen.value = false;
     }
-  }
-)
+  },
+);
 
 // ====== Hover behaviour for flyout ======
-let openTimer = null
+let openTimer = null;
 
 function clearOpenTimer() {
-  if (openTimer) clearTimeout(openTimer)
-  openTimer = null
+  if (openTimer) clearTimeout(openTimer);
+  openTimer = null;
 }
 
 function onFlyoutHitEnter() {
-  if (!isHidden.value) return
-  clearOpenTimer()
+  if (!isHidden.value) return;
+  clearOpenTimer();
   openTimer = setTimeout(() => {
-    flyoutOpen.value = true
+    flyoutOpen.value = true;
     // (opzionale) nextTick per stabilizzare rect/menu
-    nextTick(() => activeSidebarRef.value?.updateMenuRectIfOpen?.())
-  }, 80)
+    nextTick(() => activeSidebarRef.value?.updateMenuRectIfOpen?.());
+  }, 80);
 }
 
 function onFlyoutHitLeave() {
-  clearOpenTimer()
+  clearOpenTimer();
   // la chiusura vera viene gestita dal FlyoutSidebar hover intent (emit close)
 }
 
-
-
-
-
 // --- Docked resize (AppShell) ---
-const isResizingSidebar = ref(false)
+const isResizingSidebar = ref(false);
 
-let resizePointerId = null
-let resizeStartX = 0
-let resizeStartWidth = 0
+let resizePointerId = null;
+let resizeStartX = 0;
+let resizeStartWidth = 0;
 
 function onResizeHandlePointerDown(e) {
-  if (!isDocked.value) return
+  if (!isDocked.value) return;
 
-  isResizingSidebar.value = true
-  resizePointerId = e.pointerId
-  resizeStartX = e.clientX
-  resizeStartWidth = ui.sidebarWidth
+  isResizingSidebar.value = true;
+  resizePointerId = e.pointerId;
+  resizeStartX = e.clientX;
+  resizeStartWidth = ui.sidebarWidth;
 
   // cattura pointer per non perdere il drag se esci dal bordo
-  e.currentTarget?.setPointerCapture?.(e.pointerId)
+  e.currentTarget?.setPointerCapture?.(e.pointerId);
 
   // migliora UX (no selezione testo mentre trascini)
-  document.documentElement.style.cursor = 'col-resize'
-  document.documentElement.style.userSelect = 'none'
+  document.documentElement.style.cursor = "col-resize";
+  document.documentElement.style.userSelect = "none";
 }
 
 function onResizeHandlePointerMove(e) {
-  if (!isResizingSidebar.value) return
-  if (resizePointerId !== e.pointerId) return
+  if (!isResizingSidebar.value) return;
+  if (resizePointerId !== e.pointerId) return;
 
-  const dx = e.clientX - resizeStartX
-  const nextWidth = resizeStartWidth + dx
-  ui.setSidebarWidth(nextWidth)
+  const dx = e.clientX - resizeStartX;
+  const nextWidth = resizeStartWidth + dx;
+  ui.setSidebarWidth(nextWidth);
 }
 
 function endSidebarResize(e) {
-  if (!isResizingSidebar.value) return
+  if (!isResizingSidebar.value) return;
   // se arriva un pointerup senza pointerId (es. chiamato manualmente), ok lo stesso
-  if (e?.pointerId != null && resizePointerId != null && e.pointerId !== resizePointerId) return
+  if (
+    e?.pointerId != null &&
+    resizePointerId != null &&
+    e.pointerId !== resizePointerId
+  )
+    return;
 
-  isResizingSidebar.value = false
-  resizePointerId = null
+  isResizingSidebar.value = false;
+  resizePointerId = null;
 
-  document.documentElement.style.cursor = ''
-  document.documentElement.style.userSelect = ''
+  document.documentElement.style.cursor = "";
+  document.documentElement.style.userSelect = "";
 }
 // ====== Topbar Hiding ======
-let mouseRevealTimer = null
-let mouseHideTimer = null
-const MOUSE_TIME = 1200
+let mouseRevealTimer = null;
+let mouseHideTimer = null;
+const MOUSE_TIME = 1200;
 
 function isEditorEl(el) {
-  if (!el || !(el instanceof HTMLElement)) return false
+  if (!el || !(el instanceof HTMLElement)) return false;
   // titolo
-  if (el.classList?.contains('page-title-input')) return true
+  if (el.classList?.contains("page-title-input")) return true;
   // block editor
-  if (el.dataset?.blockEditor === 'true') return true
-  return false
+  if (el.dataset?.blockEditor === "true") return true;
+  return false;
 }
 
 function clearMouseTimers() {
-  if (mouseRevealTimer) clearTimeout(mouseRevealTimer)
-  if (mouseHideTimer) clearTimeout(mouseHideTimer)
-  mouseRevealTimer = null
-  mouseHideTimer = null
+  if (mouseRevealTimer) clearTimeout(mouseRevealTimer);
+  if (mouseHideTimer) clearTimeout(mouseHideTimer);
+  mouseRevealTimer = null;
+  mouseHideTimer = null;
 }
-
-
 
 // ====== Global listeners  ======
 
 function onGlobalFocusIn(e) {
-  clearTimeout(mouseHideTimer)
-  const t = e.target
-  if (isEditorEl(t)) ui.setTopbarHidden(true)
+  clearTimeout(mouseHideTimer);
+  const t = e.target;
+  if (isEditorEl(t)) ui.setTopbarHidden(true);
 }
 
 function onGlobalFocusOut() {
   // aspetta che activeElement si stabilizzi
-  clearTimeout(mouseHideTimer)
+  clearTimeout(mouseHideTimer);
   requestAnimationFrame(() => {
-    const el = document.activeElement
-    ui.setTopbarHidden(isEditorEl(el))
-  })
+    const el = document.activeElement;
+    ui.setTopbarHidden(isEditorEl(el));
+  });
 }
 
-
 function onWindowResize() {
-  activeSidebarRef.value?.updateMenuRectIfOpen?.()
+  activeSidebarRef.value?.updateMenuRectIfOpen?.();
 }
 
 function onGlobalMouseMove() {
   // mostra sempre quando il mouse si muove
-  ui.setTopbarHidden(false)
+  ui.setTopbarHidden(false);
 
   // se stai ancora editando, pianifica di rinascodere dopo un attimo di inattività
-  clearTimeout(mouseHideTimer)
+  clearTimeout(mouseHideTimer);
   mouseHideTimer = setTimeout(() => {
-    const el = document.activeElement
-    if (isEditorEl(el)) ui.setTopbarHidden(true)
-  }, MOUSE_TIME) // <- regola: 600–1200ms
+    const el = document.activeElement;
+    if (isEditorEl(el)) ui.setTopbarHidden(true);
+  }, MOUSE_TIME); // <- regola: 600–1200ms
 }
 
-
-
 onMounted(() => {
-  window.addEventListener('resize', onWindowResize, { passive: true })
- 
+  window.addEventListener("resize", onWindowResize, { passive: true });
+
   // resize listeners
-  window.addEventListener('pointermove', onResizeHandlePointerMove, { passive: true })
-  window.addEventListener('pointerup', endSidebarResize, { passive: true })
-  window.addEventListener('pointercancel', endSidebarResize, { passive: true })
+  window.addEventListener("pointermove", onResizeHandlePointerMove, {
+    passive: true,
+  });
+  window.addEventListener("pointerup", endSidebarResize, { passive: true });
+  window.addEventListener("pointercancel", endSidebarResize, { passive: true });
   //Focus listeners
-  window.addEventListener('focusin', onGlobalFocusIn, true)
-  window.addEventListener('focusout', onGlobalFocusOut, true)
+  window.addEventListener("focusin", onGlobalFocusIn, true);
+  window.addEventListener("focusout", onGlobalFocusOut, true);
 
-  window.addEventListener('mousemove', onGlobalMouseMove, { passive: true })
-
-})
+  window.addEventListener("mousemove", onGlobalMouseMove, { passive: true });
+});
 
 onUnmounted(() => {
-  clearOpenTimer()
-  window.removeEventListener('resize', onWindowResize)
-  
+  clearOpenTimer();
+  window.removeEventListener("resize", onWindowResize);
 
-   // resize listeners cleanup
-  window.removeEventListener('pointermove', onResizeHandlePointerMove)
-  window.removeEventListener('pointerup', endSidebarResize)
-  window.removeEventListener('pointercancel', endSidebarResize)
+  // resize listeners cleanup
+  window.removeEventListener("pointermove", onResizeHandlePointerMove);
+  window.removeEventListener("pointerup", endSidebarResize);
+  window.removeEventListener("pointercancel", endSidebarResize);
   //Focus listeners
-  window.removeEventListener('focusin', onGlobalFocusIn, true)
-  window.removeEventListener('focusout', onGlobalFocusOut, true)
+  window.removeEventListener("focusin", onGlobalFocusIn, true);
+  window.removeEventListener("focusout", onGlobalFocusOut, true);
 
-  window.removeEventListener('mousemove', onGlobalMouseMove)
-  clearMouseTimers()
+  window.removeEventListener("mousemove", onGlobalMouseMove);
+  clearMouseTimers();
 
   // safety: se unmount mentre stai trascinando
-  document.documentElement.style.cursor = ''
-  document.documentElement.style.userSelect = ''
-})
+  document.documentElement.style.cursor = "";
+  document.documentElement.style.userSelect = "";
+});
 
-const isLoginRoute = computed(() => router.currentRoute.value?.name === 'login' || router.currentRoute.value?.path === '/login')
+const isLoginRoute = computed(
+  () =>
+    router.currentRoute.value?.name === "login" ||
+    router.currentRoute.value?.path === "/login",
+);
 
 // ====== PIE MENU CONTROLLER ======
 
-import { BG_TOKENS, TEXT_TOKENS, labelForBgToken,labelForTextToken, styleForBgToken,styleForTextToken } from '../theme/colorsCatalog'
+import {
+  BG_TOKENS,
+  TEXT_TOKENS,
+  labelForBgToken,
+  labelForTextToken,
+  styleForBgToken,
+  styleForTextToken,
+} from "../theme/colorsCatalog";
 
+const pieOpen = ref(false);
+const pieKind = ref("context");
+const pieMode = ref("block"); // 'block' | 'ai'
+const pieArea = ref("main"); // 'main' | 'sidebar'
+const pieX = ref(0);
+const pieY = ref(0);
+const pieContext = ref(null);
 
-
-const pieOpen = ref(false)
-const pieKind = ref("context")
-const pieMode = ref("block")  // 'block' | 'ai'
-const pieArea = ref("main")   // 'main' | 'sidebar'
-const pieX = ref(0)
-const pieY = ref(0)
-const pieContext = ref(null)
-
-const mainMenuRef = ref(null)
-const colorPieRef = ref(null)
-const highlightPieRef = ref(null)
-
+const mainMenuRef = ref(null);
+const colorPieRef = ref(null);
+const highlightPieRef = ref(null);
 
 function getMainMenuRef() {
-  return mainMenuRef.value
+  return mainMenuRef.value;
 }
 
 function getColorMenuRef() {
-  return colorPieRef
+  return colorPieRef;
 }
 
 const pieRAD_MAP = {
   hole: 26,
   main_outer: 92,
-  color_inner:66,
-  color_outer:106,
-}
+  color_inner: 66,
+  color_outer: 106,
+};
 
-const pieAnchorX = ref(0)
-const pieAnchorY = ref(0)
+const pieAnchorX = ref(0);
+const pieAnchorY = ref(0);
 
 let PIE_MAX_DIAM = computed(() => {
-  const max = Math.max(...Object.values(pieRAD_MAP))
-  return (max) *2
-}
-)
-PIE_MAX_DIAM = 260 //fisso per ora
+  const max = Math.max(...Object.values(pieRAD_MAP));
+  return max * 2;
+});
+PIE_MAX_DIAM = 260; //fisso per ora
 
 const pieCenter = computed(() => {
-  if (!pieOpen.value) return { x: pieAnchorX.value, y: pieAnchorY.value }
+  if (!pieOpen.value) return { x: pieAnchorX.value, y: pieAnchorY.value };
   return computeFloatingPosition({
     x: pieAnchorX.value,
     y: pieAnchorY.value,
@@ -410,32 +409,32 @@ const pieCenter = computed(() => {
     tx: 0.5,
     ty: 0.5,
     margin: 10,
-  })
-})
+  });
+});
 
+function openPie({ kind = "context", mode, area, x, y, context }) {
+  console.log("pieCenter before open:", pieCenter.value);
+  pieKind.value = kind;
+  pieMode.value = mode;
+  pieArea.value = area;
 
-function openPie({ kind="context", mode, area, x, y, context }) {
-  console.log("pieCenter before open:", pieCenter.value)
-  pieKind.value = kind
-  pieMode.value = mode
-  pieArea.value = area
-
-
-  pieAnchorX.value = x
-  pieAnchorY.value = y
+  pieAnchorX.value = x;
+  pieAnchorY.value = y;
 
   // lascia anche pieX/pieY se ti serve, ma meglio usarli come anchor
-  pieX.value = x
-  pieY.value = y
+  pieX.value = x;
+  pieY.value = y;
 
-  pieContext.value = context ?? { area }
-  pieContext.value = { ...(context ?? { area }), 
-        lastHighlightColor: ui.lastHighlightColor }
-  pieOpen.value = true
+  pieContext.value = context ?? { area };
+  pieContext.value = {
+    ...(context ?? { area }),
+    lastHighlightColor: ui.lastHighlightColor,
+  };
+  pieOpen.value = true;
 }
 
 function closePie() {
-  pieOpen.value = false
+  pieOpen.value = false;
 }
 
 // ---- central policy: rightclick opens pie ----
@@ -446,298 +445,320 @@ usePieMenuPolicy({
 
   // (optional) override context extraction if you want more data
   // getContextAt: (e) => ({ area: ..., blockId: ... })
-})
+});
 
-function isInvertKey(ctx){
-  return ctx?.mods?.alt
+function isInvertKey(ctx) {
+  return ctx?.mods?.alt;
 }
 
-
 async function onPieAction(actionId, ctxFromEvent) {
-  const ctx = ctxFromEvent ?? pieContext.value ?? {}
-  console.log("[PIE] action:", actionId, ctx)
+  const ctx = ctxFromEvent ?? pieContext.value ?? {};
+  console.log("[PIE] action:", actionId, ctx);
 
   // route by area
   if (ctx.area === "sidebar") {
-    const pageId = ctx.pageId
+    const pageId = ctx.pageId;
     switch (actionId) {
       case "share":
-        const BASE_URL = 'http://localhost:5173'
-        const URL = BASE_URL + `/pages/${pageId}`
-        actions.utility.copyToClipboard(URL)
-        console.log("[PIE][sidebar] share", ctx)
-        break
+        const BASE_URL = "http://localhost:5173";
+        const URL = BASE_URL + `/pages/${pageId}`;
+        actions.utility.copyToClipboard(URL);
+        console.log("[PIE][sidebar] share", ctx);
+        break;
       case "ai":
-        console.log("[PIE][sidebar] ai tools", ctx)
-        break
+        console.log("[PIE][sidebar] ai tools", ctx);
+        break;
       case "newPage":
-        console.log("[PIE][sidebar] new page", ctx)
-        console.log("PIE context:", ctx.pageId)
+        console.log("[PIE][sidebar] new page", ctx);
+        console.log("PIE context:", ctx.pageId);
         //actions.pages.createChildAndActivate(null)
-        actions.pages.createPageAfterAndActivate(pageId)
-        break 
+        actions.pages.createPageAfterAndActivate(pageId);
+        break;
       case "renamePage":
         const kind_title = anchorKind(
-          'page',
-          'title',
-          'sidebar',
-          ctx.anchorScope
-        )
-        const key_title = anchorKey(kind_title, pageId)
-        
+          "page",
+          "title",
+          "sidebar",
+          ctx.anchorScope,
+        );
+        const key_title = anchorKey(kind_title, pageId);
+
         uiOverlay.requestOpen({
-          menuId: 'page.titlePopover',
+          menuId: "page.titlePopover",
           anchorKey: key_title,
           payload: { pageId: pageId },
-        })
-
-
+        });
 
         //dockedSidebarRef.value?.onRenameFromMenu(pageId, ctx.anchorScope)
-        console.log("[PIE][sidebar] rename page", ctx)
-        break
+        console.log("[PIE][sidebar] rename page", ctx);
+        break;
       case "duplicatePage":
-        console.log("[PIE][sidebar] duplicate page", ctx)
-        await actions.pages.duplicatePage(pageId)
-        break
+        console.log("[PIE][sidebar] duplicate page", ctx);
+        await actions.pages.duplicatePage(pageId);
+        break;
       case "deletePage":
-        await actions.pages.deletePage(pageId)
-        break
+        await actions.pages.deletePage(pageId);
+        break;
       default:
-        console.log("[PIE][sidebar] action:", actionId, ctx)
+        console.log("[PIE][sidebar] action:", actionId, ctx);
     }
-    return
+    return;
   }
 
   // main (blocks)
-  const blockId = ctx.blockId
+  const blockId = ctx.blockId;
   if (!blockId) {
-    console.log("[PIE][main] no blockId, ignore", actionId, ctx)
-    return
+    console.log("[PIE][main] no blockId, ignore", actionId, ctx);
+    return;
   }
 
-  const pageId = blocksStore.blocksById[blockId]?.pageId ?? null
+  const pageId = blocksStore.blocksById[blockId]?.pageId ?? null;
 
   switch (actionId) {
     case "duplicate":
-      if (pageId) blocksStore.duplicateBlockInPlace(pageId, blockId)
-      console.log("[PIE][main] duplicate", blockId)
-      break
+      if (pageId) blocksStore.duplicateBlockInPlace(pageId, blockId);
+      console.log("[PIE][main] duplicate", blockId);
+      break;
 
     case "color":
       // NON apri qui il color menu: lo fa il controller via dwell stack
-      console.log("[PIE][main] color", blockId)
-      break
+      console.log("[PIE][main] color", blockId);
+      break;
 
     case "highlight":
-      console.log("[PIE][main] highlight (default)", ui.lastHighlightColor, blockId)
-      
-      const ed = editorRegStore.getEditor(blockId)
-      if (!ed) return
+      console.log(
+        "[PIE][main] highlight (default)",
+        ui.lastHighlightColor,
+        blockId,
+      );
 
-      console.log("PIE CONEXT:", ctx.mods.alt)
+      const ed = editorRegStore.getEditor(blockId);
+      if (!ed) return;
+
+      console.log("PIE CONEXT:", ctx.mods.alt);
       if (isInvertKey(ctx)) {
-        console.log("[PIE][main] highlight unset (invert key)")
-        ed.commands.unsetHighlight()
+        console.log("[PIE][main] highlight unset (invert key)");
+        ed.commands.unsetHighlight();
         //ed.chain().focus().unsetHighlight().run()
       } else {
-        ed.chain().focus().toggleHighlight({ color: ui.lastHighlightColor }).run()
+        ed.chain()
+          .focus()
+          .toggleHighlight({ color: ui.lastHighlightColor })
+          .run();
       }
-      break
+      break;
 
     case "moveTo":
-      // NON armi qui: lo fa il controller via dwellMoveToId
-      console.log("[PIE][main] moveTo", blockId)
-      break
+      const tmpanchor = tempAnchors.registerViewportCenter();
+
+      uiOverlay.requestOpen({
+        menuId: "block.moveTo",
+        anchorKey: tmpanchor.key,
+        payload: {
+          blockId: blockId,
+          placement: "right",
+        },
+      });
+      console.log("[PIE][main] moveTo", blockId);
+      break;
 
     case "changeType":
-      console.log("[PIE][main] changeType", blockId)
-      break
+      console.log("[PIE][main] changeType", blockId);
+      break;
 
     // ai preset
     case "ai":
-      console.log("[PIE][main] ai tools", blockId)
-      break
+      console.log("[PIE][main] ai tools", blockId);
+      break;
     case "share":
-      console.log("[PIE][main] share", blockId)
-      break
-      
+      console.log("[PIE][main] share", blockId);
+      break;
+
     case "copy":
-      console.log("[PIE][main] copy", blockId)
-      await actions.text.copyBlockRich(blockId)
-      break
+      console.log("[PIE][main] copy", blockId);
+      await actions.text.copyBlockRich(blockId);
+      break;
     case "paste":
-      await actions.text.pasteSmart(blockId)
-      console.log("[PIE][main] paste", blockId)
-      break
-    
+      await actions.text.pasteSmart(blockId);
+      console.log("[PIE][main] paste", blockId);
+      break;
+
     case "bold":
-      actions.text.toggleBold(blockId)
-      break
+      actions.text.toggleBold(blockId);
+      break;
 
     case "italic":
-      actions.text.toggleItalic(blockId)
-      break
+      actions.text.toggleItalic(blockId);
+      break;
 
     case "strike":
-      actions.text.toggleStrike(blockId)
-      break
+      actions.text.toggleStrike(blockId);
+      break;
 
     case "underline":
-      actions.text.toggleUnderline(blockId)
-      break
+      actions.text.toggleUnderline(blockId);
+      break;
 
     case "link":
-      if(ctx?.mods?.alt){
-        console.log("[PIE][main] remove link", blockId)
-       actions.text.removeLinkInSelectionOrAtCaret(blockId)
-        break
+      if (ctx?.mods?.alt) {
+        console.log("[PIE][main] remove link", blockId);
+        actions.text.removeLinkInSelectionOrAtCaret(blockId);
+        break;
       } else {
-        onOpenLinkPopover(ctx)
-        console.log("[PIE][main] open link popover", blockId)
+        onOpenLinkPopover(ctx);
+        console.log("[PIE][main] open link popover", blockId);
       }
-      
-      
-      break
-      
+
+      break;
+
     default:
-      console.log("[PIE][main] action:", actionId, blockId, ctx)
+      console.log("[PIE][main] action:", actionId, blockId, ctx);
   }
 }
 
 const pieController = usePieMenuController({
-  pieOpen, pieKind, pieMode, pieArea, pieX, pieY, pieContext,
+  pieOpen,
+  pieKind,
+  pieMode,
+  pieArea,
+  pieX,
+  pieY,
+  pieContext,
   closePie,
 
   mainMenuRef: getMainMenuRef,
   colorMenuRef: getColorMenuRef,
   highlightMenuRef: () => highlightPieRef.value,
   dwellMs: 300,
-  submenuIds: 
-  computed(() => (pieMode.value === 'block' ? ['color','highlight','changeType'] : [] )).value,
+  submenuIds: computed(() =>
+    pieMode.value === "block" ? ["color", "highlight", "changeType"] : [],
+  ).value,
 
   dwellMoveToId: "moveTo",
 
   onAction: async (id, ctx) => {
     // moveTo commit
     if (id === "moveToCommit") {
-      const targetPageId = ctx?.targetPageId
-      const blockId = ctx?.blockId
-      const fromPageId = blockId ? (blocksStore.blocksById[blockId]?.pageId ?? null) : null
+      const targetPageId = ctx?.targetPageId;
+      const blockId = ctx?.blockId;
+      const fromPageId = blockId
+        ? (blocksStore.blocksById[blockId]?.pageId ?? null)
+        : null;
       if (blockId && targetPageId && fromPageId) {
         await blocksStore.transferSubtreeToPage({
           fromPageId: String(fromPageId),
           toPageId: String(targetPageId),
           rootId: String(blockId),
-        })
+        });
       }
-      return
+      return;
     }
 
     // tutte le altre azioni pie main
-    await onPieAction(id, ctx)
+    await onPieAction(id, ctx);
   },
 
   onSetTextToken: async (token, ctx) => {
-    const blockId = ctx?.blockId
-    if (!blockId) return
-    const pageId = blocksStore.blocksById[blockId]?.pageId ?? null
-    if (!pageId) return
+    const blockId = ctx?.blockId;
+    if (!blockId) return;
+    const pageId = blocksStore.blocksById[blockId]?.pageId ?? null;
+    if (!pageId) return;
 
-    const stylePatch = { textColor: String(token) }
+    const stylePatch = { textColor: String(token) };
     // 👇 usa la tua action reale
-    await blocksStore.updateBlockStyle(blockId, stylePatch)
+    await blocksStore.updateBlockStyle(blockId, stylePatch);
   },
 
   onSetBgToken: async (token, ctx) => {
-    const blockId = ctx?.blockId
-    if (!blockId) return
-    const pageId = blocksStore.blocksById[blockId]?.pageId ?? null
-    if (!pageId) return
+    const blockId = ctx?.blockId;
+    if (!blockId) return;
+    const pageId = blocksStore.blocksById[blockId]?.pageId ?? null;
+    if (!pageId) return;
 
-    const stylePatch = { bgColor: String(token) }
-    await blocksStore.updateBlockStyle(blockId, stylePatch)
+    const stylePatch = { bgColor: String(token) };
+    await blocksStore.updateBlockStyle(blockId, stylePatch);
   },
   onSetHighlightColor: async (color, ctx) => {
     // 1) salva last color nello ui store
-    ui.lastHighlightColor = color
-    const ed = editorRegStore.getEditor(ctx?.blockId)
-    ed?.chain().focus().toggleHighlight({ color }).run()
-    console.log("[PIE][main] setHighlight", color, ctx)
+    ui.lastHighlightColor = color;
+    const ed = editorRegStore.getEditor(ctx?.blockId);
+    ed?.chain().focus().toggleHighlight({ color }).run();
+    console.log("[PIE][main] setHighlight", color, ctx);
   },
   onSetBlockType: async (blockType, ctx) => {
-    const blockId = ctx?.blockId
-    if (!blockId) return
-    
+    const blockId = ctx?.blockId;
+    if (!blockId) return;
 
-    await blocksStore.updateBlockType(blockId, blockType)
-    console.log("[PIE][main] setBlockType", blockType, ctx)
+    await blocksStore.updateBlockType(blockId, blockType);
+    console.log("[PIE][main] setBlockType", blockType, ctx);
   },
-})
+});
 
 const currentBg = computed(() => {
-  const blockId = pieContext.value?.blockId
-  if (!blockId) return null
-  return blocksStore.blocksById[blockId]?.props?.style?.bgColor ?? null
-})
+  const blockId = pieContext.value?.blockId;
+  if (!blockId) return null;
+  return blocksStore.blocksById[blockId]?.props?.style?.bgColor ?? null;
+});
 
 const currentText = computed(() => {
-  const blockId = pieContext.value?.blockId
-  if (!blockId) return null
-  return blocksStore.blocksById[blockId]?.props?.style?.textColor ?? null
-})
+  const blockId = pieContext.value?.blockId;
+  if (!blockId) return null;
+  return blocksStore.blocksById[blockId]?.props?.style?.textColor ?? null;
+});
 
 const currentBlockType = computed(() => {
-  const blockId = pieContext.value?.blockId
-  if (!blockId) return null
-  return blocksStore.blocksById[blockId]?.type ?? null
-})
+  const blockId = pieContext.value?.blockId;
+  if (!blockId) return null;
+  return blocksStore.blocksById[blockId]?.type ?? null;
+});
 
-const labelForBg = (t) => BG_TOKENS.map(t=> labelForBgToken(t))
-const labelForText = (t) => TEXT_TOKENS.map(t=> labelForTextToken(t))
-const letterStyleForText = (token) => styleForTextToken(token)
-const swatchStyleForBg = (token) => styleForBgToken(token)  
+const labelForBg = (t) => BG_TOKENS.map((t) => labelForBgToken(t));
+const labelForText = (t) => TEXT_TOKENS.map((t) => labelForTextToken(t));
+const letterStyleForText = (token) => styleForTextToken(token);
+const swatchStyleForBg = (token) => styleForBgToken(token);
 
-const pieTop = pieController.top
-
+const pieTop = pieController.top;
 
 function getPieMenuEl() {
   // 1) se mainMenuRef è un HTMLElement diretto:
   // return mainMenuRef.value
 
   // 2) se è un componente Vue:
-  const mainEl = mainMenuRef.value?.$el ?? null
-  const colorEl = colorPieRef.value?.$el ?? null
+  const mainEl = mainMenuRef.value?.$el ?? null;
+  const colorEl = colorPieRef.value?.$el ?? null;
   // usa quello visibile in base a pieTop
-  return (pieTop.value === 'color' ? colorEl : mainEl) ?? null
+  return (pieTop.value === "color" ? colorEl : mainEl) ?? null;
 }
 
 function getPieMenuInteractionScope() {
-  console.log("getPieMenuInteractionScope:", pieController.interactionScope.value)
-  return pieController.interactionScope.value
+  console.log(
+    "getPieMenuInteractionScope:",
+    pieController.interactionScope.value,
+  );
+  return pieController.interactionScope.value;
 }
 
 useOverlayBinding({
-  id: 'pie',
-  kind: 'pie',
+  id: "pie",
+  kind: "pie",
   priority: 3,
-  behaviour: 'exclusiveKinds',
-  exclusiveKinds: ['hoverbar', 'dropdown'],
-   // dropdown opzionale
+  behaviour: "exclusiveKinds",
+  exclusiveKinds: ["hoverbar", "dropdown"],
+  // dropdown opzionale
   isOpen: () => pieOpen.value,
   requestClose: (reason) => {
-    closePie()
+    closePie();
   },
   canOpen: () => {
-    const top = overlay.top
-    if (!top) return true
-    const topP = top.priority ?? 0
-    return topP <= 3
+    const top = overlay.top;
+    if (!top) return true;
+    const topP = top.priority ?? 0;
+    return topP <= 3;
   },
   getMenuEl: () => getPieMenuEl(),
 
-  getInteractionScope: () => (pieController.interactionScope.value),
-  
+  getInteractionScope: () => pieController.interactionScope.value,
+
   options: {
     closeOnOutside: true,
     closeOnEsc: true,
@@ -746,36 +767,41 @@ useOverlayBinding({
     allowAnchorClick: false, // di solito per pie non serve
     lockScroll: false,
   },
-})
-
-
+});
 
 const HIGHLIGHT_COLORS = [
-  '#FFEE58', '#FFD54F', '#FFAB91', '#F48FB1',
-  '#CE93D8', '#90CAF9', '#80DEEA', '#A5D6A7',
-]
+  "#FFEE58",
+  "#FFD54F",
+  "#FFAB91",
+  "#F48FB1",
+  "#CE93D8",
+  "#90CAF9",
+  "#80DEEA",
+  "#A5D6A7",
+];
 
 // ====== LINK POPOVER OVERLAY ======
 
-
-const linkPopoverOpen = ref(false)
-const linkPopoverState = ref(null)
-const linkPopoverEl = ref(null)
+const linkPopoverOpen = ref(false);
+const linkPopoverState = ref(null);
+const linkPopoverEl = ref(null);
 
 useOverlayBinding({
-  id: 'link-popover',
-  kind: 'modal',
-  priority: 100,                 // > pie (es. pie=20)
-  behaviour: 'exclusiveKinds',
-  exclusiveKinds: ['pie', 'dropdown', 'hoverbar', 'tooltip'],
+  id: "link-popover",
+  kind: "modal",
+  priority: 100, // > pie (es. pie=20)
+  behaviour: "exclusiveKinds",
+  exclusiveKinds: ["pie", "dropdown", "hoverbar", "tooltip"],
 
   isOpen: () => linkPopoverOpen.value,
 
   // importante: con un modal spesso vuoi scope "local" (click fuori lo chiude),
   // oppure "global" se vuoi far passare i pointerdown fuori senza stopPropagation
-  getInteractionScope: () => 'local',
+  getInteractionScope: () => "local",
 
-  requestClose: (reason) => { onCloseLinkPopover() },
+  requestClose: (reason) => {
+    onCloseLinkPopover();
+  },
 
   getMenuEl: () => linkPopoverEl.value,
   getAnchorEl: () => null,
@@ -783,36 +809,33 @@ useOverlayBinding({
   options: {
     closeOnEsc: true,
     closeOnOutside: true,
-    lockScroll: false,           // o true se è proprio un modal blocking
+    lockScroll: false, // o true se è proprio un modal blocking
     stopPointerOutside: true,
     allowAnchorClick: true,
     restoreFocus: true,
   },
-})
+});
 
-
-
-
-function onOpenLinkPopover(ctx){
-  const blockId = ctx?.blockId
-  if (!blockId) return
-  const ed = editorRegStore.getEditor(blockId)
-  const activeHref = ed ? actions.text.getActiveLinkHref(blockId) : null
-  const anchorRect = ed ? actions.text.getSelectionRect(ed) : null
-  const pageId = blocksStore.blocksById[blockId]?.pageId ?? null
+function onOpenLinkPopover(ctx) {
+  const blockId = ctx?.blockId;
+  if (!blockId) return;
+  const ed = editorRegStore.getEditor(blockId);
+  const activeHref = ed ? actions.text.getActiveLinkHref(blockId) : null;
+  const anchorRect = ed ? actions.text.getSelectionRect(ed) : null;
+  const pageId = blocksStore.blocksById[blockId]?.pageId ?? null;
   linkPopoverState.value = {
     blockId: String(blockId),
     anchorRect,
     initialHref: activeHref ?? "",
     currentPageId: pageId,
-  }
- 
-  linkPopoverOpen.value = true
+  };
+
+  linkPopoverOpen.value = true;
 }
 
-function onCloseLinkPopover(){
-  linkPopoverState.value = null
-  linkPopoverOpen.value = false
+function onCloseLinkPopover() {
+  linkPopoverState.value = null;
+  linkPopoverOpen.value = false;
 }
 </script>
 
@@ -829,7 +852,12 @@ function onCloseLinkPopover(){
         :style="{ width: ui.sidebarWidth + 'px' }"
         :class="{ 'pie-move-armed': ui.SidebarMoveToArmed }"
       >
-        <PagesSidebar @logout="handleLogout" ref="dockedSidebarRef" variant="docked" :indentPx="24" />
+        <PagesSidebar
+          @logout="handleLogout"
+          ref="dockedSidebarRef"
+          variant="docked"
+          :indentPx="24"
+        />
 
         <div
           class="sidebar-resize-handle"
@@ -843,17 +871,12 @@ function onCloseLinkPopover(){
       </div>
 
       <!-- CONTENT AREA (Topbar + router view) -->
-      <div class="content-area"
-      data-pie-area="main">
-
-        <Topbar
-        class="app-topbar" :class="{ hidden: ui.topbarHidden }"
-        >
-       
+      <div class="content-area" data-pie-area="main">
+        <Topbar class="app-topbar" :class="{ hidden: ui.topbarHidden }">
         </Topbar>
 
         <main class="content" @pointerdown="onBlankPointer">
-          <div class="content-scroll scrollbar-auto ">
+          <div class="content-scroll scrollbar-auto">
             <div v-if="errorMsg" class="error">{{ errorMsg }}</div>
             <router-view />
           </div>
@@ -888,119 +911,122 @@ function onCloseLinkPopover(){
   </div>
 
   <Teleport to="body">
-  <PieMenu
-  ref="mainMenuRef"
-  v-show="pieOpen && overlay.has('pie') && pieTop === 'main'"
-  :open="pieOpen  && overlay.has('pie') && pieTop === 'main'"
-  :x="pieAnchorX"
-  :y="pieAnchorY"
-  :centerX="pieCenter.x"
-  :centerY="pieCenter.y"
-  :context="pieContext"
-  :highlightSwatch="ui.lastHighlightColor"
-  :mode="pieMode"
-  :area="pieArea"
-  :onRegisterApi="pieController.registerMenuApi"
-  :onUnregisterApi="pieController.unregisterMenuApi"
-/>
+    <PieMenu
+      ref="mainMenuRef"
+      v-show="pieOpen && overlay.has('pie') && pieTop === 'main'"
+      :open="pieOpen && overlay.has('pie') && pieTop === 'main'"
+      :x="pieAnchorX"
+      :y="pieAnchorY"
+      :centerX="pieCenter.x"
+      :centerY="pieCenter.y"
+      :context="pieContext"
+      :highlightSwatch="ui.lastHighlightColor"
+      :mode="pieMode"
+      :area="pieArea"
+      :onRegisterApi="pieController.registerMenuApi"
+      :onUnregisterApi="pieController.unregisterMenuApi"
+    />
 
-<PieColorMenu
-  ref="colorPieRef"
-  v-show="pieOpen && overlay.has('pie') && pieTop === 'color'"
-  :open="pieOpen && overlay.has('pie') && pieTop === 'color'"
-  :onRegisterApi="pieController.registerMenuApi"
-  :onUnregisterApi="pieController.unregisterMenuApi"
-  :x="pieAnchorX"
-  :y="pieAnchorY"
-  :centerX="pieCenter.x"
-  :centerY="pieCenter.y"
-  :context="pieContext"
-  :textTokens="TEXT_TOKENS"
-  :bgTokens="BG_TOKENS"
-  :currentText="currentText"
-  :currentBg="currentBg"
-  :labelForText="labelForText"
-  :labelForBg="labelForBg"
-  :letterStyleForText="letterStyleForText"
-  :swatchStyleForBg="swatchStyleForBg"
-/>
-<PieHighlightMenu
-  ref="highlightPieRef"
-  v-show="pieOpen && overlay.has('pie') && pieTop === 'highlight'"
-  :open="pieOpen && overlay.has('pie') && pieTop === 'highlight'"
-  :onRegisterApi="pieController.registerMenuApi"
-  :onUnregisterApi="pieController.unregisterMenuApi"
-  :x="pieAnchorX"
-  :y="pieAnchorY"
-  :centerX="pieCenter.x"
-  :centerY="pieCenter.y"
-  :context="pieContext"
-  :colors="HIGHLIGHT_COLORS"
-  :current="ui.lastHighlightColor"
-/>
-<PieBlockTypeMenu
-  ref="typePieRef"
-  v-show="pieOpen && overlay.has('pie') && pieTop === 'changeType'"
-  :open="pieOpen && overlay.has('pie') && pieTop === 'changeType'"
-  :x="pieAnchorX"
-  :y="pieAnchorY"
-  :centerX="pieCenter.x"
-  :centerY="pieCenter.y"
-  :context="pieContext"
-  :currentType="currentBlockType"
-  :onRegisterApi="pieController.registerMenuApi"
-  :onUnregisterApi="pieController.unregisterMenuApi"
-/>
-</Teleport>
-<Teleport to="body">
-<LinkPopover 
-ref="linkPopoverEl"
-:open="linkPopoverOpen"
-:blockId="linkPopoverState?.blockId"
-:currentPageId="linkPopoverState?.currentPageId"
-:anchorRect="linkPopoverState?.anchorRect"
-:initialHref="linkPopoverState?.initialHref"
-/>
-</Teleport>
-<OverlayHost/>
+    <PieColorMenu
+      ref="colorPieRef"
+      v-show="pieOpen && overlay.has('pie') && pieTop === 'color'"
+      :open="pieOpen && overlay.has('pie') && pieTop === 'color'"
+      :onRegisterApi="pieController.registerMenuApi"
+      :onUnregisterApi="pieController.unregisterMenuApi"
+      :x="pieAnchorX"
+      :y="pieAnchorY"
+      :centerX="pieCenter.x"
+      :centerY="pieCenter.y"
+      :context="pieContext"
+      :textTokens="TEXT_TOKENS"
+      :bgTokens="BG_TOKENS"
+      :currentText="currentText"
+      :currentBg="currentBg"
+      :labelForText="labelForText"
+      :labelForBg="labelForBg"
+      :letterStyleForText="letterStyleForText"
+      :swatchStyleForBg="swatchStyleForBg"
+    />
+    <PieHighlightMenu
+      ref="highlightPieRef"
+      v-show="pieOpen && overlay.has('pie') && pieTop === 'highlight'"
+      :open="pieOpen && overlay.has('pie') && pieTop === 'highlight'"
+      :onRegisterApi="pieController.registerMenuApi"
+      :onUnregisterApi="pieController.unregisterMenuApi"
+      :x="pieAnchorX"
+      :y="pieAnchorY"
+      :centerX="pieCenter.x"
+      :centerY="pieCenter.y"
+      :context="pieContext"
+      :colors="HIGHLIGHT_COLORS"
+      :current="ui.lastHighlightColor"
+    />
+    <PieBlockTypeMenu
+      ref="typePieRef"
+      v-show="pieOpen && overlay.has('pie') && pieTop === 'changeType'"
+      :open="pieOpen && overlay.has('pie') && pieTop === 'changeType'"
+      :x="pieAnchorX"
+      :y="pieAnchorY"
+      :centerX="pieCenter.x"
+      :centerY="pieCenter.y"
+      :context="pieContext"
+      :currentType="currentBlockType"
+      :onRegisterApi="pieController.registerMenuApi"
+      :onUnregisterApi="pieController.unregisterMenuApi"
+    />
+  </Teleport>
   <Teleport to="body">
-   <div
-    v-if="!isLoginRoute && showBackdrop"
-    class="overlay-backdrop"
-    data-pie-overlay="true"
-    :style="{ pointerEvents: overlay.top?.interactionScope === 'global' ? 'none' : 'auto' }"
-    @pointerdown.capture="onBackdropPointerDown"
-    @wheel.capture="onBackdropWheel"
-    @touchmove.capture.prevent.stop
-  />
+    <LinkPopover
+      ref="linkPopoverEl"
+      :open="linkPopoverOpen"
+      :blockId="linkPopoverState?.blockId"
+      :currentPageId="linkPopoverState?.currentPageId"
+      :anchorRect="linkPopoverState?.anchorRect"
+      :initialHref="linkPopoverState?.initialHref"
+    />
+  </Teleport>
+  <OverlayHost />
+  <Teleport to="body">
+    <div
+      v-if="!isLoginRoute && showBackdrop"
+      class="overlay-backdrop"
+      data-pie-overlay="true"
+      :style="{
+        pointerEvents:
+          overlay.top?.interactionScope === 'global' ? 'none' : 'auto',
+      }"
+      @pointerdown.capture="onBackdropPointerDown"
+      @wheel.capture="onBackdropWheel"
+      @touchmove.capture.prevent.stop
+    />
   </Teleport>
 </template>
 
 <style scoped>
 /*SIDEBAR HIGHLIGHT WHEN MOVE-TO ARMED*/
-  .sidebar.pie-move-armed {
-    outline: 2px solid rgba(0,0,0,.12);
-    background: rgba(255,255,255,.35);
-  }
-  .sidebar.pie-move-armed [data-page-id] {
-    transition: background .08s ease;
-  }
-  .sidebar.pie-move-armed [data-page-id].pie-drop-hover {
-    background: rgba(0,0,0,.06);
-  }
+.sidebar.pie-move-armed {
+  outline: 2px solid rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.35);
+}
+.sidebar.pie-move-armed [data-page-id] {
+  transition: background 0.08s ease;
+}
+.sidebar.pie-move-armed [data-page-id].pie-drop-hover {
+  background: rgba(0, 0, 0, 0.06);
+}
 
-  .test::after{
-    background: blue;
-  }
+.test::after {
+  background: blue;
+}
 
-  .overlay-backdrop {
+.overlay-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 1990;          /* sotto i menu (2000), sopra l’app */
+  z-index: 1990; /* sotto i menu (2000), sopra l’app */
   background: transparent; /* oppure rgba(0,0,0,.08) se vuoi */
   pointer-events: auto;
 }
-  /*.scroll-lock{
+/*.scroll-lock{
     pointer-events: none;
   }*/
 .shell {
@@ -1025,7 +1051,7 @@ ref="linkPopoverEl"
   position: relative;
   flex: 0 0 auto;
   min-width: 0;
-  height: 100vh;       
+  height: 100vh;
   overflow: hidden;
 }
 
@@ -1041,22 +1067,23 @@ ref="linkPopoverEl"
   z-index: 5;
 }
 
-
 /* feedback visivo discreto (linea centrale) */
 .sidebar-resize-handle::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   bottom: 0;
   left: 50%;
   width: 1px;
   transform: translateX(-0.5px);
-  background: rgba(0,0,0,.08);
+  background: rgba(0, 0, 0, 0.08);
   opacity: 0;
 }
 
 /* mostra un po’ la linea su hover/drag */
-.sidebar-resize-handle:hover::after { opacity: 1;}
+.sidebar-resize-handle:hover::after {
+  opacity: 1;
+}
 
 :global(html) .sidebar-resize-handle:active::after {
   opacity: 1;
@@ -1076,7 +1103,6 @@ ref="linkPopoverEl"
   overflow: hidden;
 }
 
-
 .content-scroll {
   height: 100%;
   overflow: auto;
@@ -1088,13 +1114,15 @@ ref="linkPopoverEl"
   position: absolute;
   top: 0;
   left: 0;
-  width: 10px;   /* puoi aumentare a 14px se vuoi più facile */
+  width: 10px; /* puoi aumentare a 14px se vuoi più facile */
   height: 100%;
   z-index: 20;
 }
 
 .app-topbar {
-  transition: transform 600ms ease, opacity 600ms ease;
+  transition:
+    transform 600ms ease,
+    opacity 600ms ease;
   will-change: transform, opacity;
 }
 
@@ -1109,32 +1137,40 @@ ref="linkPopoverEl"
   height: 34px;
   padding: 0 10px;
   border-radius: 10px;
-  border: 1px solid rgba(0,0,0,.14);
+  border: 1px solid rgba(0, 0, 0, 0.14);
   background: #fff;
   outline: none;
 }
-.input:focus { border-color: rgba(0,0,0,.28); }
+.input:focus {
+  border-color: rgba(0, 0, 0, 0.28);
+}
 
 .btn {
   height: 34px;
   padding: 0 12px;
   border-radius: 10px;
-  border: 1px solid rgba(0,0,0,.14);
-  background: rgba(0,0,0,.04);
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  background: rgba(0, 0, 0, 0.04);
   cursor: pointer;
 }
-.btn:hover { background: rgba(0,0,0,.07); }
-.btn.primary { background: rgba(0,0,0,.12); }
+.btn:hover {
+  background: rgba(0, 0, 0, 0.07);
+}
+.btn.primary {
+  background: rgba(0, 0, 0, 0.12);
+}
 
 .icon-btn {
   height: 34px;
   width: 34px;
   border-radius: 10px;
-  border: 1px solid rgba(0,0,0,.14);
-  background: rgba(0,0,0,.04);
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  background: rgba(0, 0, 0, 0.04);
   cursor: pointer;
 }
-.icon-btn:hover { background: rgba(0,0,0,.07); }
+.icon-btn:hover {
+  background: rgba(0, 0, 0, 0.07);
+}
 
 .error {
   margin: 0 0 12px;

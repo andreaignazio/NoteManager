@@ -1,34 +1,24 @@
 <script setup>
   import {  computed, nextTick, ref, watch, onMounted,toRef,  onBeforeUnmount } from 'vue'
-  import router from '@/router'
+  import { storeToRefs } from 'pinia'
+
   import usePagesStore from '@/stores/pages'
   import { useBlocksStore } from '@/stores/blocks'
-  import RecursiveDraggableV0 from '@/components/nested/RecursiveDraggableV0.vue';
-  import BlockRow from '@/views/BlockRow.vue'
-  
-  import { storeToRefs } from 'pinia'
- 
- 
-  import useScrollLock from '@/composables/useScrollLock'
-  
-  const { lock, unlock } = useScrollLock()
   import { useOverlayStore } from '@/stores/overlay'
-  import CodeLanguageMenuController from '@/components/CodeLanguageMenuController.vue'
+  import { useUiStore } from '@/stores/ui'
+  import { useEditorRegistryStore } from '@/stores/editorRegistry'
+
+  import BlockRow from '@/views/BlockRow.vue'
   import DndController from '@/components/draggableList/DndController.vue'
-  import BlockMenuController from '@/components/BlockMenuController.vue'
+
+  import BlockToolbar from '@/components/menu/BlockToolbar.vue'
+
   import { useSelectionPolicy } from '@/composables/useSelectionPolicy'
   import { useSelectionToolbar } from '@/composables/useSelectionToolbar'
 
-  
-  import BlockToolbar from '@/components/menu/BlockToolbar.vue'
-
-  import { useUiStore } from '@/stores/ui'
-
   import {usePageBlankClickFocus} from '@/composables/page/usePageBlankClickFocus'
   import {usePageTitleEditor} from '@/composables/page/usePageTitleEditor'
-  import {useMenuAnchors} from '@/composables/menu/useMenuAnchors'
-  import {useEditorRegistry} from '@/composables/page/useEditorRegistry'
-  import { useEditorRegistryStore } from '@/stores/editorRegistry'
+ 
   import { useOverlayBinding } from '@/composables/useOverlayBinding'
 
 
@@ -51,8 +41,6 @@
  
   
   //===LAYOUT TICK ON RESIZE===
-  
-  
   
   const layoutTick = ref(0)
   const bumpLayoutTick = () => { layoutTick.value++ }
@@ -91,18 +79,7 @@
     }
   )
 
-
-
 //===LOAD PAGE & BLOCKS ON ID CHANGE===
-
-/*watch(
-    () => router.currentRoute.value?.params?.id,
-    async (newId) => {
-      await pagesStore.openPage(newId)
-      await blocksStore.fetchBlocksForPage(newId)
-      pagesStore.currentPageId = newId
-    },
-    { immediate: true })*/
 
   watch(
   () => props.id,
@@ -126,53 +103,6 @@
 )
 
 
-  
-
-    /*
-    // focus sul primo blocco root
-    const rootIds = blocksStore.childrenByParentId[newId]?.root
-    const firstId = rootIds?.[0]
-    if (firstId) {
-      await nextTick()
-      blocksStore.requestFocus(firstId, 0)
-    } else {
-      // pagina vuota: crea/focus un blocco vuoto
-      await ensureFirstEmptyBlockAndFocus()
-    }*/
-
-
-//===MENU ANCHORS===
-
-  const { registerMenuAnchor, makeOpenHandler } = useMenuAnchors()
-
-  //===BLOCK TYPE MENU===
-    
-  const blockMenuRef = ref(null)
-  const blockMenuAnchorEl = ref(null) // HTMLElement
-  const blockMenuBlockId = ref(null)
-
-  const onOpenBlockMenu = makeOpenHandler({
-    getRef: () => blockMenuRef.value,
-    setAnchorEl: (el) => (blockMenuAnchorEl.value = el),
-    setBlockId: (id) => (blockMenuBlockId.value = id),
-    kinds: ['actions','dragHandleActions'],
-  })
-
- 
-  
-    
-  //===BLOCK LANG MENU====
-    const langMenuRef = ref(null)
-    const langMenuAnchorEl = ref(null)
-    const langMenuBlockId = ref(null)
-
-    const onOpenLangMenu = makeOpenHandler({
-      getRef: () => langMenuRef.value,
-      setAnchorEl: (el) => (langMenuAnchorEl.value = el),
-      setBlockId: (id) => (langMenuBlockId.value = id),
-      kinds: ['lang'],
-    })
-  
 //====OVERLAY TOP ID====(for menu highlight)
 const overlayTopId = computed(()=>overlay.hasAny ? overlay.top?.id : null )
   
@@ -224,11 +154,7 @@ const sourceTree = computed(() => {
       return rootIds.map(rootId => buildNode(rootId)).filter(Boolean);
   }
 
-    const handleToggleExpand = (pageId) => {
-    // Chiamiamo l'azione dello store invece di modificare un ref locale
-    pagesStore.toggleExpandPage(pageId);
-  }
- 
+//===DND CONTROLLER MOVE HANDLER===
   const handleMove = async ({ id, parentId, position }) => {
     console.log("Evento ricevuto dal generico:", "id:",id, "parent:",parentId, "pos:",position);
     
@@ -264,10 +190,6 @@ const sourceTree = computed(() => {
   blocksStore.requestFocus(newId, 0)
 }
 
-//===ROOT VISIBLE IDS===
-const rootVisibleIds = computed(() =>
-  (childrenByParentId.value?.[props.id]?.root ?? []).map(String)
-)
 
 //===PAGE BLANK CLICK FOCUS===
 
@@ -280,7 +202,7 @@ const {onPagePointerDown,
 
 //====EDITOR REGISTRY + ACTIVE EDITOR====
 const { currentBlockId } = storeToRefs(blocksStore)
-/*const { registerEditor, activeEditor } = useEditorRegistry(() => currentBlockId.value)*/
+
 
 const editorRegStore = useEditorRegistryStore()
 
@@ -420,7 +342,6 @@ async function setBlockTypeFromToolbar(nextType) {
               :level="level"
               :pageId="id"
               :parentKey="blocksStore.getParentKeyOf(item.parentId)"
-              :registerMenuAnchor="registerMenuAnchor"
               :registerEditor="registerEditor"
               :blockActionMenuId="overlayTopId"
               :lastEmptyRootId="lastEmptyRootId"
@@ -432,30 +353,6 @@ async function setBlockTypeFromToolbar(nextType) {
       <div class="blank-catcher" ></div>
     </div>
     </div>
-    
-<!--<BlockMenuController
-  ref="blockMenuRef"
-  :pageId="id"
-  :blockId="blockMenuBlockId"
-  :anchorEl="blockMenuAnchorEl"
-  anchorLocation="blockRow"
-  placement="left"
-  :sideOffsetX="0"
-  :lockScrollOnOpen="true"
-  :enableMoveTo="false"
-  :enableDuplicate="false"
-  :enableCopyLink="false"
-  :enableComment="false"
-/>
-    <CodeLanguageMenuController
-  ref="langMenuRef"
-  :pageId="id"
-  :blockId="langMenuBlockId"
-  :anchorEl="langMenuAnchorEl"
-  anchorLocation="blockRow"
-  placement="bottom-end"
-  :lockScrollOnOpen="false"
-/>-->
 
   </div>
   </div>

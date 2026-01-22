@@ -39,12 +39,7 @@ export const usePagesStore = defineStore('pagesStore', {
         
         pendingFocusTitlePageId: null,
 
-        //Context Menu
-        contextMenu: {
-            isOpen: false,
-            pageId: null,
-            anchorRect: null,
-        }
+        
     }),
     getters:{
         renderRowsPages: (state) => {
@@ -90,24 +85,7 @@ export const usePagesStore = defineStore('pagesStore', {
         
     },
     actions:{
-        openContextMenu(pageId, anchorRect){
-            this.contextMenu= {
-                isOpen:true,
-                pageId:pageId,
-                anchorRect:anchorRect
-            }
-        },
-        closeContextMenu(){
-            this.contextMenu= {
-                isOpen:false,
-                pageId:null,
-                anchorRect:null
-            }
-            
-        },
-        setContextMenuRect(anchorRect){
-            this.contextMenu.anchorRect = anchorRect
-        },
+       
 
         requestTitleFocus(pageId){
             this.pendingFocusTitlePageId = pageId

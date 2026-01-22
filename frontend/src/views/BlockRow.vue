@@ -1,210 +1,146 @@
 <script setup>
-   import BlockEditor from '@/views/BlockEditor.vue';
-   import { useBlocksStore } from '@/stores/blocks'
-   import { nextTick, computed, ref, onMounted,onBeforeUnmount, toRef,watch, useAttrs } from 'vue';
-  import { classForTextToken, classForBgToken } from '@/theme/colorsCatalog'
-   import CodeToolbarButtons from '@/components/CodeToolbarButtons.vue'
+import BlockEditor from "@/views/BlockEditor.vue";
+import { useBlocksStore } from "@/stores/blocks";
+import {
+  nextTick,
+  computed,
+  ref,
+  onMounted,
+  onBeforeUnmount,
+  toRef,
+  watch,
+  useAttrs,
+} from "vue";
+import { classForTextToken, classForBgToken } from "@/theme/colorsCatalog";
+import CodeToolbarButtons from "@/components/CodeToolbarButtons.vue";
 
-   import { anchorKey, anchorKind } from '@/ui/anchorsKeyBind'
-   import { useRegisterAnchors } from '@/composables/useRegisterAnchors';
-   import { useUIOverlayStore } from '@/stores/uioverlay';
-  
-   defineOptions({ inheritAttrs: false })
-  const attrs = useAttrs()
+import { anchorKey, anchorKind } from "@/ui/anchorsKeyBind";
+import { useRegisterAnchors } from "@/composables/useRegisterAnchors";
+import { useUIOverlayStore } from "@/stores/uioverlay";
 
-  const blocksStore = useBlocksStore()
-  const uiOverlay = useUIOverlayStore()
+import { useAppActions } from "@/actions/useAppActions";
 
-   const props = defineProps({
-    block: Object,
-    pageId: String,
-    level: Number,
-    parentKey: String,
-    registerMenuAnchor: Function,
-    blockActionMenuId: String,
-    lastEmptyRootId: { type: [String, Number, null], default: null },
-    registerRowEl: Function,
-   })
+defineOptions({ inheritAttrs: false });
+const attrs = useAttrs();
 
-  const dragHandleRef = ref(null)
-  const toolbarRef = ref(null)
+const blocksStore = useBlocksStore();
+const uiOverlay = useUIOverlayStore();
+const actions = useAppActions();
 
-  const dragHandle_key = anchorKey(anchorKind(
-  'block',
-  'dragHandle',
-  'blockRow',
-  'gutter'
-  ), props.block.id)
+const props = defineProps({
+  block: Object,
+  pageId: String,
+  level: Number,
+  parentKey: String,
+  registerMenuAnchor: Function,
+  blockActionMenuId: String,
+  lastEmptyRootId: { type: [String, Number, null], default: null },
+  registerRowEl: Function,
+});
 
+const dragHandleRef = ref(null);
+const toolbarRef = ref(null);
 
-  useRegisterAnchors({
-    [dragHandle_key]: dragHandleRef,
-    
-  })
+const dragHandle_key = anchorKey(
+  anchorKind("block", "dragHandle", "blockRow", "gutter"),
+  props.block.id,
+);
 
-  function openBlockMenuFromHandle() {
-    uiOverlay.requestOpen({
-    menuId: 'block.menu',
+useRegisterAnchors({
+  [dragHandle_key]: dragHandleRef,
+});
+
+function openBlockMenuFromHandle() {
+  uiOverlay.requestOpen({
+    menuId: "block.menu",
     anchorKey: dragHandle_key,
     payload: {
       blockId: props.block.id,
-      placement: 'right-center',
-    }
-  })
-  }
-  function openBlockMenuFromDots() {
-    uiOverlay.requestOpen({
-    menuId: 'block.menu',
+      placement: "right-center",
+    },
+  });
+}
+function openBlockMenuFromDots() {
+  uiOverlay.requestOpen({
+    menuId: "block.menu",
     anchorKey: toolbarRef.value?.dots_key,
     payload: {
       blockId: props.block.id,
-      placement: 'left',
-    }
-  })
-  }
-  function openLangMenu() {
-    uiOverlay.requestOpen({
-    menuId: 'block.codeLanguageMenu',
+      placement: "left",
+    },
+  });
+}
+function openLangMenu() {
+  uiOverlay.requestOpen({
+    menuId: "block.codeLanguageMenu",
     anchorKey: toolbarRef.value?.lang_key,
     payload: {
       blockId: props.block.id,
-      placement: 'bottom-end',
-    }
-  })
-  }
+      placement: "bottom-end",
+    },
+  });
+}
 
+function handleToggleWrap() {
+  console.log("TOGGLE WRAP for block:", props.block.id);
+  blocksStore.updateBlockContent(props.block.id, {
+    wrap: !(props.block.content?.wrap ?? true),
+  });
+}
 
-   const langBtn = ref(null)
-   const isCallout = computed(() => props.block.type === 'callout')
-   const isToggle = computed(() => props.block.type === 'toggle')
+async function handleInsertAfter() {
+  await actions.blocks.insertBlockAfterAndFocus(props.block.id);
+}
 
-    
+const isToggle = computed(() => props.block.type === "toggle");
 
-   const isExpanded = computed(()=> blocksStore.isExpanded(props.block.id))
-   function handleToggleExpand(e){
-    e?.stopPropagation?.()
-    blocksStore.toggleExpandBlock?.(props.block.id)
-   }
+const isExpanded = computed(() => blocksStore.isExpanded(props.block.id));
+function handleToggleExpand(e) {
+  e?.stopPropagation?.();
+  blocksStore.toggleExpandBlock?.(props.block.id);
+}
 
-   
-   onMounted(() => {
-  /*if (menuBtn.value) {props.registerMenuAnchor?.(props.block.id,menuBtn.value,'actions')}
-  if (props.block.type === 'code' && langBtn.value) {
-    props.registerMenuAnchor?.(props.block.id,langBtn.value,'lang')}*/
-    props.registerMenuAnchor?.(props.block.id, toolbarRef.value?.getDotsEl?.(), 'actions')
-    props.registerMenuAnchor?.(props.block.id, dragHandleRef, 'dragHandleActions')
-  if (props.block.type === 'code') {
-    props.registerMenuAnchor?.(props.block.id, toolbarRef.value?.getLangEl?.(), 'lang')
-   }
- })
+///===FOR BLANCK DETECTION==== IMPORTANT!
 
- watch(
-  () => props.block.type,
-  (t) => {
-    // deregistra tutto e registra solo quello che serve
-    props.registerMenuAnchor?.(props.block.id, toolbarRef.value?.getDotsEl?.() ?? null, 'actions')
-
-    if (t === 'code') {
-      props.registerMenuAnchor?.(props.block.id, toolbarRef.value?.getLangEl?.() ?? null, 'lang')
-    } else {
-      props.registerMenuAnchor?.(props.block.id, null, 'lang')
-      // props.registerMenuAnchor?.(props.block.id, null, 'wrap')
-    }
-  }
-)
 onMounted(() => {
-    props.registerRowEl?.(props.block.id, rowElement.value)
-  })
+  props.registerRowEl?.(props.block.id, rowElement.value);
+});
 
 onBeforeUnmount(() => {
-  props.registerRowEl?.(props.block.id, null)
-  props.registerMenuAnchor?.(props.block.id, null, 'actions')
-  props.registerMenuAnchor?.(props.block.id, null, 'lang')
-  props.registerMenuAnchor?.(props.block.id, null, 'dragHandleActions')
-  // props.registerMenuAnchor?.(props.block.id, null, 'wrap')
-})
+  props.registerRowEl?.(props.block.id, null);
+});
 
+//===COLOR PICKER====
+const styleClasses = computed(() => {
+  const s = props.block?.props?.style ?? {};
 
-
-
- /* onUnmounted(() => {
-
-    props.registerMenuAnchor?.(props.block.id,null,'actions')
-    props.registerMenuAnchor?.(props.block.id,null,'lang' )
-  })*/
-  //===COLOR PICKER====
-  const styleClasses = computed(() => {
-  const s = props.block?.props?.style ?? {}
- // console.log("BLOCKROW:", s.bgColor)
-  //console.log(classForBgToken(s.bgColor))
- 
   return [
-    classForTextToken(s.textColor ?? 'default'),
-    classForBgToken(s.bgColor ?? 'default'),
-  ]
-})
+    classForTextToken(s.textColor ?? "default"),
+    classForBgToken(s.bgColor ?? "default"),
+  ];
+});
 
-const style = ref(null)
-watch(props.block?.props?.style, (newStyle) => {
-      const textColor = classForTextToken(newStyle.textColor ?? 'default')
-      const bgColor = classForTextToken(newStyle.textColor ?? 'default')
-})
+let INDENT = 24;
 
-  //===CONVERSIONI TEXT-> CODE OR CODE->TEXT
-  watch(
-  () => props.block.type,
-  (t) => {
-    // quando diventa code: registra anchor lang
-    if (t === 'code' && langBtn.value) {
-      props.registerMenuAnchor?.(props.block.id, langBtn.value, 'lang')
-    }
-    // quando smette di essere code: deregistra anchor lang
-    if (t !== 'code') {
-      props.registerMenuAnchor?.(props.block.id, null, 'lang')
-    }
-  }
-)
+const isHighlighted = ref(false);
 
-
- 
-
-  function handleToggleWrap() {
-    console.log("TOGGLE WRAP for block:", props.block.id)
-    blocksStore.updateBlockContent(props.block.id, { wrap: !(props.block.content?.wrap ?? true) })
-  }
-
-   async function handleInsertAfter() {
-      const newId = await blocksStore.addNewBlock(
-        props.pageId,
-        { type: 'p', content: { text: '' } },
-        props.block.id
-      )
-      await nextTick()
-      blocksStore.requestFocus(newId, 0)
-    }
-
-let INDENT = 24  
-
-
-const isHighlighted = ref(false)
-
-const  blockActionMenuId = toRef(props, 'blockActionMenuId')
+const blockActionMenuId = toRef(props, "blockActionMenuId");
 
 watch(
-   blockActionMenuId,
+  blockActionMenuId,
   (newId) => {
     //console.log("blockActionMenu:", newId)
     isHighlighted.value =
-      typeof newId === 'string' &&
-      newId.includes(String(props.block?.id)) && newId.includes(String('blockRow'))
+      typeof newId === "string" &&
+      newId.includes(String(props.block?.id)) &&
+      newId.includes(String("blockRow"));
   },
-  { immediate: true }
-)
+  { immediate: true },
+);
 
-const rowElement = ref(null)
+const rowElement = ref(null);
 </script>
 
- 
 <template>
   <div
     class="block-item"
@@ -214,14 +150,13 @@ const rowElement = ref(null)
   >
     <!-- GUTTER -->
     <div class="gutter">
-       
       <button
         class="plus"
         type="button"
         title="Add block"
         @click.stop="handleInsertAfter"
       >
-      +
+        +
       </button>
 
       <button
@@ -236,39 +171,44 @@ const rowElement = ref(null)
     </div>
 
     <!-- CONTENT ROW -->
-     <div
+    <div
       ref="rowElement"
       class="row"
       :class="[
         { highlighted: isHighlighted },
         { 'is-code-card': block.type === 'code' },
-        {'is-callout': isCallout},
-        {'is-toggle': isToggle}
-      ]" >
-        <div class="rowLeft" :class="{ 'has-toggle': isToggle }">
-          <button
-            v-if="isToggle"
-            class="chevron"
-            :class="{ expanded: isExpanded }"
-            type="button"
-            :title="isExpanded ? 'Collapse' : 'Expand'"
-            @click.stop="handleToggleExpand"
-          >
-            ▸
-          </button>
+        { 'is-callout': block.type === 'callout' },
+        { 'is-toggle': isToggle },
+      ]"
+    >
+      <div class="rowLeft" :class="{ 'has-toggle': isToggle }">
+        <button
+          v-if="isToggle"
+          class="chevron"
+          :class="{ expanded: isExpanded }"
+          type="button"
+          :title="isExpanded ? 'Collapse' : 'Expand'"
+          @click.stop="handleToggleExpand"
+        >
+          ▸
+        </button>
 
-
-          <div class="blockContent" :class="styleClasses"
-          :style="{ color: `var(--${classForTextToken(block.props.style.textColor)})`,
-             }">
-            <BlockEditor :block="block" :pageId="pageId" 
+        <div
+          class="blockContent"
+          :class="styleClasses"
+          :style="{
+            color: `var(--${classForTextToken(block.props.style.textColor)})`,
+          }"
+        >
+          <BlockEditor
+            :block="block"
+            :pageId="pageId"
             :lastEmptyRootId="lastEmptyRootId"
-             v-bind="attrs"
-             />
-          </div>
+            v-bind="attrs"
+          />
         </div>
-      <div class="blockActions"
-       v-if="block.type==='code'">
+      </div>
+      <div class="blockActions" v-if="block.type === 'code'">
         <CodeToolbarButtons
           ref="toolbarRef"
           :blockId="block.id"
@@ -279,14 +219,13 @@ const rowElement = ref(null)
           @lang="openLangMenu"
           @dots="openBlockMenuFromDots"
         />
-
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
- .chevron{
+.chevron {
   width: 22px;
   height: 22px;
   align-self: start;
@@ -300,38 +239,34 @@ const rowElement = ref(null)
   color: var(--text-secondary);
 
   transform: rotate(0deg);
-  transition: transform 140ms 
-  cubic-bezier(.2,.8,.2,1), 
-  background-color 120ms ease, color 120ms ease;
+  transition:
+    transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    background-color 120ms ease,
+    color 120ms ease;
   will-change: transform;
 }
 
 /* sempre visibile sul toggle */
-.rowLeft.has-toggle .chevron{
+.rowLeft.has-toggle .chevron {
   opacity: 1;
   pointer-events: auto;
- 
 }
 
-.chevron.expanded{
+.chevron.expanded {
   transform: rotate(90deg);
 }
 
-
-.chevron:hover{
+.chevron:hover {
   background: var(--bg-icon-hover);
   color: var(--text-main);
 }
 
 /* IMPORTANT: flex child shrink */
-.blockContent{
+.blockContent {
   min-height: 0;
   width: 100%;
   min-width: 0;
-  
 }
-
-
 
 .block-item {
   display: grid;
@@ -360,16 +295,16 @@ const rowElement = ref(null)
   grid-template-columns: 1fr var(--block-actions-w);
   align-items: stretch;
   gap: 6px;
-  
+
   padding: 0 0 0px var(--block-row-pad-x);
   border-radius: 2px;
   padding-right: 4px;
-  padding-top:4px;
-  padding-bottom:4px;
+  padding-top: 4px;
+  padding-bottom: 4px;
   padding-left: 3px;
   cursor: text;
 }
-.rowLeft{
+.rowLeft {
   position: relative;
   display: grid;
   align-items: stretch;
@@ -378,21 +313,20 @@ const rowElement = ref(null)
   min-height: 0;
   overflow: hidden;
   background: transparent !important;
- 
 }
 /* solo se toggle: aggiungi spazio tra chevron e testo */
-.rowLeft.has-toggle{
+.rowLeft.has-toggle {
   gap: 6px;
 }
-.row.is-toggle{
-  padding-left: 0px;   /* o 2px */
+.row.is-toggle {
+  padding-left: 0px; /* o 2px */
 }
 
 /* ========== CODE CARD ========== */
 .row.is-code-card {
   /* card styling in tema chiaro */
-  border: 0px solid rgba(0,0,0,.10);
-  background:transparent;
+  border: 0px solid rgba(0, 0, 0, 0.1);
+  background: transparent;
   border-radius: 12px;
   overflow: hidden;
 
@@ -403,7 +337,7 @@ const rowElement = ref(null)
   margin-top: 5px;
   margin-bottom: 5px;
 }
-.code-pills{
+.code-pills {
   position: absolute;
   top: var(--code-toolbar-top);
   right: calc(var(--block-actions-w) + var(--code-actions-gap));
@@ -413,25 +347,22 @@ const rowElement = ref(null)
   pointer-events: none;
 }
 .block-item:hover .code-pills,
-.block-item:focus-within .code-pills{
+.block-item:focus-within .code-pills {
   opacity: 1;
   pointer-events: auto;
 }
 
 /* wrap-pill e lang-pill ora NON più absolute */
-.wrap-pill, .lang-pill{
+.wrap-pill,
+.lang-pill {
   position: static;
   opacity: 1;
   pointer-events: auto;
 }
 
-
-
-
 /* ========== CALLOUT ========== */
 
-.row.is-callout{
-
+.row.is-callout {
   border-radius: 16px;
 }
 
@@ -444,20 +375,20 @@ const rowElement = ref(null)
 /* hover SOLO sul contenuto */
 .block-item:hover .row {
   /*background: rgba(0, 0, 0, 0.03);*/
-  
 }
 
-.highlighted{
+.highlighted {
   background: rgba(0, 0, 0, 0.03);
 }
 
 /* Handle + plus: solo su hover */
 .drag-handle,
 .plus {
-  
   opacity: 0;
   pointer-events: none;
-  transition: opacity 120ms ease, background-color 120ms ease;
+  transition:
+    opacity 120ms ease,
+    background-color 120ms ease;
 }
 
 .block-item:hover .drag-handle,
@@ -484,7 +415,7 @@ const rowElement = ref(null)
 }
 
 .plus:hover {
-  background: rgba(0,0,0,.08);
+  background: rgba(0, 0, 0, 0.08);
   color: var(--text-main);
 }
 
@@ -502,7 +433,6 @@ const rowElement = ref(null)
   align-items: center;
   color: var(--text-muted);
   font-size: 22px;
-  
 }
 
 .drag-handle:hover {
@@ -520,7 +450,6 @@ const rowElement = ref(null)
   position: relative;
   min-width: 0;
   border-radius: 12px;
-   
 }
 
 /* Actions column sempre uguale (allineamento dots) */
@@ -555,16 +484,14 @@ const rowElement = ref(null)
 
 .block-item:hover .dots,
 .block-item:focus-within .dots {
-
   opacity: 1;
   pointer-events: auto;
 }
 
-.dots:hover{
-  background: rgba(0,0,0,.06);
-  color: rgba(0,0,0,.85);
+.dots:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: rgba(0, 0, 0, 0.85);
 }
-
 
 .block-item .icon-ghost {
   opacity: 0;
@@ -577,8 +504,6 @@ const rowElement = ref(null)
   pointer-events: auto;
 }
 
-
-
 /* Pill: assoluto, a sinistra del gutter dots, così non sposta layout */
 .lang-pill {
   position: absolute;
@@ -587,8 +512,8 @@ const rowElement = ref(null)
 
   height: var(--block-row-btn);
   border-radius: var(--bar-radius);
-  border: 0px solid rgba(0,0,0,.10);
-  background: rgba(0,0,0,.03);
+  border: 0px solid rgba(0, 0, 0, 0.1);
+  background: rgba(0, 0, 0, 0.03);
   cursor: pointer;
 
   padding: 0 10px;
@@ -596,7 +521,7 @@ const rowElement = ref(null)
   align-items: center;
   gap: 6px;
 
-  color: rgba(0,0,0,.70);
+  color: rgba(0, 0, 0, 0.7);
   font-size: 13px;
 
   opacity: 0;
@@ -610,12 +535,12 @@ const rowElement = ref(null)
 }
 
 .lang-pill:hover {
-  background: rgba(0,0,0,.06);
-  color: rgba(0,0,0,.85);
+  background: rgba(0, 0, 0, 0.06);
+  color: rgba(0, 0, 0, 0.85);
 }
 
 .lang-pill::after {
-  content: '▾';
+  content: "▾";
   font-size: 11px;
   margin-left: 4px;
 
@@ -626,12 +551,11 @@ const rowElement = ref(null)
 
 /* SOLO hover sul bottone */
 .lang-pill:hover::after {
-  opacity: .6;
+  opacity: 0.6;
 }
 
 .block-item:hover .lang-pill::after,
 .block-item:focus-within .lang-pill::after {
-  opacity: .6;
+  opacity: 0.6;
 }
-
-</style> 
+</style>
