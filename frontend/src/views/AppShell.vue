@@ -166,7 +166,7 @@ const handleLogout = async () => {
 // ====== Sidebar mode toggling policy ======
 function closeAllSidebarTransientUi() {
   // chiudi menu e editing per sicurezza (policy semplice)
-  pagesStore.closeContextMenu();
+  //pagesStore.closeContextMenu();
   if (editingPageId.value !== null) pagesStore.cancelEdit();
 
   flyoutOpen.value = false;
@@ -741,7 +741,7 @@ function getPieMenuInteractionScope() {
 useOverlayBinding({
   id: "pie",
   kind: "pie",
-  priority: 3,
+  priority: 180,
   behaviour: "exclusiveKinds",
   exclusiveKinds: ["hoverbar", "dropdown"],
   // dropdown opzionale

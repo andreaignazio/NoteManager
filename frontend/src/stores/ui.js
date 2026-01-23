@@ -1,20 +1,19 @@
-import { defineStore } from 'pinia'
+import { defineStore } from "pinia";
 
-const STORAGE_KEY = 'myasset.ui.v1'
+const STORAGE_KEY = "myasset.ui.v1";
 
-const clamp = (v, min, max) => Math.max(min, Math.min(max, v))
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
-export const useUiStore = defineStore('ui', {
+export const useUiStore = defineStore("ui", {
   state: () => ({
-    
-    sidebarMode: 'docked', // 'docked' | 'hidden'
+    sidebarMode: "docked", // 'docked' | 'hidden'
     sidebarWidth: 280,
 
     //themeMode: 'system', // 'system' | 'light' | 'dark'
 
-    themeMode: 'light',
+    themeMode: "light",
     lastOpenedPageId: null,
-   
+
     _hydrated: false,
     topbarHidden: false,
 
@@ -26,12 +25,12 @@ export const useUiStore = defineStore('ui', {
     recentlyAddedPageId: null,
 
     pendingSidebarScrollToPageId: null,
+    pendingPageviewScrollToBlockId: null,
 
     lastHighlightColor: null, // esadecimale stringa tipo '#ff0000'
 
     richClipboard: { html: null, text: null, ts: 0 },
     requestLinkPopover: null,
-
   }),
 
   getters: {
@@ -42,28 +41,39 @@ export const useUiStore = defineStore('ui', {
 
   actions: {
     armMoveTo() {
-      this.SidebarMoveToArmed = true
-      this.SidebarMoveToHoverPageId = null
+      this.SidebarMoveToArmed = true;
+      this.SidebarMoveToHoverPageId = null;
     },
     disarmMoveTo() {
-      this.SidebarMoveToArmed = false
-      this.SidebarMoveToHoverPageId = null
+      this.SidebarMoveToArmed = false;
+      this.SidebarMoveToHoverPageId = null;
     },
     setMoveToHoverPageId(id) {
-      this.SidebarMoveToHoverPageId = id
+      this.SidebarMoveToHoverPageId = id;
     },
 
     requestScrollToPage(pageId) {
-      this.pendingSidebarScrollToPageId = pageId
+      this.pendingSidebarScrollToPageId = pageId;
     },
     consumeScrollToPageRequest(pageId) {
       if (this.pendingSidebarScrollToPageId === pageId) {
-        this.pendingSidebarScrollToPageId = null
-        return true
+        this.pendingSidebarScrollToPageId = null;
+        return true;
       }
-      return false
+      return false;
     },
-   /* getSystemTheme() {
+    requestScrollToBlock(blockId) {
+      this.pendingPageviewScrollToBlockId = blockId;
+    },
+    consumeScrollToBlockRequest(blockId) {
+      if (this.pendingPageviewScrollToBlockId === blockId) {
+        this.pendingPageviewScrollToBlockId = null;
+        return true;
+      }
+      return false;
+    },
+
+    /* getSystemTheme() {
       return window.matchMedia?.('(prefers-color-scheme: dark)')?.matches ? 'dark' : 'light'
     },
 
@@ -71,66 +81,78 @@ export const useUiStore = defineStore('ui', {
       const resolved = mode === 'system' ? getSystemTheme() : mode
       document.documentElement.dataset.theme = resolved // <html data-theme="dark">
     },*/
-    setTopbarHidden(v) { this.topbarHidden = !!v },
+    setTopbarHidden(v) {
+      this.topbarHidden = !!v;
+    },
 
     applyTheme(mode) {
       const html = document.documentElement;
-      if(mode==='dark') {
-        html.setAttribute('data-theme', 'dark')
+      if (mode === "dark") {
+        html.setAttribute("data-theme", "dark");
         //localStorage.setItem('theme', 'dark')
-      } else if(mode==='light') {
-        html.setAttribute('data-theme', 'light')
+      } else if (mode === "light") {
+        html.setAttribute("data-theme", "light");
         //localStorage.setItem('theme', 'light')
-      } else {return}
+      } else {
+        return;
+      }
     },
 
     toggleTheme() {
-      if(this.themeMode==='light') {
-        this.themeMode='dark'
-        this.applyTheme('dark')
-        this.persist()
+      if (this.themeMode === "light") {
+        this.themeMode = "dark";
+        this.applyTheme("dark");
+        this.persist();
       } else {
-        this.themeMode='light'
-        this.applyTheme('light')
-        this.persist()
-      }   
+        this.themeMode = "light";
+        this.applyTheme("light");
+        this.persist();
+      }
     },
-    setLastAddedPageId(id){
-      this.recentlyAddedPageId = id
-      let t = setTimeout(()=>{
-        this.recentlyAddedPageId = null
-        clearTimeout(t)
-      }, 500)
+    setLastAddedPageId(id) {
+      this.recentlyAddedPageId = id;
+      let t = setTimeout(() => {
+        this.recentlyAddedPageId = null;
+        clearTimeout(t);
+      }, 500);
     },
-    resetLstAddedPageId(){
-      this.recentlyAddedPageId = null
+    resetLstAddedPageId() {
+      this.recentlyAddedPageId = null;
     },
-    getLastAddedPageId(){
-      return this.recentlyAddedPageId ?? null
+    getLastAddedPageId() {
+      return this.recentlyAddedPageId ?? null;
     },
-    
+
     hydrate() {
-      if (this._hydrated) return
-      this._hydrated = true
+      if (this._hydrated) return;
+      this._hydrated = true;
 
       try {
-        const raw = localStorage.getItem(STORAGE_KEY)
-        if (!raw) return
-        const data = JSON.parse(raw)
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw);
 
-        if (data?.sidebarMode === 'docked' || data?.sidebarMode === 'hidden') {
-          this.sidebarMode = data.sidebarMode
+        if (data?.sidebarMode === "docked" || data?.sidebarMode === "hidden") {
+          this.sidebarMode = data.sidebarMode;
         }
-        if (typeof data?.sidebarWidth === 'number') {
-          this.sidebarWidth = clamp(data.sidebarWidth, this.sidebarMinWidth, this.sidebarMaxWidth)
+        if (typeof data?.sidebarWidth === "number") {
+          this.sidebarWidth = clamp(
+            data.sidebarWidth,
+            this.sidebarMinWidth,
+            this.sidebarMaxWidth,
+          );
         }
-        if (data?.themeMode === 'light' || data?.themeMode === 'dark' || data?.themeMode === 'system') {
-          this.themeMode = data.themeMode
+        if (
+          data?.themeMode === "light" ||
+          data?.themeMode === "dark" ||
+          data?.themeMode === "system"
+        ) {
+          this.themeMode = data.themeMode;
         }
-        if(typeof data?.lastOpenedPageId === 'string'){
-          this.lastOpenedPageId = data.lastOpenedPageId
+        if (typeof data?.lastOpenedPageId === "string") {
+          this.lastOpenedPageId = data.lastOpenedPageId;
         }
-        this.applyTheme(this.themeMode)
+        this.applyTheme(this.themeMode);
       } catch {
         // ignore
       }
@@ -145,43 +167,42 @@ export const useUiStore = defineStore('ui', {
             sidebarWidth: this.sidebarWidth,
             themeMode: this.themeMode,
             lastOpenedPageId: this.lastOpenedPageId,
-          })
-        )
+          }),
+        );
       } catch {
         // ignore
       }
     },
 
     setSidebarMode(mode) {
-      if (mode !== 'docked' && mode !== 'hidden') return
-      this.sidebarMode = mode
-      this.persist()
+      if (mode !== "docked" && mode !== "hidden") return;
+      this.sidebarMode = mode;
+      this.persist();
     },
 
     toggleSidebarMode() {
-      this.setSidebarMode(this.sidebarMode === 'docked' ? 'hidden' : 'docked')
+      this.setSidebarMode(this.sidebarMode === "docked" ? "hidden" : "docked");
     },
 
     setSidebarWidth(px) {
-      this.sidebarWidth = clamp(px, this.sidebarMinWidth, this.sidebarMaxWidth)
-      this.persist()
+      this.sidebarWidth = clamp(px, this.sidebarMinWidth, this.sidebarMaxWidth);
+      this.persist();
     },
     setThemeMode(mode) {
-      if (mode !== 'light' && mode !== 'dark' && mode !== 'system') return
-      this.themeMode = mode
-      applyThemeToDom(mode)
-      this.persist()
+      if (mode !== "light" && mode !== "dark" && mode !== "system") return;
+      this.themeMode = mode;
+      applyThemeToDom(mode);
+      this.persist();
     },
 
-    registerPageView(fn){
-      this.pageViewOnPointer.push(fn)
+    registerPageView(fn) {
+      this.pageViewOnPointer.push(fn);
     },
 
-    callPageView(e){
-      this.pageViewOnPointer?.at(-1)?.(e)
-    }
-
+    callPageView(e) {
+      this.pageViewOnPointer?.at(-1)?.(e);
+    },
   },
-})
+});
 
-export default useUiStore
+export default useUiStore;

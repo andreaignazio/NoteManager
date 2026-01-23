@@ -16,7 +16,22 @@ export function useBlockActions() {
     blocksStore.requestFocus(newId, 0);
   }
 
+  async function moveBlockTreeToPage(blockId: string, targetPageId: string) {
+    const block = blocksStore.blocksById[blockId];
+    if (!block) return;
+    const rootId = blockId;
+    const fromPageId = blocksStore.blocksById[blockId]?.pageId;
+    const toPageId = targetPageId;
+    if (!fromPageId || !toPageId) return;
+    await blocksStore.transferSubtreeToPage({
+      fromPageId,
+      toPageId,
+      rootId,
+    });
+  }
+
   return {
     insertBlockAfterAndFocus,
+    moveBlockTreeToPage,
   };
 }

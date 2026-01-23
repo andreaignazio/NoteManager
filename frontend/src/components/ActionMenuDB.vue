@@ -52,7 +52,7 @@ const props = defineProps({
   flip: { type: [Boolean, String], default: "auto" },
 });
 
-const emit = defineEmits(["action", "close"]);
+const emit = defineEmits(["action", "close", "item-enter", "item-leave"]);
 
 const menuEl = ref(null);
 const menuStyle = ref({ display: "none" });
@@ -356,6 +356,12 @@ const maxHeightStyle = computed(() => {
               type="button"
               role="menuitem"
               @click="pick(it)"
+              @pointerenter="
+                emit('item-enter', { id: it.id, item: it, ev: $event })
+              "
+              @pointerleave="
+                emit('item-leave', { id: it.id, item: it, ev: $event })
+              "
             >
               <span v-if="it.icon" class="optionIcon" aria-hidden="true">{{
                 it.icon

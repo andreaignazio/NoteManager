@@ -3,8 +3,8 @@ const props = defineProps({
   textTokens: { type: Array, default: () => [] },
   bgTokens: { type: Array, default: () => [] },
 
-  currentText: { type: String, default: 'default' },
-  currentBg: { type: String, default: 'default' },
+  currentText: { type: String, default: "default" },
+  currentBg: { type: String, default: "default" },
 
   labelForText: { type: Function, default: null },
   labelForBg: { type: Function, default: null },
@@ -15,9 +15,9 @@ const props = defineProps({
 
   // es: (token) => ({ backgroundColor: '...' })
   swatchStyleForBg: { type: Function, default: null },
-})
+});
 
-const emit = defineEmits(['setText', 'setBg', 'close', 'done'])
+const emit = defineEmits(["setText", "setBg", "close", "done"]);
 </script>
 
 <template>
@@ -35,7 +35,10 @@ const emit = defineEmits(['setText', 'setBg', 'close', 'done'])
       >
         <span class="left">
           <!-- Icona A -->
-          <span class="textIcon" :style="letterStyleForText ? letterStyleForText(t) : null">
+          <span
+            class="textIcon"
+            :style="letterStyleForText ? letterStyleForText(t) : null"
+          >
             A
           </span>
 
@@ -43,7 +46,9 @@ const emit = defineEmits(['setText', 'setBg', 'close', 'done'])
         </span>
 
         <span class="right">
-          <span v-if="t === currentText" class="check" aria-hidden="true">✓</span>
+          <span v-if="t === currentText" class="check" aria-hidden="true"
+            >✓</span
+          >
         </span>
       </button>
     </div>
@@ -63,7 +68,10 @@ const emit = defineEmits(['setText', 'setBg', 'close', 'done'])
       >
         <span class="left">
           <!-- Swatch -->
-          <span class="swatch" :style="swatchStyleForBg ? swatchStyleForBg(t) : null"></span>
+          <span
+            class="swatch"
+            :style="swatchStyleForBg ? swatchStyleForBg(t) : null"
+          ></span>
           <span class="label">{{ labelForBg ? labelForBg(t) : t }}</span>
         </span>
 
@@ -111,13 +119,19 @@ const emit = defineEmits(['setText', 'setBg', 'close', 'done'])
   text-align: left;
 }
 
-.row:hover { background: var(--bg-hover); }
-.row:active { background: var(--bg-hover); }
+.row:hover {
+  background: var(--bg-hover);
+}
+.row:active {
+  background: var(--bg-hover);
+}
 
-.row.active { background: var(--bg-hover); }
+.row.active {
+  background: var(--bg-hover);
+}
 
 .row:focus-visible {
-  outline: 2px solid rgba(0,0,0,.12);
+  outline: 2px solid rgba(0, 0, 0, 0.12);
   outline-offset: 2px;
 }
 
@@ -141,10 +155,12 @@ const emit = defineEmits(['setText', 'setBg', 'close', 'done'])
   width: 18px;
   display: inline-flex;
   justify-content: flex-end;
-  color: rgba(0,0,0,.55);
+  color: rgba(0, 0, 0, 0.55);
 }
 
-.check { font-size: 14px; }
+.check {
+  font-size: 14px;
+}
 
 /* “A” icon */
 .textIcon {
@@ -157,14 +173,13 @@ const emit = defineEmits(['setText', 'setBg', 'close', 'done'])
   font-weight: 700;
   font-size: 14px;
 
-  background: rgba(0,0,0,.02);
+  background: rgba(0, 0, 0, 0.02);
   border: 1px solid var(--border-menu);
 
   /* la lettera prende il colore dal tuo inline style */
   color: inherit;
   opacity: 0.4;
 }
-
 
 /* Swatch */
 .swatch {
@@ -175,14 +190,12 @@ const emit = defineEmits(['setText', 'setBg', 'close', 'done'])
 
   /* il riempimento lo fa l’inline style backgroundColor */
   background: transparent;
-  opacity: .5;
+  opacity: 0.5;
 }
-
 
 /* Focus */
 .row:focus-visible {
-  outline: 2px solid rgba(255,255,255,.18);
+  outline: 2px solid rgba(255, 255, 255, 0.18);
   outline-offset: 2px;
 }
-
 </style>

@@ -6,16 +6,23 @@ import PageActionsController from "@/components/PageActionsController.vue";
 import BlockMenuController from "@/components/BlockMenuController.vue";
 import CodeLanguageMenuController from "@/components/CodeLanguageMenuController.vue";
 import MoveDestinationController from "@/components/menu/popover/MoveToDestinationController.vue";
+import ConfirmPopoverController from "@/components/ConfirmPopoverController.vue";
+import { usePagesStore } from "@/stores/pages";
+import MegaHoverMenuController from "@/components/menu/MegaHoverMenuController.vue";
+
+import { useHostMenu } from "@/composables/useHostMenu";
+import CascadingHoverMenuController from "@/components/CascadingHoverMenuController.vue";
 
 import { useBlocksStore } from "@/stores/blocks";
-
-const pageTitlePopoverRef = ref<any>(null);
+import { useAppActions } from "@/actions/useAppActions";
 
 const uiOverlay = useUIOverlayStore();
 const blocksStore = useBlocksStore();
-
+const actions = useAppActions();
+const pagesStore = usePagesStore();
 //let unregister: null | (() => void) = null
-
+//===PAGE TITLE POPOVER====
+const pageTitlePopoverRef = ref<any>(null);
 const pageTitlePopoverPayload = ref<any>(null);
 async function openPageTitlePopover(req: {
   menuId: string;
@@ -71,6 +78,7 @@ const unregisterActions = uiOverlay.registerMenu({
 });
 onUnmounted(() => unregisterActions?.());
 
+/*
 //===BLOCK MENU====
 const blockMenuRef = ref<any>(null);
 const blockMenuPayload = ref<any>(null);
@@ -98,6 +106,7 @@ const unregisterBlockMenu = uiOverlay.registerMenu({
   close: closeBlockMenu,
 });
 onUnmounted(() => unregisterBlockMenu?.());
+*/
 
 //===CODE LANGUAGE MENU====
 const langMenuRef = ref<any>(null);
@@ -176,7 +185,7 @@ async function openMovePage(req: {
   const pageId = String(req.payload?.pageId);
 
   // calcola discendenti -> disabilitati per evitare cicli
-  const disabled = collectDescendantsIds(pagesStore, pageId); // Set<string>
+  const disabled = pagesStore.collectDescendantsIds(pagesStore, pageId); // Set<string>
   disabled.add(pageId);
 
   moveDestPayload.value = {
@@ -211,19 +220,124 @@ async function onMoveDestSelect(targetPageId: string | null) {
   if (!p) return;
 
   if (p.mode === "block") {
-    await blocksStore.transferSubtreeToPage({
-      fromPageId: p.fromPageId,
-      toPageId: String(targetPageId),
-      rootId: p.blockId,
-      toParentId: null,
-      afterBlockId: null,
-    });
+    if (targetPageId === null) return;
+    await actions.moveBlockTreeToPageAndFocus(p.blockId, targetPageId);
   } else if (p.mode === "page") {
-    await pagesStore.movePage({
-      pageId: p.pageId,
-      newParentId: targetPageId,
-    });
+    if (targetPageId === null) return;
+    await actions.pages.movePageToParentAppend(p.pageId, targetPageId);
   }
+}
+
+const confirmRef = ref(null);
+const confirmPayload = ref(null);
+
+async function openConfirm(req: {
+  menuId: string;
+  anchorKey: string;
+  payload?: any;
+}) {
+  confirmPayload.value = {
+    menuId: req.menuId, // 👈 fondamentale
+    anchorKey: req.anchorKey,
+    ...req.payload, // include __confirmToken
+  };
+  await nextTick();
+  confirmRef.value?.open?.();
+}
+
+function closeConfirm() {
+  confirmRef.value?.close?.();
+}
+
+const unregPageConfirm = uiOverlay.registerMenu({
+  menuId: "page.deleteConfirm",
+  open: openConfirm,
+  close: closeConfirm,
+});
+const unregBlockConfirm = uiOverlay.registerMenu({
+  menuId: "block.deleteConfirm",
+  open: openConfirm,
+  close: closeConfirm,
+});
+onUnmounted(() => {
+  unregPageConfirm?.();
+  unregBlockConfirm?.();
+});
+
+/*const tmpItems = [
+  { id: "rename", label: "Rename", action: () => console.log("rename") },
+  {
+    id: "move",
+    label: "Move to…",
+    children: [
+      { id: "move:a", label: "Page A", action: () => console.log("A") },
+      { id: "move:b", label: "Page B", action: () => console.log("B") },
+    ],
+  },
+  { id: "delete", label: "Delete", action: () => console.log("delete") },
+];
+
+const blockMenuRef = ref<any>(null);
+const blockMenuPayload = ref<any>(null);
+useHostMenu(
+  "block.menu",
+  blockMenuRef,
+  blockMenuPayload,
+  (req: { menuId: string; anchorKey: string; payload?: any }) => {
+    return {
+      anchorKey: req.anchorKey,
+      blockId: req.payload?.blockId,
+      placement: req.payload?.placement,
+      items: tmpItems,
+    };
+  },
+);*/
+
+// === STYLE MENU CONTROLLER ===
+const STYLE_MENU_ID = "block.menu";
+const styleMenuRef = ref<any>(null);
+const styleMenuPayload = ref<any>(null);
+
+async function openStyleMenu(req: {
+  menuId: string;
+  anchorKey: string;
+  payload?: any;
+}) {
+  // payload semantico -> props del controller
+  styleMenuPayload.value = {
+    anchorKey: req.anchorKey,
+    identityKey: String(req.payload?.blockId ?? req.payload?.pageId ?? ""), // scegli la tua identity
+    placement: req.payload?.placement ?? "right-start",
+    // startPanel: req.payload?.startPanel ?? "root", // opzionale
+    // context: req.payload ?? {},                   // opzionale
+  };
+
+  await nextTick();
+  styleMenuRef.value?.open?.(); // controller open()
+}
+
+function closeStyleMenu() {
+  styleMenuRef.value?.close?.(); // controller close() (host-close silenziosa)
+}
+
+const unregStyleMenu = uiOverlay.registerMenu({
+  menuId: STYLE_MENU_ID, // scegli id
+  open: openStyleMenu,
+  close: closeStyleMenu,
+});
+
+onUnmounted(() => unregStyleMenu?.());
+
+// quando il controller chiude per click-outside (overlayStore), chiedi al semantico di chiudere
+function onStyleMenuDismiss() {
+  uiOverlay.requestClose?.(STYLE_MENU_ID); // o il metodo equivalente nel tuo store
+}
+
+function onStyleMenuSelect(payload: any) {
+  // qui applichi type/font/color al blocco / editor
+  // actions.editor.applyStyle(payload) ...
+  // se vuoi, chiudi semanticamente:
+  uiOverlay.requestClose?.(STYLE_MENU_ID);
 }
 </script>
 
@@ -249,7 +363,7 @@ async function onMoveDestSelect(targetPageId: string | null) {
       @moved="() => {}"
       @close="() => {}"
     />
-    <BlockMenuController
+    <!--<BlockMenuController
       ref="blockMenuRef"
       :pageId="blockMenuPayload?.pageId"
       :blockId="blockMenuPayload?.blockId"
@@ -262,7 +376,7 @@ async function onMoveDestSelect(targetPageId: string | null) {
       :enableDuplicate="false"
       :enableCopyLink="false"
       :enableComment="false"
-    />
+    />-->
     <CodeLanguageMenuController
       ref="langMenuRef"
       :pageId="langMenuPayload?.pageId"
@@ -286,6 +400,32 @@ async function onMoveDestSelect(targetPageId: string | null) {
       :lockScrollOnOpen="false"
       @select="onMoveDestSelect"
       @close="() => {}"
+    />
+    <ConfirmPopoverController
+      ref="confirmRef"
+      :anchorKey="confirmPayload?.anchorKey"
+      :menuId="confirmPayload?.menuId"
+      :payload="confirmPayload"
+      placement="center"
+      @close="() => {}"
+    />
+    <!--<CascadingHoverMenuController
+      ref="blockMenuRef"
+      menuId="block.menu"
+      :anchorKey="blockMenuPayload?.anchorKey"
+      :identityKey="blockMenuPayload?.blockId"
+      :placement="blockMenuPayload?.placement"
+      :items="blockMenuPayload?.items"
+      @dismiss="uiOverlay.requestClose('block.menu')"
+    />-->
+    <MegaHoverMenuController
+      ref="styleMenuRef"
+      :menuId="STYLE_MENU_ID"
+      :anchorKey="styleMenuPayload?.anchorKey"
+      :identityKey="styleMenuPayload?.identityKey"
+      :placement="styleMenuPayload?.placement"
+      @dismiss="onStyleMenuDismiss"
+      @select="onStyleMenuSelect"
     />
   </Teleport>
 </template>

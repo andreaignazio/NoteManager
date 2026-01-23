@@ -1,5 +1,5 @@
-<script setup>
-import { computed, nextTick, ref, unref } from "vue";
+<script setup lang="ts">
+import { computed, nextTick, ref, unref, watch } from "vue";
 import { useOverlayLayer } from "@/composables/useOverlayLayer";
 import useLiveAnchorRect from "@/composables/useLiveAnchorRect";
 import { useBlocksStore } from "@/stores/blocks";
@@ -19,7 +19,8 @@ import { useTempAnchors } from "@/actions/tempAnchors.actions";
 const tempAnchors = useTempAnchors();
 import { useUIOverlayStore } from "@/stores/uioverlay";
 const uiOverlay = useUIOverlayStore();
-
+import { useOverlayBinding } from "@/composables/useOverlayBinding";
+import { useOverlayBindingKeyed } from "@/composables/useOverlayBindingKeyed";
 const pagesStore = usePagesStore();
 
 import {
@@ -69,31 +70,31 @@ const anchorResolved = computed(() => {
   return unref(props.anchorEl) ?? null;
 });
 const { anchorRect: rootRect, scheduleUpdate: bumpRoot } = useLiveAnchorRect(
-  anchorResolved,
+  anchorResolved as any,
   rootOpen,
 );
 
 // refs (dumb components expose menuRef->ActionMenuDB)
-const rootCompRef = ref(null);
-const typeCompRef = ref(null);
-const colorMenuRef = ref(null);
-const moveMenuRef = ref(null);
+const rootCompRef = ref<any>(null);
+const typeCompRef = ref<any>(null);
+const colorMenuRef = ref<any>(null);
+const moveMenuRef = ref<any>(null);
 
 // DOM of root menu
 const rootMenuEl = computed(
   () => rootCompRef.value?.menuRef?.value?.$el ?? null,
 );
 //const typeMenuEl = computed(() => typeCompRef.value?.menuRef?.value?.$el ?? null)
-const typeMenuEl = typeCompRef.value?.getMenuEl();
+const typeMenuEl = computed(() => typeCompRef.value?.getMenuEl?.() ?? null);
 const colorMenuEl = computed(() => colorMenuRef.value?.$el ?? null);
 const moveMenuEl = computed(
   () => moveMenuRef.value?.getMenuEl?.() ?? moveMenuRef.value?.$el ?? null,
 );
 
-function getRootItemEl(id) {
+function getRootItemEl(id: string) {
   /*const el = rootMenuEl.value
   return el?.querySelector?.(`[data-menu-item-id="${id}"]`) ?? null*/
-  return rootCompRef.value?.getItemElById?.(id) ?? null;
+  return (rootCompRef.value as any)?.getItemElById?.(id) ?? null;
 }
 
 const typeAnchorEl = computed(() => getRootItemEl("submenu:type"));
@@ -112,6 +113,151 @@ const { anchorRect: moveRect, scheduleUpdate: bumpMove } = useLiveAnchorRect(
   moveAnchorEl,
   moveOpen,
 );
+
+/// SUBMENU HOVER HANDLERS + TIMERS ///
+const hoverTypeAnchor = ref(false);
+const hoverTypeMenu = ref(false);
+const hoverColorAnchor = ref(false);
+const hoverColorMenu = ref(false);
+
+let tType: number | null = null;
+let tColor: number | null = null;
+
+function clearTimer(which: "type" | "color") {
+  if (which === "type" && tType != null) {
+    clearTimeout(tType);
+    tType = null;
+  }
+  if (which === "color" && tColor != null) {
+    clearTimeout(tColor);
+    tColor = null;
+  }
+}
+
+function shouldKeepTypeOpen() {
+  return hoverTypeAnchor.value || hoverTypeMenu.value;
+}
+function shouldKeepColorOpen() {
+  return hoverColorAnchor.value || hoverColorMenu.value;
+}
+
+function scheduleCloseType(delay = 140) {
+  clearTimer("type");
+  tType = window.setTimeout(() => {
+    if (!shouldKeepTypeOpen()) typeOpen.value = false;
+    tType = null;
+  }, delay) as any;
+}
+
+function scheduleCloseColor(delay = 140) {
+  clearTimer("color");
+  tColor = window.setTimeout(() => {
+    if (!shouldKeepColorOpen()) colorOpen.value = false;
+    tColor = null;
+  }, delay) as any;
+}
+
+function openTypeHover() {
+  if (!rootOpen.value) return;
+  clearTimer("type");
+  clearTimer("color"); // evita chiusure tardive
+  hoverColorAnchor.value = false;
+  hoverColorMenu.value = false;
+  colorOpen.value = false;
+  typeOpen.value = true;
+  nextTick(() => bumpType());
+}
+
+function openColorHover() {
+  if (!rootOpen.value) return;
+  clearTimer("type");
+  clearTimer("color"); // evita chiusure tardive
+  hoverTypeAnchor.value = false;
+  hoverTypeMenu.value = false;
+  typeOpen.value = false;
+  colorOpen.value = true;
+  nextTick(() => bumpColor());
+}
+
+function onRootItemEnter(e: { id: string }) {
+  if (e.id === "submenu:type") {
+    hoverTypeAnchor.value = true;
+    openTypeHover();
+  }
+  if (e.id === "submenu:color") {
+    hoverColorAnchor.value = true;
+    openColorHover();
+  }
+}
+
+function onRootItemLeave(e: { id: string }) {
+  if (e.id === "submenu:type") {
+    hoverTypeAnchor.value = false;
+    scheduleCloseType();
+  }
+  if (e.id === "submenu:color") {
+    hoverColorAnchor.value = false;
+    scheduleCloseColor();
+  }
+}
+
+function bindHoverToMenu(
+  getEl: () => HTMLElement | null,
+  which: "type" | "color",
+) {
+  let el: HTMLElement | null = null;
+
+  const enter = () => {
+    if (which === "type") hoverTypeMenu.value = true;
+    else hoverColorMenu.value = true;
+    clearTimer(which);
+  };
+
+  const leave = () => {
+    if (which === "type") hoverTypeMenu.value = false;
+    else hoverColorMenu.value = false;
+    if (which === "type") scheduleCloseType();
+    else scheduleCloseColor();
+  };
+
+  const attach = () => {
+    el = getEl();
+    if (!el) return;
+    el.addEventListener("pointerenter", enter);
+    el.addEventListener("pointerleave", leave);
+  };
+
+  const detach = () => {
+    if (!el) return;
+    el.removeEventListener("pointerenter", enter);
+    el.removeEventListener("pointerleave", leave);
+    el = null;
+  };
+
+  return { attach, detach };
+}
+
+const typeHoverBinder = bindHoverToMenu(() => typeMenuEl.value, "type");
+const colorHoverBinder = bindHoverToMenu(() => colorMenuEl.value, "color");
+
+watch(typeOpen, async (v) => {
+  typeHoverBinder.detach();
+  hoverTypeMenu.value = false;
+  if (!v) return;
+  await nextTick();
+  // doppio frame aiuta quando ActionMenu misura e poi rende visible
+  await new Promise(requestAnimationFrame);
+  typeHoverBinder.attach();
+});
+
+watch(colorOpen, async (v) => {
+  colorHoverBinder.detach();
+  hoverColorMenu.value = false;
+  if (!v) return;
+  await nextTick();
+  await new Promise(requestAnimationFrame);
+  colorHoverBinder.attach();
+});
 
 // overlay layer id
 const layerId = computed(() => {
@@ -171,7 +317,7 @@ function toggle() {
   anyOpen.value ? doCloseAll() : doOpen();
 }
 
-async function waitForRootItem(id, tries = 6) {
+async function waitForRootItem(id: string, tries = 6) {
   for (let i = 0; i < tries; i++) {
     await nextTick();
     await new Promise(requestAnimationFrame);
@@ -241,23 +387,23 @@ const MENU_RULES = {
   code: { hide: ["submenu:color"] },
 };
 
-function compactSeparators(items) {
-  const res = [];
+function compactSeparators(items: any[]) {
+  const res: any[] = [];
   for (const it of items) {
     if (
       it.type === "separator" &&
-      (res.length === 0 || res.at(-1).type === "separator")
+      (res.length === 0 || res[res.length - 1].type === "separator")
     )
       continue;
     res.push(it);
   }
-  while (res.at(-1)?.type === "separator") res.pop();
+  while (res[res.length - 1]?.type === "separator") res.pop();
   return res;
 }
 
 const rootItems = computed(() => {
   const type = blocksStore.blocksById[props.blockId]?.type ?? "default";
-  const hide = new Set(MENU_RULES[type]?.hide ?? []);
+  const hide = new Set((MENU_RULES as any)[type]?.hide ?? []);
 
   const filtered = MENU_BASE.filter(
     (it) => it.type === "separator" || !hide.has(it.id),
@@ -267,7 +413,7 @@ const rootItems = computed(() => {
 
 // -------- TYPE MENU --------
 const typeItems = computed(() => [
-  ...BLOCK_TYPES.map((t) => ({
+  ...BLOCK_TYPES.map((t: any) => ({
     type: "item",
     id: `type:${t.type}`,
     label: t.label,
@@ -334,16 +480,16 @@ async function openMoveMenu() {
 }
 
 // -------- HANDLERS --------
-async function onRootAction({ id }) {
+async function onRootAction({ id }: { id: string }) {
   const blockId = props.blockId;
   if (!blockId) return doCloseAll();
 
   if (id === "submenu:type") {
-    await openTypeMenu();
+    //await openTypeMenu();
     return;
   }
   if (id === "submenu:color") {
-    await openColorMenu();
+    //await openColorMenu();
     return;
   }
 
@@ -392,7 +538,7 @@ async function onRootAction({ id }) {
   doCloseAll();
 }
 
-function onTypeAction({ id, payload }) {
+function onTypeAction({ id, payload }: { id: string; payload: any }) {
   const blockId = props.blockId;
   if (!blockId) return doCloseAll();
 
@@ -416,109 +562,59 @@ const currentBg = computed(
   () => block.value?.props?.style?.bgColor ?? "default",
 );
 
-function setTextColor(token) {
+function setTextColor(token: string) {
   console.log("setColor", token);
   blocksStore.updateBlockStyle(props.blockId, { textColor: token });
   doCloseAll();
 }
-function setBgColor(token) {
+function setBgColor(token: string) {
   blocksStore.updateBlockStyle(props.blockId, { bgColor: token });
   doCloseAll();
 }
 // -------- OVERLAY LAYERS --------
-
-const baseLayerId = computed(() => {
-  if (!props.pageId || !props.blockId) return null;
-  return `${props.anchorLocation}:block-menu:${props.pageId}:${props.blockId}`;
-});
-
-const rootLayerId = computed(() =>
-  baseLayerId.value ? `${baseLayerId.value}:root` : null,
-);
-const typeLayerId = computed(() =>
-  baseLayerId.value ? `${baseLayerId.value}:type` : null,
-);
-const colorLayerId = computed(() =>
-  baseLayerId.value ? `${baseLayerId.value}:color` : null,
-);
 
 function closeTypeMenu() {
   console.log("closeType");
   typeOpen.value = false;
 }
 
-const { syncOpen: syncRootOpen } = useOverlayLayer(rootLayerId, () => ({
-  getMenuEl: () => rootCompRef.value?.getMenuEl?.() ?? null, // oppure $el / ref che hai
-  getAnchorEl: () => anchorResolved.value,
-  close: () => doCloseAll(),
-  options: {
-    closeOnEsc: true,
-    closeOnOutside: true,
-    // IMPORTANT: quando ci sono submenu, NON bloccare i pointer fuori,
-    // altrimenti impedisci interazioni utili con submenu/altro.
-    stopPointerOutside: true,
-    lockScroll: !!props.lockScrollOnOpen,
-    restoreFocus: true,
-    allowAnchorClick: true,
-  },
-}));
-syncRootOpen(computed(() => !!rootLayerId.value && rootOpen.value));
+const overlayId = "global:block-menu";
 
-const { syncOpen: syncTypeOpen } = useOverlayLayer(typeLayerId, () => ({
-  getMenuEl: () => typeCompRef.value?.getMenuEl?.() ?? null,
-  getAnchorEl: () => typeAnchorEl.value,
-  close: closeTypeMenu,
-  options: {
-    closeOnEsc: true,
-    closeOnOutside: true,
-    // SUBMENU: non stoppare pointer fuori, altrimenti non puoi cliccare nel root
-    stopPointerOutside: true,
-    lockScroll: false,
-    restoreFocus: false,
-    allowAnchorClick: true,
-  },
-}));
-syncTypeOpen(computed(() => !!typeLayerId.value && typeOpen.value));
+const identityKey = computed(() => {
+  if (!props.pageId || !props.blockId) return null;
+  return `${props.anchorLocation}:block-menu:${props.pageId}:${props.blockId}`;
+});
 
-const { syncOpen: syncColorOpen } = useOverlayLayer(colorLayerId, () => ({
-  getMenuEl: () => colorMenuRef.value?.getMenuEl?.() ?? null,
-  getAnchorEl: () => colorAnchorEl.value,
-  close: () => {
-    colorOpen.value = false;
-  },
-  options: {
-    closeOnEsc: true,
-    closeOnOutside: true,
-    stopPointerOutside: true,
-    lockScroll: false,
-    restoreFocus: false,
-    allowAnchorClick: true,
-  },
-}));
-syncColorOpen(computed(() => !!colorLayerId.value && colorOpen.value));
+useOverlayBindingKeyed(() => {
+  // se non c'è contesto, non bindare
+  if (!identityKey.value) return null;
 
-const moveLayerId = computed(() =>
-  baseLayerId.value ? `${baseLayerId.value}:move` : null,
-);
+  return {
+    id: overlayId,
+    kind: "dropdown",
+    priority: 60,
+    identityKey: identityKey.value,
 
-const { syncOpen: syncMoveOpen } = useOverlayLayer(moveLayerId, () => ({
-  getMenuEl: () => moveMenuRef.value?.getMenuEl?.() ?? null,
-  getAnchorEl: () => moveAnchorEl.value,
-  close: () => {
-    moveOpen.value = false;
-  },
-  options: {
-    closeOnEsc: true,
-    closeOnOutside: true,
-    stopPointerOutside: true,
-    lockScroll: false,
-    restoreFocus: false,
-    allowAnchorClick: true,
-  },
-}));
-syncMoveOpen(computed(() => !!moveLayerId.value && moveOpen.value));
+    isOpen: () => anyOpen.value,
 
-async function onMoveToSelect(toPageId) {
+    getInteractionScope: () => "local",
+    getMenuEl: () => activeMenuEl.value,
+    getAnchorEl: () => anchorResolved.value as any,
+
+    requestClose: requestCloseTopmost,
+
+    options: {
+      closeOnEsc: true,
+      closeOnOutside: true,
+      stopPointerOutside: true,
+      lockScroll: !!props.lockScrollOnOpen,
+      restoreFocus: true,
+      allowAnchorClick: true,
+    },
+  };
+});
+
+async function onMoveToSelect(toPageId: string | number) {
   await blocksStore.transferSubtreeToPage({
     fromPageId: props.pageId,
     toPageId,
@@ -541,6 +637,8 @@ async function onMoveToSelect(toPageId) {
       :items="rootItems"
       :placement="placement"
       :sideOffsetX="sideOffsetX"
+      @item-enter="onRootItemEnter"
+      @item-leave="onRootItemLeave"
       @action="onRootAction"
       @close="doCloseAll"
     />
