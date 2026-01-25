@@ -15,11 +15,16 @@ import CascadingHoverMenuController from "@/components/CascadingHoverMenuControl
 
 import { useBlocksStore } from "@/stores/blocks";
 import { useAppActions } from "@/actions/useAppActions";
+import { useTempAnchors } from "@/actions/tempAnchors.actions";
+
+import type { MenuActionPayload } from "@/domain/menuActions";
+import { MENU_COMMANDS } from "@/domain/menuActions";
 
 const uiOverlay = useUIOverlayStore();
 const blocksStore = useBlocksStore();
 const actions = useAppActions();
 const pagesStore = usePagesStore();
+const tempAnchors = useTempAnchors();
 //let unregister: null | (() => void) = null
 //===PAGE TITLE POPOVER====
 const pageTitlePopoverRef = ref<any>(null);
@@ -305,9 +310,12 @@ async function openStyleMenu(req: {
 }) {
   // payload semantico -> props del controller
   styleMenuPayload.value = {
+    memuId: req.menuId,
     anchorKey: req.anchorKey,
     identityKey: String(req.payload?.blockId ?? req.payload?.pageId ?? ""), // scegli la tua identity
     placement: req.payload?.placement ?? "right-start",
+    blockId: req.payload?.blockId,
+    pageId: req.payload?.pageId,
     // startPanel: req.payload?.startPanel ?? "root", // opzionale
     // context: req.payload ?? {},                   // opzionale
   };
@@ -333,11 +341,105 @@ function onStyleMenuDismiss() {
   uiOverlay.requestClose?.(STYLE_MENU_ID); // o il metodo equivalente nel tuo store
 }
 
-function onStyleMenuSelect(payload: any) {
-  // qui applichi type/font/color al blocco / editor
-  // actions.editor.applyStyle(payload) ...
-  // se vuoi, chiudi semanticamente:
-  uiOverlay.requestClose?.(STYLE_MENU_ID);
+const commandHandlers: Record<
+  string,
+  (a: MenuActionPayload & { type: "command" }) => any
+> = {
+  [MENU_COMMANDS.BLOCK_DUPLICATE]: async (a) => {
+    const blockId = a.ctx.blockId;
+    if (!blockId) return;
+
+    await actions.blocks?.duplicateBlock?.(blockId);
+  },
+  [MENU_COMMANDS.BLOCK_DELETE]: async (a) => {
+    const blockId = a.ctx.blockId;
+    const pageId = a.ctx.pageId;
+
+    const tmpanchor = tempAnchors.registerViewportCenter();
+    try {
+      if (!blockId || !pageId || !tmpanchor) return;
+      await actions.blocks?.deleteBlockFlow?.({
+        blockId,
+        pageId,
+        anchorKey: tmpanchor.key,
+        placement: "center",
+      });
+    } finally {
+      tmpanchor?.unregister();
+    }
+  },
+
+  [MENU_COMMANDS.BLOCK_MOVE_TO_PAGE]: async (a) => {
+    const blockId = a.ctx.blockId;
+    if (!blockId) return;
+    const tmpanchor = tempAnchors.registerViewportCenter();
+    uiOverlay.requestOpen?.({
+      menuId: "block.moveTo",
+      anchorKey: tmpanchor!.key,
+      payload: {
+        blockId,
+        placement: "center",
+      },
+    });
+  },
+
+  // (opzionale già pronto, non serve per test)
+  [MENU_COMMANDS.BLOCK_APPLY_TYPE]: async (a) => {
+    const blockId = a.ctx.blockId;
+    if (!blockId) return;
+    const blockType = a.payload?.blockType;
+    if (!blockType) return;
+
+    await actions.blocks?.setBlockType?.(blockId, blockType);
+  },
+
+  [MENU_COMMANDS.BLOCK_SET_TEXT_COLOR]: async (a) => {
+    const blockId = a.ctx.blockId;
+    if (!blockId) return;
+    const colorToken = a.payload?.token;
+    if (!colorToken) return;
+
+    await actions.blocks?.setBlockTextColor?.(blockId, colorToken);
+  },
+  [MENU_COMMANDS.BLOCK_SET_BG_COLOR]: async (a) => {
+    const blockId = a.ctx.blockId;
+    if (!blockId) return;
+    const colorToken = a.payload?.token;
+    if (!colorToken) return;
+
+    await actions.blocks?.setBlockBgColor?.(blockId, colorToken);
+  },
+  [MENU_COMMANDS.BLOCK_SET_FONT]: async (a) => {
+    const blockId = a.ctx.blockId;
+    if (!blockId) return;
+    const fontId = a.payload?.fontId;
+    if (!fontId) return;
+
+    await actions.blocks?.setBlockFont?.(blockId, fontId);
+  },
+};
+
+async function onMenuAction(a: MenuActionPayload) {
+  if (a.type === "openMenu") {
+    uiOverlay.requestOpen?.({
+      menuId: a.menuId,
+      anchorKey: a.anchorKey ?? a.ctx.anchorKey!,
+      payload: a.payload,
+    });
+    return;
+  }
+
+  if (a.type === "navigate") {
+    // router.push(a.to) ...
+    return;
+  }
+
+  if (a.type === "command") {
+    console.log("[OverlayHost] Menu command action:", a);
+    const fn = commandHandlers[a.command];
+    if (fn) return fn(a);
+    console.warn("[OverlayHost] Unhandled menu command:", a.command, a);
+  }
 }
 </script>
 
@@ -403,8 +505,8 @@ function onStyleMenuSelect(payload: any) {
     />
     <ConfirmPopoverController
       ref="confirmRef"
-      :anchorKey="confirmPayload?.anchorKey"
-      :menuId="confirmPayload?.menuId"
+      :anchorKey="confirmPayload?.anchorKey || ''"
+      :menuId="confirmPayload?.menuId || ''"
       :payload="confirmPayload"
       placement="center"
       @close="() => {}"
@@ -420,12 +522,16 @@ function onStyleMenuSelect(payload: any) {
     />-->
     <MegaHoverMenuController
       ref="styleMenuRef"
-      :menuId="STYLE_MENU_ID"
-      :anchorKey="styleMenuPayload?.anchorKey"
-      :identityKey="styleMenuPayload?.identityKey"
-      :placement="styleMenuPayload?.placement"
+      :menuId="styleMenuPayload?.memuId || ''"
+      :anchorKey="styleMenuPayload?.anchorKey || ''"
+      :identityKey="styleMenuPayload?.identityKey || ''"
+      :placement="styleMenuPayload?.placement || ''"
+      :blockId="styleMenuPayload?.blockId || ''"
+      :pageId="styleMenuPayload?.pageId || ''"
+      :enableCopyLink="false"
+      :enableComment="false"
+      @action="onMenuAction"
       @dismiss="onStyleMenuDismiss"
-      @select="onStyleMenuSelect"
     />
   </Teleport>
 </template>

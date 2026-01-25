@@ -4,6 +4,7 @@ import { DEFAULT_BLOCK_TYPE } from "@/domain/blockTypes";
 import { posBetween } from "@/domain/position";
 import { normalizeProps, isTextToken, isBgToken } from "@/theme/colorsCatalog";
 import { DEFAULT_ICON_ID } from "@/icons/catalog";
+import { isFontToken } from "@/domain/fontCatalog";
 
 /*function normalizeProps(rawProps) {
   const p = rawProps && typeof rawProps === 'object' ? rawProps : {}
@@ -903,6 +904,7 @@ export const useBlocksStore = defineStore("blocksStore", {
     },
 
     async updateBlockStyle(blockId, stylePatch) {
+      console.log("updateBlockStyle", blockId, stylePatch);
       blockId = String(blockId);
       const b = this.blocksById[blockId];
       if (!b) return;
@@ -916,6 +918,9 @@ export const useBlocksStore = defineStore("blocksStore", {
       }
       if ("bgColor" in stylePatch && isBgToken(stylePatch.bgColor)) {
         nextStyle.bgColor = stylePatch.bgColor;
+      }
+      if ("font" in stylePatch && isFontToken(stylePatch.font)) {
+        nextStyle.font = stylePatch.font;
       }
 
       const nextProps = { ...prevProps, style: nextStyle };

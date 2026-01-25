@@ -19,7 +19,13 @@ import {
 import { useHoverMenuActions } from "@/composables/useHoverMenuActions";
 
 import MenuItemRow from "@/components/menu/MenuItemRow.vue";
+import ColorSwatch from "@/components/menu/ColorSwatch.vue";
+import FontSwatch from "@/components/menu/FontSwatch.vue";
 import type { HoverMenuNode } from "@/domain/hoverMenu";
+import { styleForTextToken, styleForBgToken } from "@/theme/colorsCatalog";
+
+import type { MenuActionPayload } from "@/domain/menuActions";
+import { MENU_COMMANDS } from "@/domain/menuActions";
 
 type Placement =
   | "right-start"
@@ -324,6 +330,97 @@ useOverlayBindingKeyed(() => {
 
   return pointInTriangle(p, a, b, c);
 }*/
+// ====UNIFIED CTX AND ACTIONS =====
+function buildCtx() {
+  return {
+    menuId: props.menuId,
+    anchorKey: props.anchorKey,
+    blockId: props.blockId || undefined,
+    pageId: props.pageId || undefined,
+  };
+}
+
+async function onNodeClick(node: HoverMenuNode) {
+  if (node.kind !== "item" || node.disabled) return;
+  const a = node.action;
+  if (!a) return;
+
+  // openPanel resta interno al controller
+  if (a.type === "openPanel") return;
+
+  const ctx = buildCtx();
+
+  const emitCommand = (command: string, payload?: any) => {
+    emit("action", {
+      type: "command",
+      ctx,
+      command,
+      payload,
+    } satisfies MenuActionPayload);
+  };
+
+  const emitOpenMenu = (menuId: string, payload?: any) => {
+    emit("action", {
+      type: "openMenu",
+      ctx,
+      menuId,
+      anchorKey: ctx.anchorKey, // default: stessa ancora
+      payload,
+    } satisfies MenuActionPayload);
+  };
+
+  // mapping actions -> comandi unificati
+  if (a.type === "applyBlockType") {
+    emitCommand(MENU_COMMANDS.BLOCK_APPLY_TYPE, { blockType: a.blockType });
+    close("api");
+    return;
+  }
+
+  if (a.type === "setTextColor") {
+    emitCommand(MENU_COMMANDS.BLOCK_SET_TEXT_COLOR, { token: a.token });
+    close("api");
+    return;
+  }
+
+  if (a.type === "setBgColor") {
+    emitCommand(MENU_COMMANDS.BLOCK_SET_BG_COLOR, { token: a.token });
+    close("api");
+    return;
+  }
+
+  if (a.type === "setFont") {
+    emitCommand(MENU_COMMANDS.BLOCK_SET_FONT, { fontId: a.fontId });
+    close("api");
+    return;
+  }
+
+  if (a.type === "custom") {
+    // per test facciamo girare "duplicate" come command unificato
+    if (a.id === "duplicate") {
+      emitCommand(MENU_COMMANDS.BLOCK_DUPLICATE);
+      close("api");
+      return;
+    }
+    if (a.id === "delete") {
+      emitCommand(MENU_COMMANDS.BLOCK_DELETE);
+      close("api");
+      return;
+    }
+    if (a.id === "move_to") {
+      emitCommand(MENU_COMMANDS.BLOCK_MOVE_TO_PAGE);
+      close("api");
+      return;
+    }
+
+    // esempi pronti (se vuoi attivarli subito):
+    // if (a.id === "move_to") { emitOpenMenu("block.moveTo", { blockId: ctx.blockId, placement: "left-start" }); close("api"); return; }
+    // if (a.id === "delete")  { emitOpenMenu("block.deleteConfirm", { blockId: ctx.blockId }); close("api"); return; }
+
+    emitCommand(`custom.${a.id}`, a.payload);
+    close("api");
+    return;
+  }
+}
 
 // ===== Hover + click dispatch (NO switch nel controller) =====
 const ctx = computed(() => ({
@@ -338,7 +435,7 @@ function openPanel(panel: "type" | "color" | "font") {
 
 // Qui colleghi le azioni reali (tiptap / store / appActions).
 // Per ora mando tutto fuori con emit("action", ...), così il controller non si sporca.
-const menuActions = useHoverMenuActions({
+/*const menuActions = useHoverMenuActions({
   openPanel,
 
   applyBlockType: async (ctx, blockType) =>
@@ -352,16 +449,8 @@ const menuActions = useHoverMenuActions({
 
   custom: async (ctx, id, payload) =>
     emit("action", { type: "custom", ctx, id, payload }),
-});
+});*/
 
-async function onNodeClick(node: HoverMenuNode) {
-  await menuActions.run(node, ctx.value);
-
-  // chiudi solo sui leaf (non quando stai aprendo un pannello)
-  if (node.kind === "item" && node.action?.type !== "openPanel") {
-    close("api");
-  }
-}
 /*function onNodeEnter(node: HoverMenuNode) {
   // apri pannelli su hover
   if (node.kind === "item" && node.action?.type === "openPanel") {
@@ -634,13 +723,13 @@ watch(
         <div
           v-show="activePanel !== 'root'"
           ref="sidePanelEl"
-          class="menu"
+          class="menu density-compact"
           :style="[styleSide, panelScrollStyle]"
         >
           <ul class="menuList">
-            <li class="panelTitle" aria-hidden="true">
+            <!--<li class="panelTitle" aria-hidden="true">
               {{ activePanel !== "root" ? panelTitle(activePanel) : "" }}
-            </li>
+            </li>-->
 
             <template
               v-for="n in activePanel === 'root' ? [] : panels[activePanel]"
@@ -652,6 +741,9 @@ watch(
                 role="separator"
                 aria-hidden="true"
               ></li>
+              <li v-else-if="n.kind === 'subtitle'">
+                <MenuItemRow variant="subtitle" :label="n.label" id="n.id" />
+              </li>
 
               <li v-else class="menuItem">
                 <MenuItemRow
@@ -670,7 +762,34 @@ watch(
                   "
                   @enter="() => onSideItemEnter(n)"
                   @click="() => onNodeClick(n)"
-                />
+                >
+                  <template v-if="n.kind === 'item' && n.meta" #leading>
+                    <!-- Color -->
+                    <template
+                      v-if="activePanel === 'color' && n.meta.kind === 'color'"
+                    >
+                      <ColorSwatch
+                        v-if="n.meta.colorKind === 'text'"
+                        kind="text"
+                        :styleObj="styleForTextToken(n.meta.token)"
+                      />
+                      <ColorSwatch
+                        v-else
+                        kind="bg"
+                        :styleObj="styleForBgToken(n.meta.token)"
+                      />
+                    </template>
+
+                    <!-- Font -->
+                    <template
+                      v-else-if="
+                        activePanel === 'font' && n.meta.kind === 'font'
+                      "
+                    >
+                      <FontSwatch :token="n.meta.fontId" />
+                    </template>
+                  </template>
+                </MenuItemRow>
               </li>
             </template>
           </ul>
@@ -698,6 +817,16 @@ watch(
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.14);
   padding: 6px;
   color: var(--text-main);
+}
+
+.menu.density-compact :deep(.optionBtn) {
+  --row-py: 4px;
+  --row-px: 4px;
+  --label-size: 13px;
+}
+
+.menu.density-comfy :deep(.optionBtn) {
+  --row-py: 9px;
 }
 
 .menuList {
@@ -737,21 +866,10 @@ watch(
   transform: scale(0.98);
   transform-origin: top left;
 }
+
 .menu-pop-enter-to,
 .menu-pop-leave-from {
   opacity: 1;
   transform: scale(1);
-}
-.menu::-webkit-scrollbar {
-  width: 13px;
-}
-.menu::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.18);
-  border-radius: 10px;
-  border: 3px solid transparent;
-  background-clip: content-box;
-}
-.menu::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.26);
 }
 </style>

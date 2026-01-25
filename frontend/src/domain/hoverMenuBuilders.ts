@@ -1,5 +1,7 @@
 import type { HoverMenuNode } from "@/domain/hoverMenu";
-import { BLOCK_TYPES } from "@/domain/blockTypes"; // path tuo
+import { BLOCK_TYPES } from "@/domain/blockTypes";
+import { FONT_PACK } from "@/domain/fontCatalog";
+
 import {
   TEXT_TOKENS,
   BG_TOKENS,
@@ -95,6 +97,7 @@ export function buildColorPanel(): HoverMenuNode[] {
     label: labelForTextToken(tok),
     iconId: "lucide:minus", // placeholder: poi facciamo un pallino colorato
     action: { type: "setTextColor", token: tok },
+    meta: { kind: "color", colorKind: "text", token: tok },
   }));
 
   const bg: HoverMenuNode[] = BG_TOKENS.map((tok) => ({
@@ -103,29 +106,26 @@ export function buildColorPanel(): HoverMenuNode[] {
     label: labelForBgToken(tok),
     iconId: "lucide:minus", // placeholder: poi pallino bg
     action: { type: "setBgColor", token: tok },
+    meta: { kind: "color", colorKind: "bg", token: tok },
   }));
 
   return [
-    { kind: "item", id: "color:section:text", label: "Text", disabled: true },
+    { kind: "subtitle", id: "color:subtitle:text", label: "Text" },
+
     ...text,
     { kind: "separator", id: "sep:color" },
-    {
-      kind: "item",
-      id: "color:section:bg",
-      label: "Background",
-      disabled: true,
-    },
+    { kind: "subtitle", id: "color:subtitle:bg", label: "Background" },
+
     ...bg,
   ];
 }
 
-export function buildFontPanel(
-  FONT_PACK: { id: string; label: string }[],
-): HoverMenuNode[] {
+export function buildFontPanel(): HoverMenuNode[] {
   return FONT_PACK.map((f) => ({
     kind: "item",
     id: `font:${f.id}`,
     label: f.label,
     action: { type: "setFont", fontId: f.id },
+    meta: { kind: "font", fontId: f.id },
   }));
 }

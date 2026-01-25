@@ -56,6 +56,7 @@ function openBlockMenuFromHandle() {
     anchorKey: dragHandle_key,
     payload: {
       blockId: props.block.id,
+      pageId: props.pageId,
       placement: "right-center",
     },
   });
@@ -66,6 +67,7 @@ function openBlockMenuFromDots() {
     anchorKey: toolbarRef.value?.dots_key,
     payload: {
       blockId: props.block.id,
+      pageId: props.pageId,
       placement: "left",
     },
   });

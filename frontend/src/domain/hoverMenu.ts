@@ -6,6 +6,11 @@ export type HoverMenuAction =
   | { type: "setFont"; fontId: string } // font
   | { type: "custom"; id: string; payload?: any }; // fallback
 
+export type HoverMenuMeta =
+  | { kind: "color"; colorKind: "text" | "bg"; token: string }
+  | { kind: "type"; blockType: string }
+  | { kind: "font"; fontId: string };
+
 export type HoverMenuNode =
   | {
       kind: "item";
@@ -18,5 +23,7 @@ export type HoverMenuNode =
       danger?: boolean;
       action?: HoverMenuAction;
       children?: HoverMenuNode[]; // opzionale (submenu reali)
+      meta?: HoverMenuMeta;
     }
-  | { kind: "separator"; id: string };
+  | { kind: "separator"; id: string }
+  | { kind: "subtitle"; id: string; label: string };
