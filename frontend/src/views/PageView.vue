@@ -19,15 +19,9 @@ import { useEditorRegistryStore } from "@/stores/editorRegistry";
 import BlockRow from "@/views/BlockRow.vue";
 import DndController from "@/components/draggableList/DndController.vue";
 
-import BlockToolbar from "@/components/menu/BlockToolbar.vue";
-
-import { useSelectionPolicy } from "@/composables/useSelectionPolicy";
-import { useSelectionToolbar } from "@/composables/useSelectionToolbar";
-
 import { usePageBlankClickFocus } from "@/composables/page/usePageBlankClickFocus";
 import { usePageTitleEditor } from "@/composables/page/usePageTitleEditor";
 
-import { useOverlayBinding } from "@/composables/useOverlayBinding";
 import { useAppActions } from "@/actions/useAppActions";
 
 const ui = useUiStore();
@@ -222,102 +216,8 @@ const {
 } = usePageBlankClickFocus(pageIdRef, { getLocalTree: () => localTree.value });
 
 //====EDITOR REGISTRY + ACTIVE EDITOR====
-const { currentBlockId } = storeToRefs(blocksStore);
-
 const editorRegStore = useEditorRegistryStore();
-
-const activeEditor = computed(() =>
-  editorRegStore.getEditor(currentBlockId.value),
-);
 const registerEditor = editorRegStore.registerEditor;
-
-//====TOOLBAR + SELECTION RELATED EVENTS===
-
-const activeType = computed(() => {
-  const id = currentBlockId.value;
-  if (!id) return "p";
-  return blocksStore.blocksById[String(id)]?.type ?? "p";
-});
-
-const floatingEl = ref(null);
-
-useSelectionPolicy({
-  getActiveEditor: () => activeEditor.value,
-  onCommitSelection: emitCommit,
-  onClearSelection: emitClear,
-});
-
-function emitCommit() {
-  //console.log('[selectionPolicy] COMMIT')
-  window.dispatchEvent(new CustomEvent("selection-toolbar:commit"));
-}
-
-function emitClear() {
-  //console.log('[selectionPolicy] CLEAR')
-  window.dispatchEvent(new CustomEvent("selection-toolbar:clear"));
-}
-
-const {
-  isOpen,
-  x,
-  y,
-  close: closeSelectionToolbar,
-} = useSelectionToolbar(activeEditor, {
-  offsetY: 20,
-  viewportMargin: 25,
-  floatingEl,
-  shouldShow: ({ editor, state }) => {
-    //console.log('editor.value', editor)
-    const { from, to } = state.selection;
-    return editor.isFocused && from !== to;
-  },
-});
-
-const overlayBinding = useOverlayBinding({
-  id: "hoverbar",
-  kind: "hoverbar",
-  priority: 1,
-  behaviour: "stack",
-
-  isOpen: () => isOpen.value, // LIVE
-  requestClose: (reason) => closeSelectionToolbar(), // non svela logica
-
-  getMenuEl: () => floatingEl.value,
-
-  options: {
-    closeOnOutside: false,
-    closeOnEsc: false,
-    restoreFocus: false,
-    stopPointerOutside: false,
-  },
-});
-
-async function setBlockTypeFromToolbar(nextType) {
-  console.log("setBlockTypeFromToolbar:", nextType);
-  console.log("activeType:", activeType.value);
-  if (nextType === activeType) return;
-
-  // 1) collassa la selection (così compute() chiude e NON riapre)
-  try {
-    const ed = activeEditor.value;
-    console.log("activeEditor in setBlockTypeFromToolbar:", ed);
-    if (ed) {
-      const from = ed.state.selection.from;
-      ed.commands.setTextSelection({ from, to: from });
-      ed.commands.blur();
-    }
-  } catch {}
-
-  closeSelectionToolbar();
-
-  // 3) cambia tipo
-  try {
-    await actions.blocks.setBlockType(blocksStore.currentBlockId, nextType);
-    actions.blocks.requestFocus(blocksStore.currentBlockId, -1);
-  } catch {
-    errorMsg.value = "Error changing block type";
-  }
-}
 
 const blockListEl = ref(null);
 
@@ -372,15 +272,6 @@ async function waitForEl(getRoot, selector, maxFrames = 120) {
   }
   return null;
 }
-
-/**
- * PATCH: watcher scroll-to-block con scroll manuale al centro
- *
- * prerequisiti:
- * - blockListEl è un ref (DOM node o componente)
- * - pendingPageviewScrollToBlockId è una ref dallo store
- * - ui.consumeScrollToBlockRequest(blockId) esiste
- */
 
 const page = ref(null);
 watch(
@@ -473,33 +364,6 @@ watch(
       </div>
     </div>
   </div>
-
-  <Teleport to="body">
-    <Transition name="ft">
-      <div
-        v-show="isOpen && overlay.has('hoverbar')"
-        ref="floatingEl"
-        class="floating-toolbar"
-        :style="{
-          position: 'fixed',
-          left: x + 'px',
-          top: y + 'px',
-          transform: 'translate(-50%, -100%)',
-        }"
-        @mousedown.prevent
-        @pointerdown.stop.prevent
-        @pointerup.stop
-        @click.stop
-        @mousedown.stop.prevent
-      >
-        <BlockToolbar
-          :editor="activeEditor"
-          :type="activeType"
-          @set-type="setBlockTypeFromToolbar"
-        />
-      </div>
-    </Transition>
-  </Teleport>
 </template>
 
 <style scoped>
@@ -578,43 +442,6 @@ watch(
 :deep(.block-item.drop-after),
 :deep(.block-item.drop-inside) {
   position: relative;
-}
-
-/*TOOLBAR*/
-.floating-toolbar {
-  transform: var(--ft-translate) scale(1);
-  transform-origin: bottom center;
-  will-change: transform, opacity;
-  z-index: 9999;
-  pointer-events: auto;
-  transition:
-    opacity 5s ease,
-    transform 0.3s ease;
-  opacity: 1;
-  height: 20px;
-}
-
-.floating-toolbar[style*="display: none"] {
-  opacity: 0;
-}
-
-.ft-enter-active,
-.ft-leave-active {
-  transition:
-    opacity 0.12s ease,
-    transform 0.12s ease;
-}
-
-.ft-enter-from,
-.ft-leave-to {
-  opacity: 0;
-  transform: var(--ft-translate) scale(0.96);
-}
-
-.ft-enter-to,
-.ft-leave-from {
-  opacity: 1;
-  transform: var(--ft-translate) scale(1);
 }
 
 /* ============ INSIDE ============ */

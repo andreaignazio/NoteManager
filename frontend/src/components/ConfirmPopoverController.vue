@@ -5,6 +5,7 @@ import { useUIOverlayStore } from "@/stores/uioverlay";
 import { useAnchorRegistryStore } from "@/stores/anchorRegistry";
 import useLiveAnchorRect from "@/composables/useLiveAnchorRect";
 import { getIconComponent } from "@/icons/catalog";
+import { useOverlayBinding } from "@/composables/useOverlayBinding";
 
 const props = defineProps({
   // 👇 viene passato dall’OverlayHost
@@ -23,6 +24,7 @@ const anchorsStore = useAnchorRegistryStore();
 
 const open = ref(false);
 const rectTriggerOpen = ref(false);
+const menuRef = ref<any>(null);
 
 // checkbox state
 const checkboxValue = ref(false);
@@ -96,10 +98,36 @@ defineExpose({
   open: openPopover,
   close: closePopover,
 });
+
+useOverlayBinding({
+  id: "confirm-popover",
+  kind: "modal",
+  priority: 230,
+  behaviour: "exclusiveKinds",
+  exclusiveKinds: ["pie", "dropdown", "hoverbar", "tooltip"],
+
+  isOpen: () => open.value,
+  getInteractionScope: () => "local",
+
+  requestClose: () => closePopover("closed"),
+
+  getMenuEl: () => menuRef.value?.el?.value ?? null,
+  getAnchorEl: () => anchorResolved.value,
+
+  options: {
+    closeOnEsc: true,
+    closeOnOutside: true,
+    lockScroll: false,
+    stopPointerOutside: true,
+    allowAnchorClick: true,
+    restoreFocus: true,
+  },
+});
 </script>
 <template>
   <Teleport to="body">
     <ActionMenuDB
+      ref="menuRef"
       :open="open"
       :anchorRect="anchorRect"
       :custom="true"
@@ -147,6 +175,7 @@ defineExpose({
   background: var(--bg-menu);
   color: var(--text-main);
   border-radius: 18px;
+  z-index: 2000;
 }
 
 .icon-wrap {

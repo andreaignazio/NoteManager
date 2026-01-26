@@ -11,6 +11,10 @@ import PageActionsController from "@/components/PageActionsController.vue";
 import PageTitlePopoverController from "@/components/PageTitlePopoverController.vue";
 import { useOverlayStore } from "@/stores/overlay";
 import { useUiStore } from "@/stores/ui";
+import { useUIOverlayStore } from "@/stores/uioverlay";
+import { anchorKey, anchorKind } from "@/ui/anchorsKeyBind";
+import { useRegisterAnchors } from "@/composables/useRegisterAnchors";
+import { getIconComponent } from "@/icons/catalog";
 
 import { useAppActions } from "@/actions/useAppActions";
 
@@ -32,11 +36,21 @@ const props = defineProps({
 
 const actions = useAppActions();
 const pagesStore = usePagesStore();
+const uiOverlay = useUIOverlayStore();
 const { editingPageId } = storeToRefs(pagesStore);
 const { draftPage } = storeToRefs(pagesStore);
 const { SidebarMoveToArmed, pendingSidebarScrollToPageId } = storeToRefs(ui);
 
 const rows = computed(() => pagesStore.renderRowsPages);
+
+const TrashIcon = computed(() => getIconComponent("lucide:trash-2"));
+const trashButtonEl = ref(null);
+const kind_trash = anchorKind("page", "icon", "sidebar", "tree");
+const key_trash = anchorKey(kind_trash, "trash");
+
+useRegisterAnchors({
+  [key_trash]: trashButtonEl,
+});
 
 let scrollTimer = null;
 
@@ -83,6 +97,16 @@ const deletePage = async (pageId) => {
 
 async function createNewPage(parentId = null) {
   actions.pages.createChildAndActivate(parentId);
+}
+
+function openTrashMenu() {
+  uiOverlay.requestOpen({
+    menuId: "page.trashMenu",
+    anchorKey: key_trash,
+    payload: {
+      placement: "right-start",
+    },
+  });
 }
 
 // ======== Context menu anchor management ========
@@ -346,6 +370,19 @@ watch(pendingSidebarScrollToPageId, async (pageId) => {
         </DndController>
       </div>
     </div>
+    <div class="sidebar-footer">
+      <button
+        ref="trashButtonEl"
+        class="sidebar-footer-row"
+        type="button"
+        @click="openTrashMenu"
+      >
+        <span class="footer-icon">
+          <component :is="TrashIcon" :size="16" />
+        </span>
+        <span class="footer-label">Trash</span>
+      </button>
+    </div>
   </aside>
 </template>
 
@@ -473,6 +510,43 @@ watch(pendingSidebarScrollToPageId, async (pageId) => {
   padding-left: var(--sidebar-pad-left);
   /* padding-bottom: 80px;*/
   scroll-padding-bottom: 80px;
+}
+
+.sidebar-footer {
+  flex: 0 0 auto;
+  padding: var(--bar-pad);
+  border-top: 1px solid var(--border-main);
+  background: var(--bg-secondary);
+}
+
+.sidebar-footer-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.sidebar-footer-row:hover {
+  background: var(--bg-hover);
+  color: var(--text-main);
+}
+
+.footer-icon {
+  width: 22px;
+  display: inline-flex;
+  justify-content: center;
+}
+
+.footer-label {
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .favorites-zone {

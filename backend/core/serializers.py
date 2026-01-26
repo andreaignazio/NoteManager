@@ -174,7 +174,23 @@ class BlockBatchCreateSerializer(serializers.Serializer):
 class PageSerializer(serializers.ModelSerializer):
     class Meta:
         model = Page
-        fields = ['id', 'title', 'created_at', 'updated_at', 'position', 'parent','icon','favorite','favorite_position']
+        fields = [
+            'id',
+            'title',
+            'created_at',
+            'updated_at',
+            'position',
+            'parent',
+            'icon',
+            'favorite',
+            'favorite_position',
+            'deleted_at',
+            'deleted_by',
+            'trashed_parent',
+            'trashed_position',
+            'trashed_favorite',
+            'trashed_favorite_position',
+        ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
 class PageDetailSerializer(PageSerializer):
@@ -196,6 +212,15 @@ class TransferSubtreeSerializer(serializers.Serializer):
 class DuplicatePageDeepSerializer(serializers.Serializer):
     include_children = serializers.BooleanField(required=False, default=False)
     title = serializers.CharField(required=False, allow_blank=True)
+
+class TrashPageSerializer(serializers.Serializer):
+    include_children = serializers.BooleanField(required=False, default=True)
+
+class RestorePageSerializer(serializers.Serializer):
+    include_children = serializers.BooleanField(required=False, default=True)
+
+class PurgePageSerializer(serializers.Serializer):
+    include_children = serializers.BooleanField(required=False, default=True)
 
 class DuplicateBlockSubtreeSerializer(serializers.Serializer):
     # opzionale: cambia destinazione dentro la stessa pagina

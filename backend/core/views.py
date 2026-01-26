@@ -10,6 +10,7 @@ from django.db import transaction, IntegrityError
 from fractional_indexing import generate_key_between, generate_n_keys_between
 from core.utils.tree import flatten_tree
 from collections import defaultdict
+from django.utils import timezone
 
 
 import uuid
@@ -19,17 +20,30 @@ from .serializers import (
     PageSerializer, 
     PageDetailSerializer, 
     BlockSerializer, 
-    BlockCreateSerializer
+    BlockCreateSerializer,
+    TrashPageSerializer,
+    RestorePageSerializer,
+    PurgePageSerializer,
 )
 
 class PageViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-       
+        if not getattr(self.request, "user", None) or not self.request.user.is_authenticated:
+            return Page.objects.none()
+
         qs = Page.objects.filter(owner=self.request.user)
 
-    
+        include_trashed = self.request.query_params.get("include_trashed") in {
+            "1",
+            "true",
+            "yes",
+        }
+
+        if not include_trashed and self.action not in {"restore", "purge", "trash_list"}:
+            qs = qs.filter(deleted_at__isnull=True)
+
         if self.action == "retrieve":
             qs = qs.prefetch_related(
                 Prefetch(
@@ -41,6 +55,134 @@ class PageViewSet(viewsets.ModelViewSet):
        
         return qs.order_by('-created_at')
 
+    def _collect_descendant_ids(self, root_id):
+        rows = list(
+            Page.objects.filter(owner=self.request.user)
+            .values_list("id", "parent_id")
+        )
+
+        children = {}
+        for pid, parent_id in rows:
+            children.setdefault(parent_id, []).append(pid)
+
+        out = set()
+        stack = [root_id]
+        while stack:
+            cur = stack.pop()
+            if cur in out:
+                continue
+            out.add(cur)
+            for ch in children.get(cur, []):
+                stack.append(ch)
+        return out
+
+    def _soft_delete_pages(self, page_ids, user):
+        pages = list(
+            Page.objects.select_for_update()
+            .filter(owner=user, id__in=page_ids)
+        )
+        if not pages:
+            return 0
+
+        now = timezone.now()
+        for p in pages:
+            if p.deleted_at:
+                continue
+            p.deleted_at = now
+            p.deleted_by = user
+            p.trashed_parent_id = p.parent_id
+            p.trashed_position = p.position
+            p.trashed_favorite = p.favorite
+            p.trashed_favorite_position = p.favorite_position
+
+            p.favorite = False
+            p.favorite_position = None
+            p.parent_id = None
+
+        Page.objects.bulk_update(
+            pages,
+            [
+                "deleted_at",
+                "deleted_by",
+                "trashed_parent",
+                "trashed_position",
+                "trashed_favorite",
+                "trashed_favorite_position",
+                "favorite",
+                "favorite_position",
+                "parent",
+            ],
+            batch_size=500,
+        )
+        return len(pages)
+
+    def _restore_pages(self, page_ids, user):
+        pages = list(
+            Page.objects.select_for_update()
+            .filter(owner=user, id__in=page_ids)
+        )
+        if not pages:
+            return 0
+
+        ids_set = {p.id for p in pages}
+        trashed_parent_ids = {p.trashed_parent_id for p in pages if p.trashed_parent_id}
+
+        valid_external_parents = set(
+            Page.objects.filter(
+                owner=user,
+                id__in=trashed_parent_ids - ids_set,
+                deleted_at__isnull=True,
+            ).values_list("id", flat=True)
+        )
+
+        for p in pages:
+            if not p.deleted_at:
+                continue
+
+            target_parent_id = None
+            if p.trashed_parent_id in ids_set:
+                target_parent_id = p.trashed_parent_id
+            elif p.trashed_parent_id in valid_external_parents:
+                target_parent_id = p.trashed_parent_id
+
+            p.parent_id = target_parent_id
+            if p.trashed_position:
+                p.position = p.trashed_position
+
+            p.favorite = bool(p.trashed_favorite)
+            if p.favorite:
+                if p.trashed_favorite_position:
+                    p.favorite_position = p.trashed_favorite_position
+                else:
+                    p.favorite_position = self._append_favorite_position(owner=user)
+            else:
+                p.favorite_position = None
+
+            p.deleted_at = None
+            p.deleted_by = None
+            p.trashed_parent = None
+            p.trashed_position = None
+            p.trashed_favorite = False
+            p.trashed_favorite_position = None
+
+        Page.objects.bulk_update(
+            pages,
+            [
+                "parent",
+                "position",
+                "favorite",
+                "favorite_position",
+                "deleted_at",
+                "deleted_by",
+                "trashed_parent",
+                "trashed_position",
+                "trashed_favorite",
+                "trashed_favorite_position",
+            ],
+            batch_size=500,
+        )
+        return len(pages)
+
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
@@ -48,6 +190,81 @@ class PageViewSet(viewsets.ModelViewSet):
         if self.action == 'retrieve':
             return PageDetailSerializer
         return PageSerializer
+
+    def destroy(self, request, *args, **kwargs):
+        page = self.get_object()
+        ser = TrashPageSerializer(data=request.data or {})
+        ser.is_valid(raise_exception=True)
+        include_children = ser.validated_data.get("include_children", True)
+
+        ids = (
+            self._collect_descendant_ids(page.id)
+            if include_children
+            else {page.id}
+        )
+
+        with transaction.atomic():
+            self._soft_delete_pages(ids, request.user)
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=False, methods=["get"], url_path="trash")
+    def trash_list(self, request):
+        qs = Page.objects.filter(owner=request.user, deleted_at__isnull=False)
+        qs = qs.order_by("-deleted_at")
+        return Response(PageSerializer(qs, many=True).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="trash")
+    def trash(self, request, pk=None):
+        page = self.get_object()
+        ser = TrashPageSerializer(data=request.data or {})
+        ser.is_valid(raise_exception=True)
+        include_children = ser.validated_data.get("include_children", True)
+
+        ids = (
+            self._collect_descendant_ids(page.id)
+            if include_children
+            else {page.id}
+        )
+
+        with transaction.atomic():
+            count = self._soft_delete_pages(ids, request.user)
+
+        return Response({"ok": True, "trashed_count": count}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="restore")
+    def restore(self, request, pk=None):
+        page = self.get_object()
+        ser = RestorePageSerializer(data=request.data or {})
+        ser.is_valid(raise_exception=True)
+        include_children = ser.validated_data.get("include_children", True)
+
+        ids = (
+            self._collect_descendant_ids(page.id)
+            if include_children
+            else {page.id}
+        )
+
+        with transaction.atomic():
+            count = self._restore_pages(ids, request.user)
+
+        return Response({"ok": True, "restored_count": count}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["delete"], url_path="purge")
+    def purge(self, request, pk=None):
+        page = self.get_object()
+        ser = PurgePageSerializer(data=request.data or {})
+        ser.is_valid(raise_exception=True)
+        include_children = ser.validated_data.get("include_children", True)
+
+        ids = (
+            self._collect_descendant_ids(page.id)
+            if include_children
+            else {page.id}
+        )
+
+        Page.objects.filter(owner=request.user, id__in=ids).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
     
     @action(detail=True, methods=["post"], url_path="blocks")
     def create_block(self, request, pk=None):
@@ -534,6 +751,8 @@ class BlockViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        if not getattr(self.request, "user", None) or not self.request.user.is_authenticated:
+            return Block.objects.none()
         return Block.objects.filter(page__owner=self.request.user)
 
     def get_serializer_class(self):

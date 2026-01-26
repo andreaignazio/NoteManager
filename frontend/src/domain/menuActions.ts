@@ -22,6 +22,8 @@ export const MENU_COMMANDS = {
   PAGE_CREATE_AFTER: "page.createAfter",
   PAGE_DUPLICATE: "page.duplicate",
   PAGE_DELETE: "page.delete",
+  PAGE_RESTORE_TRASH: "page.restoreTrash",
+  PAGE_PURGE: "page.purge",
 
   // editor
   EDITOR_COPY: "editor.copy",
@@ -30,6 +32,7 @@ export const MENU_COMMANDS = {
   EDITOR_ITALIC: "editor.italic",
   EDITOR_STRIKE: "editor.strike",
   EDITOR_UNDERLINE: "editor.underline",
+  EDITOR_TOGGLE_CODE: "editor.toggleCode",
   EDITOR_OPEN_LINK: "editor.openLink",
   EDITOR_REMOVE_LINK: "editor.removeLink",
   EDITOR_TOGGLE_HIGHLIGHT: "editor.toggleHighlight",

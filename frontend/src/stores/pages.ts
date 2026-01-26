@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import api from "@/services/api";
 import { posBetween } from "@/domain/position";
 import { useBlocksStore } from "@/stores/blocks";
+import router from "@/router";
 
 // ===========================
 // TYPE DEFINITIONS
@@ -17,6 +18,12 @@ interface Page {
   icon: string;
   favorite: boolean;
   favorite_position: string | null;
+  deletedAt?: string | null;
+  deletedBy?: string | number | null;
+  trashedParentId?: string | number | null;
+  trashedPosition?: string | null;
+  trashedFavorite?: boolean;
+  trashedFavoritePosition?: string | null;
 }
 
 interface RawPage {
@@ -29,6 +36,12 @@ interface RawPage {
   icon: string;
   favorite: boolean;
   favorite_position: string | null;
+  deleted_at?: string | null;
+  deleted_by?: string | number | null;
+  trashed_parent?: string | number | null;
+  trashed_position?: string | null;
+  trashed_favorite?: boolean;
+  trashed_favorite_position?: string | null;
 }
 
 interface DraftPageData {
@@ -47,8 +60,10 @@ interface PagesStoreState {
   childrenByParentId: Record<string, (string | number)[]>;
   expandedById: Record<string | number, boolean>;
 
+  trashedPages: Page[];
+  trashedPagesById: Record<string | number, Page>;
+
   // Selection/Editing
-  currentPageId: string | number | null;
   editingPageId: string | number | null;
   draftPage: DraftPageData;
   originalPage: DraftPageData;
@@ -72,8 +87,10 @@ interface PagePayload {
 
 interface PageUndoEntry {
   pageId: string;
-  undo: PagePayload;
+  undo?: PagePayload;
   redo?: PagePayload;
+  undoAction?: () => Promise<void> | void;
+  redoAction?: () => Promise<void> | void;
   label?: string;
   createdAt?: number;
 }
@@ -100,6 +117,12 @@ function normalizePage(raw: RawPage): Page {
     icon: raw.icon,
     favorite: raw.favorite,
     favorite_position: raw.favorite_position,
+    deletedAt: raw.deleted_at ?? null,
+    deletedBy: raw.deleted_by ?? null,
+    trashedParentId: raw.trashed_parent ?? null,
+    trashedPosition: raw.trashed_position ?? null,
+    trashedFavorite: raw.trashed_favorite ?? false,
+    trashedFavoritePosition: raw.trashed_favorite_position ?? null,
   };
 }
 
@@ -119,8 +142,10 @@ export const usePagesStore = defineStore("pagesStore", {
     childrenByParentId: {},
     expandedById: {},
 
+    trashedPages: [],
+    trashedPagesById: {},
+
     // Selection/Editing
-    currentPageId: null,
     editingPageId: null,
     draftPage: { title: "" },
     originalPage: { title: "" },
@@ -134,6 +159,10 @@ export const usePagesStore = defineStore("pagesStore", {
   }),
 
   getters: {
+    currentPageId(): string | number | null {
+      const id = router.currentRoute.value?.params?.id;
+      return id != null ? String(id) : null;
+    },
     renderRowsPages(state): RenderRow[] {
       const pagesMap = state.childrenByParentId ?? {};
       const out: Array<{ id: string | number; level: number }> = [];
@@ -251,6 +280,26 @@ export const usePagesStore = defineStore("pagesStore", {
         });
       } catch (error) {
         console.warn("Error in pages fetching:", error);
+        throw error;
+      }
+    },
+
+    async fetchTrashPages(): Promise<void> {
+      try {
+        const response = await api.get("/pages/trash/");
+        const pages = (response.data || []) as RawPage[];
+        const normPages = pages.map((p1) => normalizePage(p1));
+
+        this.trashedPages = normPages;
+        this.trashedPagesById = normPages.reduce(
+          (dict: Record<string | number, Page>, page) => {
+            dict[page.id] = page;
+            return dict;
+          },
+          {},
+        );
+      } catch (error) {
+        console.warn("Error in trash pages fetching:", error);
         throw error;
       }
     },
@@ -575,8 +624,7 @@ export const usePagesStore = defineStore("pagesStore", {
 
     async openPage(pageId: string | number): Promise<void> {
       try {
-        const response = await api.get(`/pages/${pageId}`);
-        this.currentPageId = response.data.id;
+        await api.get(`/pages/${pageId}`);
       } catch (error) {
         console.warn("Error opening page:", error);
         throw error;
@@ -706,6 +754,21 @@ export const usePagesStore = defineStore("pagesStore", {
       const pageId = entry.pageId;
       this._undoStack = stack;
 
+      if (entry.undoAction) {
+        try {
+          await entry.undoAction();
+          if (entry.redoAction) {
+            this._redoStack = [...(this._redoStack ?? []), entry];
+          }
+        } catch (e) {
+          await this.fetchPages();
+          throw e;
+        }
+        return;
+      }
+
+      if (!entry.undo) return;
+
       this.applyPagePatchLocal(pageId, entry.undo);
       try {
         await this.patchPage(pageId, entry.undo);
@@ -721,10 +784,23 @@ export const usePagesStore = defineStore("pagesStore", {
     async redoLastEntry(): Promise<void> {
       const stack = this._redoStack ?? [];
       const entry = stack.pop();
-      if (!entry?.redo) return;
+      if (!entry) return;
 
       const pageId = entry.pageId;
       this._redoStack = stack;
+
+      if (entry.redoAction) {
+        try {
+          await entry.redoAction();
+          this._undoStack = [...(this._undoStack ?? []), entry];
+        } catch (e) {
+          await this.fetchPages();
+          throw e;
+        }
+        return;
+      }
+
+      if (!entry.redo) return;
 
       this.applyPagePatchLocal(pageId, entry.redo);
       try {
@@ -785,10 +861,64 @@ export const usePagesStore = defineStore("pagesStore", {
         if (this.currentPageId && this.currentPageId === pageId) {
           // Handle current page deletion if needed
         }
-        await api.delete(`/pages/${pageId}/`);
+        await api.delete(`/pages/${pageId}/purge/`, {
+          data: { include_children: true },
+        });
+        await this.fetchTrashPages();
         await this.fetchPages();
       } catch (error) {
         console.warn("Error deleting page:", error);
+        throw error;
+      }
+    },
+
+    async trashPage(
+      pageId: string | number,
+      opts?: { includeChildren?: boolean },
+    ): Promise<void> {
+      try {
+        const includeChildren = opts?.includeChildren ?? true;
+        await api.post(`/pages/${pageId}/trash/`, {
+          include_children: includeChildren,
+        });
+        await this.fetchPages();
+        await this.fetchTrashPages();
+      } catch (error) {
+        console.warn("Error trashing page:", error);
+        throw error;
+      }
+    },
+
+    async restorePage(
+      pageId: string | number,
+      opts?: { includeChildren?: boolean },
+    ): Promise<void> {
+      try {
+        const includeChildren = opts?.includeChildren ?? true;
+        await api.post(`/pages/${pageId}/restore/`, {
+          include_children: includeChildren,
+        });
+        await this.fetchPages();
+        await this.fetchTrashPages();
+      } catch (error) {
+        console.warn("Error restoring page:", error);
+        throw error;
+      }
+    },
+
+    async purgePage(
+      pageId: string | number,
+      opts?: { includeChildren?: boolean },
+    ): Promise<void> {
+      try {
+        const includeChildren = opts?.includeChildren ?? true;
+        await api.delete(`/pages/${pageId}/purge/`, {
+          data: { include_children: includeChildren },
+        });
+        await this.fetchTrashPages();
+        await this.fetchPages();
+      } catch (error) {
+        console.warn("Error purging page:", error);
         throw error;
       }
     },

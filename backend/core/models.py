@@ -42,6 +42,25 @@ class Page(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     favorite = models.BooleanField(default=False)
     favorite_position = models.CharField(max_length=32, null=True, blank=True, db_index=True)
+
+    deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="deleted_pages",
+    )
+    trashed_parent = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="trashed_children",
+    )
+    trashed_position = models.CharField(max_length=32, null=True, blank=True)
+    trashed_favorite = models.BooleanField(default=False)
+    trashed_favorite_position = models.CharField(max_length=32, null=True, blank=True)
     def __str__(self):
         return f"{self.title} ({self.owner.username})"
 

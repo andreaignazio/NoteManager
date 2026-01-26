@@ -29,7 +29,7 @@ export function buildRootMenu(): HoverMenuNode[] {
       kind: "item",
       id: "submenu:font",
       label: "Font",
-      iconId: "",
+      iconId: "lucide:type",
       action: { type: "openPanel", panel: "font" },
     },
 

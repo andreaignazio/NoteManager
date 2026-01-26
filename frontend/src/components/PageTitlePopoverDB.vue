@@ -1,85 +1,85 @@
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue'
-import { getIconComponent } from '@/icons/catalog'
+import { computed, nextTick, ref, watch } from "vue";
+import { getIconComponent } from "@/icons/catalog";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
-  initialIcon: { type: String, default: '' }, // qui ora: "lucide:file"
-  initialTitle: { type: String, default: '' },
-  placeholderTitle: { type: String, default: 'Untitled' },
-})
+  initialIcon: { type: String, default: "" }, // qui ora: "lucide:file"
+  initialTitle: { type: String, default: "" },
+  placeholderTitle: { type: String, default: "Untitled" },
+});
 
-const emit = defineEmits(['commit', 'cancel', 'openIconPicker'])
+const emit = defineEmits(["commit", "cancel", "openIconPicker"]);
 
-const iconEl = ref(null)   // anchor
-const titleEl = ref(null)
+const iconEl = ref(null); // anchor
+const titleEl = ref(null);
 
-const draftIcon = ref('')
-const draftTitle = ref('')
+const draftIcon = ref("");
+const draftTitle = ref("");
 
-
+async function focusAndSelectTitle() {
+  await nextTick();
+  await new Promise(requestAnimationFrame);
+  titleEl.value?.focus?.();
+  titleEl.value?.select?.();
+}
 
 watch(
   () => props.open,
   async (open) => {
-    if (!open) return
-    draftIcon.value = (props.initialIcon ?? '') || ''
-    draftTitle.value = (props.initialTitle ?? '') || ''
-    await nextTick()
-    titleEl.value?.focus?.()
-    titleEl.value?.select?.()
+    if (!open) return;
+    draftIcon.value = (props.initialIcon ?? "") || "";
+    draftTitle.value = (props.initialTitle ?? "") || "";
+    await focusAndSelectTitle();
   },
-  { immediate: true }
-)
+  { immediate: true },
+);
 
 function setDraftIcon(icon) {
   // lucide key intera, niente slice
-  draftIcon.value = (icon ?? '').trim()
+  draftIcon.value = (icon ?? "").trim();
 }
 
-const DraftIconComp = computed(() => getIconComponent(draftIcon.value))
+const DraftIconComp = computed(() => getIconComponent(draftIcon.value));
 
 function onIconClick() {
-  emit('openIconPicker')
+  emit("openIconPicker");
 }
 
 function doCommit() {
-  const icon = (draftIcon.value ?? '').trim()
-  const titleRaw = (draftTitle.value ?? '').trim()
-  const title = titleRaw.length ? titleRaw : props.placeholderTitle
-  emit('commit', { icon, title })
+  const icon = (draftIcon.value ?? "").trim();
+  const titleRaw = (draftTitle.value ?? "").trim();
+  const title = titleRaw.length ? titleRaw : props.placeholderTitle;
+  emit("commit", { icon, title });
 }
 
 function doCancel() {
-  emit('cancel')
+  emit("cancel");
 }
 
 function onKeydown(e) {
-  if (e.key === 'Enter') {
-    e.preventDefault()
-    doCommit()
-    return
+  if (e.key === "Enter") {
+    e.preventDefault();
+    doCommit();
+    return;
   }
-  if (e.key === 'Escape') {
-    e.preventDefault()
-    doCancel()
+  if (e.key === "Escape") {
+    e.preventDefault();
+    doCancel();
   }
 }
 
-function focusTitle() {
-  nextTick(() => {
-    titleEl.value?.focus()
-    
-    const el = titleEl.value
-    el?.setSelectionRange?.(el.value.length, el.value.length)
-  })
+async function focusTitle() {
+  await focusAndSelectTitle();
+  const el = titleEl.value;
+  el?.setSelectionRange?.(el.value.length, el.value.length);
 }
 
 defineExpose({
-  iconAnchorEl: iconEl, 
+  iconAnchorEl: iconEl,
   setDraftIcon,
-  focusTitle
-})
+  focusTitle,
+});
 </script>
 
 <template>
@@ -111,16 +111,14 @@ defineExpose({
 </template>
 
 <style scoped>
-
 .popover {
   border-radius: 12px;
-  border: 0px solid rgba(0,0,0,.10);
+  border: 0px solid rgba(0, 0, 0, 0.1);
   background: transparent;
- /* box-shadow: 0 10px 30px rgba(0,0,0,.10);*/
+  /* box-shadow: 0 10px 30px rgba(0,0,0,.10);*/
   backdrop-filter: blur(8px);
   padding: 10px;
   position: relative;
-  
 }
 
 .row {
@@ -146,7 +144,9 @@ defineExpose({
   color: var(--text-secondary);
 }
 
-.icon-btn:hover { background: var(--bg-icon-dark-hover); }
+.icon-btn:hover {
+  background: var(--bg-icon-dark-hover);
+}
 .icon-btn:focus {
   border-color: var(--border-menu);
   background: var(--bg-icon-dark-hover);
@@ -155,7 +155,7 @@ defineExpose({
 .title-input {
   height: 34px;
   border-radius: 10px;
-  border: 1px solid var(--border-menu );
+  border: 1px solid var(--border-menu);
   background: var(--bg-input);
   padding: 0 10px;
   font-size: 13px;

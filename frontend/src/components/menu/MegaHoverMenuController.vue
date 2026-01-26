@@ -55,6 +55,7 @@ const props = defineProps({
 
   gap: { type: Number, default: 6 },
   minWidth: { type: Number, default: 220 },
+  viewportMargin: { type: Number, default: 12 },
   maxHeight: {
     type: [Number, String],
     default: "min(360px, calc(100vh - 16px))",
@@ -111,8 +112,14 @@ const panels = computed<Record<Exclude<PanelId, "root">, HoverMenuNode[]>>(
   () => ({
     type: buildTypePanel(),
     color: buildColorPanel(),
-    font: buildFontPanel(FONT_PACK),
+    font: buildFontPanel(),
   }),
+);
+
+const rootItemsList = computed(() =>
+  rootItems.value.filter(
+    (n): n is Extract<HoverMenuNode, { kind: "item" }> => n.kind === "item",
+  ),
 );
 
 function panelTitle(panel: Exclude<PanelId, "root">) {
@@ -155,6 +162,7 @@ function computeRootPosition() {
 
   const vw = window.innerWidth;
   const vh = window.innerHeight;
+  const margin = props.viewportMargin ?? 8;
 
   const pr = panel.getBoundingClientRect();
   const w = pr.width || props.minWidth;
@@ -175,17 +183,18 @@ function computeRootPosition() {
   }
 
   // flip semplice
-  if (left + w > vw - 8) left = anchorRect.left - w - gap;
-  if (left < 8) left = anchorRect.right + gap;
+  if (left + w > vw - margin) left = anchorRect.left - w - gap;
+  if (left < margin) left = anchorRect.right + gap;
 
-  left = clamp(left, 8, vw - w - 8);
-  top = clamp(top, 8, vh - h - 8);
+  left = clamp(left, margin, vw - w - margin);
+  top = clamp(top, margin, vh - h - margin);
 
   styleRoot.value = {
     position: "fixed",
     left: `${Math.round(left)}px`,
     top: `${Math.round(top)}px`,
     minWidth: `${props.minWidth}px`,
+    visibility: "visible",
     display: "block",
   };
 }
@@ -197,6 +206,7 @@ function computeSidePosition() {
 
   const vw = window.innerWidth;
   const vh = window.innerHeight;
+  const margin = props.viewportMargin ?? 8;
 
   const rr = root.getBoundingClientRect();
   const sr = side.getBoundingClientRect();
@@ -209,16 +219,17 @@ function computeSidePosition() {
   let top = rr.top;
 
   // flip se overflow a destra
-  if (left + w > vw - 8) left = rr.left - w - gap;
+  if (left + w > vw - margin) left = rr.left - w - gap;
 
-  left = clamp(left, 8, vw - w - 8);
-  top = clamp(top, 8, vh - h - 8);
+  left = clamp(left, margin, vw - w - margin);
+  top = clamp(top, margin, vh - h - margin);
 
   styleSide.value = {
     position: "fixed",
     left: `${Math.round(left)}px`,
     top: `${Math.round(top)}px`,
     minWidth: `${props.minWidth}px`,
+    visibility: "visible",
     display: activePanel.value === "root" ? "none" : "block",
   };
 }
@@ -274,6 +285,17 @@ defineExpose({
 async function open() {
   isVisible.value = true;
   activePanel.value = "root";
+  styleRoot.value = {
+    position: "fixed",
+    left: "-9999px",
+    top: "-9999px",
+    minWidth: `${props.minWidth}px`,
+    display: "block",
+    visibility: "hidden",
+  };
+  styleSide.value = { display: "none" };
+
+  await new Promise(requestAnimationFrame);
   await nextTick();
   computeRootPosition();
   await nextTick();
@@ -495,6 +517,15 @@ function onSideItemEnter(_node: HoverMenuNode) {
   clearSideCloseTimer();
 }
 
+function onSelect({ panel, index }: { panel: PanelId; index: number }) {
+  if (panel === "root") return;
+  const nodes = panels.value[panel].filter(
+    (n): n is Extract<HoverMenuNode, { kind: "item" }> => n.kind === "item",
+  );
+  const node = nodes[index];
+  if (node) onNodeClick(node);
+}
+
 // ===== scroll style semplice (intuitivo) =====
 const panelScrollStyle = computed(() => {
   const mh = props.maxHeight;
@@ -597,18 +628,28 @@ function onKeyDown(e: KeyboardEvent) {
 
   if (activePanel.value === "root") {
     if (e.key === "ArrowDown") {
-      rootIndex.value = (rootIndex.value + 1) % rootItems.length;
-      hoveredRootItem.value = rootItems[rootIndex.value];
+      const total = rootItemsList.value.length || 1;
+      rootIndex.value = (rootIndex.value + 1) % total;
+      const node = rootItemsList.value[rootIndex.value];
+      hoveredRootItem.value =
+        node?.action?.type === "openPanel" ? node.action.panel : null;
       e.preventDefault();
     }
     if (e.key === "ArrowUp") {
-      rootIndex.value =
-        (rootIndex.value - 1 + rootItems.length) % rootItems.length;
-      hoveredRootItem.value = rootItems[rootIndex.value];
+      const total = rootItemsList.value.length || 1;
+      rootIndex.value = (rootIndex.value - 1 + total) % total;
+      const node = rootItemsList.value[rootIndex.value];
+      hoveredRootItem.value =
+        node?.action?.type === "openPanel" ? node.action.panel : null;
       e.preventDefault();
     }
     if (e.key === "ArrowRight" || e.key === "Enter") {
-      scheduleOpenPanel(rootItems[rootIndex.value]);
+      const node = rootItemsList.value[rootIndex.value];
+      if (node?.action?.type === "openPanel") {
+        scheduleOpenPanel(node.action.panel);
+      } else if (node) {
+        onNodeClick(node);
+      }
       e.preventDefault();
     }
   } else {
@@ -692,7 +733,7 @@ watch(
                 aria-hidden="true"
               ></li>
 
-              <li v-else class="menuItem">
+              <li v-else-if="n.kind === 'item'" class="menuItem">
                 <MenuItemRow
                   :id="n.id"
                   :label="n.label"
@@ -745,7 +786,7 @@ watch(
                 <MenuItemRow variant="subtitle" :label="n.label" id="n.id" />
               </li>
 
-              <li v-else class="menuItem">
+              <li v-else-if="n.kind === 'item'" class="menuItem">
                 <MenuItemRow
                   :id="n.id"
                   :label="n.label"

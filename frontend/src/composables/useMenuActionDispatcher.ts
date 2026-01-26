@@ -116,6 +116,12 @@ export function useMenuActionDispatcher() {
       if (!blockId) return;
       actions.text.toggleUnderline(blockId);
     },
+    [MENU_COMMANDS.EDITOR_TOGGLE_CODE]: async (a) => {
+      const blockId = getBlockId(a);
+      if (!blockId) return;
+      const ed = editorReg.getEditor(blockId);
+      ed?.chain().focus().toggleCode().run();
+    },
     [MENU_COMMANDS.EDITOR_OPEN_LINK]: async (a) => {
       const blockId = getBlockId(a);
       if (!blockId) return;
@@ -180,7 +186,7 @@ export function useMenuActionDispatcher() {
       if (!pageId) return;
       const tmpanchor = tempAnchors.registerViewportCenter();
       try {
-        await actions.pages.deletePageFlow({
+        await actions.pages.softDeletePageFlow({
           pageId,
           anchorKey: tmpanchor.key,
           placement: "center",
@@ -188,6 +194,16 @@ export function useMenuActionDispatcher() {
       } finally {
         tmpanchor?.unregister();
       }
+    },
+    [MENU_COMMANDS.PAGE_RESTORE_TRASH]: async (a) => {
+      const pageId = getPageId(a);
+      if (!pageId) return;
+      return actions.pages.restorePageFromTrashFlow(pageId);
+    },
+    [MENU_COMMANDS.PAGE_PURGE]: async (a) => {
+      const pageId = getPageId(a);
+      if (!pageId) return;
+      return actions.pages.purgePageFromTrashFlow(pageId);
     },
 
     [MENU_COMMANDS.COPY_TO_CLIPBOARD]: async (a) => {

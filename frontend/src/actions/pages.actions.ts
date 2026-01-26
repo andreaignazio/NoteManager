@@ -3,12 +3,14 @@ import { useBlocksStore } from "@/stores/blocks";
 import router from "@/router";
 import { useUiStore } from "@/stores/ui";
 import { useUIOverlayStore } from "@/stores/uioverlay";
+import { useTempAnchors } from "@/actions/tempAnchors.actions";
 
 export function usePageActions() {
   const pagesStore = usePagesStore();
   const blocksStore = useBlocksStore();
   const ui = useUiStore();
   const uiOverlay = useUIOverlayStore();
+  const tempAnchors = useTempAnchors();
 
   const snapshotPage = (pageId: string | number) => {
     const p = pagesStore.pagesById?.[String(pageId)];
@@ -56,6 +58,20 @@ export function usePageActions() {
     ui.requestScrollToPage(newPageId);
 
     router.push({ name: "pageDetail", params: { id: newPageId } });
+
+    pagesStore.pushUndoEntry({
+      pageId: String(newPageId),
+      undoAction: async () => {
+        const nextId = pagesStore.getNextPageIdAfterDelete?.(newPageId) ?? null;
+        await pagesStore.trashPage(newPageId, { includeChildren: true });
+        redirectAfterRemoval(String(newPageId), nextId);
+      },
+      redoAction: async () => {
+        await pagesStore.restorePage(newPageId, { includeChildren: true });
+        redirectToPage(String(newPageId));
+      },
+      label: "createPage",
+    });
   }
 
   async function createPageAfterAndActivate(pageId: string) {
@@ -65,7 +81,21 @@ export function usePageActions() {
 
     pagesStore.requestTitleFocus(newPageId);
 
-    redirectToPage(newPageId);
+    redirectToPage(String(newPageId));
+
+    pagesStore.pushUndoEntry({
+      pageId: String(newPageId),
+      undoAction: async () => {
+        const nextId = pagesStore.getNextPageIdAfterDelete?.(newPageId) ?? null;
+        await pagesStore.trashPage(newPageId, { includeChildren: true });
+        redirectAfterRemoval(String(newPageId), nextId);
+      },
+      redoAction: async () => {
+        await pagesStore.restorePage(newPageId, { includeChildren: true });
+        redirectToPage(String(newPageId));
+      },
+      label: "createPage",
+    });
   }
 
   async function redirectToPage(pageId: string) {
@@ -74,10 +104,53 @@ export function usePageActions() {
     router.push({ name: "pageDetail", params: { id: pageId } });
   }
 
+  function getFallbackPageId() {
+    const rootKey = pagesStore.getParentKey(null as any);
+    const rootIds = pagesStore.childrenByParentId?.[rootKey] ?? [];
+    return rootIds.length ? String(rootIds[0]) : null;
+  }
+
+  function redirectAfterRemoval(
+    pageId: string,
+    nextId?: string | number | null,
+  ) {
+    if (!isRouteOnPage(pageId)) return;
+
+    const targetId =
+      (nextId != null ? String(nextId) : null) ??
+      pagesStore.getNextPageIdAfterDelete?.(pageId) ??
+      null;
+    if (targetId) {
+      router.push({ name: "pageDetail", params: { id: targetId } });
+      return;
+    }
+
+    const fallbackId = getFallbackPageId();
+    if (fallbackId) {
+      router.push({ name: "pageDetail", params: { id: fallbackId } });
+    } else {
+      router.push("/");
+    }
+  }
+
   async function duplicatePage(pageId: string) {
     const newId = await pagesStore.duplicatePageTransactional(pageId);
     ui.setLastAddedPageId(newId);
-    redirectToPage(newId);
+    redirectToPage(String(newId));
+
+    pagesStore.pushUndoEntry({
+      pageId: String(newId),
+      undoAction: async () => {
+        const nextId = pagesStore.getNextPageIdAfterDelete?.(newId) ?? null;
+        await pagesStore.trashPage(newId, { includeChildren: true });
+        redirectAfterRemoval(String(newId), nextId);
+      },
+      redoAction: async () => {
+        await pagesStore.restorePage(newId, { includeChildren: true });
+        redirectToPage(String(newId));
+      },
+      label: "duplicatePage",
+    });
   }
 
   async function toggleFavoritePage(pageId: string) {
@@ -188,6 +261,100 @@ export function usePageActions() {
 
   async function deletePage(pageId: string | number) {
     await pagesStore.deletePage(pageId as any);
+  }
+
+  async function softDeletePageFlow(opts: {
+    pageId: string | number;
+    anchorKey: string;
+    placement?: string;
+  }) {
+    const pageId = String(opts.pageId);
+    const nextId = pagesStore.getNextPageIdAfterDelete?.(pageId) ?? null;
+    const hasChildren =
+      pagesStore.hasChildren?.(pageId) ??
+      (pagesStore.childrenByParentId?.[String(pageId)] ?? []).length > 0;
+    let includeChildren = true;
+
+    if (hasChildren) {
+      const res = await uiOverlay.requestConfirm({
+        menuId: "page.deleteConfirm",
+        anchorKey: opts.anchorKey,
+        payload: {
+          title: "Move subpages?",
+          message:
+            "This page has subpages. Move them to the parent before sending this page to Trash?",
+          confirmText: "Move & Trash",
+          cancelText: "Cancel",
+          checkbox: { label: "Move subpages to parent", defaultValue: true },
+        },
+      });
+
+      if (!res.ok) return { ok: false as const, reason: res.reason };
+
+      const unparent = !!res.value?.checked;
+      includeChildren = !unparent;
+      if (unparent) {
+        await pagesStore.reparentChildrenToParent(pageId);
+        await pagesStore.trashPage(pageId, { includeChildren: false });
+      } else {
+        await pagesStore.trashPage(pageId, { includeChildren: true });
+      }
+    } else {
+      await pagesStore.trashPage(pageId, { includeChildren: true });
+    }
+
+    pagesStore.pushUndoEntry({
+      pageId: String(pageId),
+      undoAction: async () => {
+        await pagesStore.restorePage(pageId, { includeChildren });
+      },
+      redoAction: async () => {
+        const redoNextId =
+          pagesStore.getNextPageIdAfterDelete?.(pageId) ?? null;
+        await pagesStore.trashPage(pageId, { includeChildren });
+        redirectAfterRemoval(pageId, redoNextId);
+      },
+      label: "trashPage",
+    });
+
+    redirectAfterRemoval(pageId, nextId);
+
+    return { ok: true as const, nextId };
+  }
+
+  async function restorePageFromTrash(pageId: string | number) {
+    await pagesStore.restorePage(pageId as any, { includeChildren: true });
+  }
+
+  async function restorePageFromTrashFlow(pageId: string | number) {
+    await pagesStore.restorePage(pageId as any, { includeChildren: true });
+    return { ok: true as const };
+  }
+
+  async function purgePageFromTrashFlow(pageId: string | number) {
+    const tmpanchor = tempAnchors.registerViewportCenter();
+    try {
+      const res = await uiOverlay.requestConfirm({
+        menuId: "page.deleteConfirm",
+        anchorKey: tmpanchor.key,
+        payload: {
+          title: "Delete permanently?",
+          message:
+            "This will permanently delete the page. This action cannot be undone.",
+          confirmText: "Delete",
+          cancelText: "Cancel",
+          danger: true,
+          iconId: "lucide:trash-2",
+        },
+      });
+
+      if (!res.ok) return { ok: false as const, reason: res.reason };
+
+      await pagesStore.deletePage(pageId as any);
+      return { ok: true as const };
+    } finally {
+      tmpanchor?.unregister?.();
+    }
   }
 
   async function patchPage(
@@ -328,56 +495,6 @@ export function usePageActions() {
     return cur != null && cur === String(pageId);
   }
 
-  async function deletePageFlow(opts: {
-    pageId: string | number;
-    anchorKey: string;
-    placement?: string;
-  }) {
-    const pageId = String(opts.pageId);
-
-    const hasChildren =
-      pagesStore.hasChildren?.(pageId) ??
-      (pagesStore.childrenByParentId?.[String(pageId)] ?? []).length > 0;
-
-    const res = await uiOverlay.requestConfirm({
-      menuId: "page.deleteConfirm",
-      anchorKey: opts.anchorKey,
-      payload: {
-        title: "Delete page?",
-        message: hasChildren
-          ? "This will delete the page and its subpages."
-          : "This will delete the page.",
-        confirmText: "Delete",
-        cancelText: "Cancel",
-        danger: true,
-        checkbox: hasChildren
-          ? { label: "Keep subpages (move to parent)", defaultValue: true }
-          : null,
-      },
-    });
-
-    if (!res.ok) return { ok: false as const, reason: res.reason };
-
-    const keepChildren = !!res.value?.keepChildren;
-
-    // scegli nextId prima di mutare
-    const nextId = pagesStore.getNextPageIdAfterDelete?.(pageId) ?? null;
-
-    if (hasChildren && keepChildren) {
-      await pagesStore.reparentChildrenToParent(pageId);
-    }
-
-    await pagesStore.deletePage(pageId);
-
-    // se la route era su quella page, naviga
-    if (isRouteOnPage(pageId)) {
-      if (nextId) router.push({ name: "pageDetail", params: { id: nextId } });
-      else router.push("/");
-    }
-
-    return { ok: true as const, nextId };
-  }
-
   return {
     createChildAndActivate,
     redirectToPage,
@@ -395,6 +512,10 @@ export function usePageActions() {
     consumeTitleFocusRequest,
     openPage,
     deletePage,
+    softDeletePageFlow,
+    restorePageFromTrash,
+    restorePageFromTrashFlow,
+    purgePageFromTrashFlow,
     patchPage,
     toggleExpandPage,
     updatePageLocationOptimistic,
@@ -406,6 +527,5 @@ export function usePageActions() {
     reparentChildrenToParent,
     undoLastEntry,
     redoLastEntry,
-    deletePageFlow,
   };
 }

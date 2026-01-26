@@ -9,6 +9,8 @@ import ConfirmPopoverController from "@/components/ConfirmPopoverController.vue"
 import { usePagesStore } from "@/stores/pages";
 import MegaHoverMenuController from "@/components/menu/MegaHoverMenuController.vue";
 import LinkPopoverController from "@/components/LinkPopoverController.vue";
+import HoverToolbarController from "@/components/menu/HoverToolbarController.vue";
+import TrashMenuController from "@/components/menu/TrashMenuController.vue";
 
 import { useHostMenu } from "@/composables/useHostMenu";
 import CascadingHoverMenuController from "@/components/CascadingHoverMenuController.vue";
@@ -289,6 +291,35 @@ const unregLinkPopover = uiOverlay.registerMenu({
 });
 onUnmounted(() => unregLinkPopover?.());
 
+// === TRASH MENU ===
+const trashMenuPayload = ref<any>(null);
+const trashMenuOpen = ref(false);
+const TRASH_MENU_ID = "page.trashMenu";
+
+async function openTrashMenu(req: {
+  menuId: string;
+  anchorKey: string;
+  payload?: any;
+}) {
+  trashMenuPayload.value = {
+    anchorKey: req.anchorKey,
+    placement: req.payload?.placement ?? "right-start",
+  };
+  trashMenuOpen.value = true;
+}
+
+function closeTrashMenu() {
+  trashMenuOpen.value = false;
+  trashMenuPayload.value = null;
+}
+
+const unregTrashMenu = uiOverlay.registerMenu({
+  menuId: TRASH_MENU_ID,
+  open: openTrashMenu,
+  close: closeTrashMenu,
+});
+onUnmounted(() => unregTrashMenu?.());
+
 // === STYLE MENU CONTROLLER ===
 const STYLE_MENU_ID = "block.menu";
 const styleMenuRef = ref<any>(null);
@@ -422,6 +453,12 @@ async function onMenuAction(a: MenuActionPayload) {
       :anchorKey="linkPopoverPayload?.anchorKey || null"
       :initialHref="linkPopoverPayload?.initialHref || null"
     />
+    <TrashMenuController
+      :open="trashMenuOpen"
+      :anchorKey="trashMenuPayload?.anchorKey || null"
+      :placement="trashMenuPayload?.placement || 'right-start'"
+    />
+    <HoverToolbarController />
   </Teleport>
 </template>
 

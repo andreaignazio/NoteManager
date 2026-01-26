@@ -31,6 +31,9 @@ const props = defineProps({
   closeOnAction: { type: Boolean, default: true },
   custom: { type: Boolean, default: false },
 
+  // enable internal scroll + maxHeight handling
+  scroll: { type: [Boolean, String], default: false },
+
   placement: { type: String, default: "left" },
 
   // ✅ clamp PRE (usato per flip/decisioni)
@@ -56,6 +59,7 @@ const emit = defineEmits(["action", "close", "item-enter", "item-leave"]);
 
 const menuEl = ref(null);
 const menuStyle = ref({ display: "none" });
+let scrollTimer = null;
 
 // Dimensioni misurate (stabili durante scroll)
 const measuredW = ref(0);
@@ -78,7 +82,25 @@ function cssSize(v) {
   return typeof v === "number" ? `${v}px` : String(v);
 }
 
-defineExpose({ el: menuEl, menuItems, getItemElById, getMenuEl });
+function resetMeasure() {
+  measured.value = false;
+  measuredW.value = 0;
+  measuredH.value = 0;
+  if (props.open) syncPosition();
+}
+
+defineExpose({ el: menuEl, menuItems, getItemElById, getMenuEl, resetMeasure });
+
+function handleScroll(e) {
+  const el = e?.currentTarget || null;
+  if (!el) return;
+  el.classList.add("is-scrolling");
+  if (scrollTimer) window.clearTimeout(scrollTimer);
+  scrollTimer = window.setTimeout(() => {
+    el.classList.remove("is-scrolling");
+    scrollTimer = null;
+  }, 450);
+}
 
 const anchorElResolved = computed(() => unref(props.anchorEl) ?? null);
 
@@ -329,6 +351,7 @@ const maxHeightStyle = computed(() => {
       }"
       :style="[menuStyle, maxHeightStyle]"
       role="menu"
+      @scroll="handleScroll"
     >
       <template v-if="custom">
         <slot />
