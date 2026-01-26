@@ -1,61 +1,55 @@
 <script setup>
-import { computed, nextTick, ref } from 'vue'
-import { storeToRefs } from 'pinia'
-import { useUiStore } from '@/stores/ui'
-import usePagesStore from '@/stores/pages'
-import FavoriteButton from '@/components/FavoriteButton.vue'
-import PageActionsController from '@/components/PageActionsController.vue'
-import PageTitlePopoverController from '@/components/PageTitlePopoverController.vue'
-import { getIconComponent } from '@/icons/catalog'
-import { anchorKind, anchorKey } from '@/ui/anchorsKeyBind'
+import { computed, nextTick, ref } from "vue";
+import { storeToRefs } from "pinia";
+import { useUiStore } from "@/stores/ui";
+import usePagesStore from "@/stores/pages";
+import FavoriteButton from "@/components/FavoriteButton.vue";
+import PageActionsController from "@/components/PageActionsController.vue";
+import PageTitlePopoverController from "@/components/PageTitlePopoverController.vue";
+import { getIconComponent } from "@/icons/catalog";
+import { anchorKind, anchorKey } from "@/ui/anchorsKeyBind";
 
-import { useRegisterAnchors } from '@/composables/useRegisterAnchors' 
-import { useUIOverlayStore } from '@/stores/uioverlay'
+import { useRegisterAnchors } from "@/composables/useRegisterAnchors";
+import { useUIOverlayStore } from "@/stores/uioverlay";
+import { useAppActions } from "@/actions/useAppActions";
 
+const ui = useUiStore();
+const pagesStore = usePagesStore();
+const uiOverlay = useUIOverlayStore();
+const actions = useAppActions();
+const { currentPageId } = storeToRefs(pagesStore);
 
-const ui = useUiStore()
-const pagesStore = usePagesStore()
-const uiOverlay = useUIOverlayStore()
-const { currentPageId } = storeToRefs(pagesStore)
-
-const isHidden = computed(() => ui.sidebarMode === 'hidden')
-const pageTitle = computed(() => pagesStore.pagesById[currentPageId.value]?.title || 'Untitled')
+const isHidden = computed(() => ui.sidebarMode === "hidden");
+const pageTitle = computed(
+  () => pagesStore.pagesById[currentPageId.value]?.title || "Untitled",
+);
 //const pageIcon = computed(() => pagesStore.pagesById[currentPageId.value]?.icon || '📄')
- const pageIcon = computed(() => getIconComponent(pagesStore.pagesById[currentPageId.value]?.icon))
+const pageIcon = computed(() =>
+  getIconComponent(pagesStore.pagesById[currentPageId.value]?.icon),
+);
 
- const isFavorite = computed(() => {
-  const page = pagesStore.pagesById[currentPageId.value]
-  return page ? page.favorite : false
-})
+const isFavorite = computed(() => {
+  const page = pagesStore.pagesById[currentPageId.value];
+  return page ? page.favorite : false;
+});
 // ===== Title Popover =====
-const titleBtnEl = ref(null)
-const dotsEl = ref(null)
+const titleBtnEl = ref(null);
+const dotsEl = ref(null);
 
+const pageId = computed(() => currentPageId.value ?? null);
 
-const pageId = computed(() => currentPageId.value ?? null)
+const kind_title = anchorKind("page", "title", "topbar", "pageTitle");
 
-const kind_title = anchorKind(
-  'page',
-  'title',
-  'topbar',
-  'pageTitle'
-)
-
-const key_title = anchorKey(kind_title, currentPageId.value)
+const key_title = anchorKey(kind_title, currentPageId.value);
 const key_dots = anchorKey(
-  anchorKind(
-    'page',
-    'dots',
-    'topbar',
-    'pageMenu'
-  ),
-  currentPageId.value
-)
+  anchorKind("page", "dots", "topbar", "pageMenu"),
+  currentPageId.value,
+);
 
 useRegisterAnchors({
-  [key_title]:titleBtnEl,
-  [key_dots]: dotsEl
-})
+  [key_title]: titleBtnEl,
+  [key_dots]: dotsEl,
+});
 
 /*
 function openTitlePopover() {
@@ -63,37 +57,34 @@ function openTitlePopover() {
   pageTitlePopoverRef.value?.open?.()
 }*/
 function openTitlePopover() {
-uiOverlay.requestOpen({
-  menuId: 'page.titlePopover',
-  anchorKey: key_title,
-  payload: {
-    pageId: currentPageId.value,
-  }
-})
+  uiOverlay.requestOpen({
+    menuId: "page.titlePopover",
+    anchorKey: key_title,
+    payload: {
+      pageId: currentPageId.value,
+    },
+  });
 }
 
 function openPageActions() {
   uiOverlay.requestOpen({
-    menuId: 'page.actions',
+    menuId: "page.actions",
     anchorKey: key_dots,
     payload: {
       pageId: currentPageId.value,
-      placement: 'bottom-end',
-    }
-  })
+      placement: "bottom-end",
+    },
+  });
 }
 
-
-
 function openDocked() {
-  ui.setSidebarMode('docked')
+  ui.setSidebarMode("docked");
 }
 
 // ===== Page Actions Controller integration =====
 
-
 function handleToggleFavorite() {
-  pagesStore.toggleFavorite(currentPageId.value)
+  actions.pages.toggleFavoritePage(currentPageId.value);
 }
 </script>
 
@@ -120,17 +111,27 @@ function handleToggleFavorite() {
         @click="openTitlePopover"
       >
         <!--<span class="title-icon">{{ pageIcon }}</span>-->
-        <component class="title-icon":is="pageIcon" :size="18" />
+        <component class="title-icon" :is="pageIcon" :size="18" />
         <span class="title-text">{{ pageTitle }}</span>
       </button>
     </div>
 
     <!-- RIGHT -->
     <div class="right">
-     <!--  <button class="icon-btn" type="button"  title="Mode (coming soon)" @click="handleToggleMode">*</button>-->
-      <button class="icon-btn" type="button" disabled title="Share (coming soon)">⤴︎</button>
-     <!-- <button class="icon-btn" type="button"   title="Favorite" @click="handleToggleFavorite"  >☆</button>-->
-      <FavoriteButton :is-favorite="isFavorite" @toggle="handleToggleFavorite" />
+      <!--  <button class="icon-btn" type="button"  title="Mode (coming soon)" @click="handleToggleMode">*</button>-->
+      <button
+        class="icon-btn"
+        type="button"
+        disabled
+        title="Share (coming soon)"
+      >
+        ⤴︎
+      </button>
+      <!-- <button class="icon-btn" type="button"   title="Favorite" @click="handleToggleFavorite"  >☆</button>-->
+      <FavoriteButton
+        :is-favorite="isFavorite"
+        @toggle="handleToggleFavorite"
+      />
 
       <button
         ref="dotsEl"
@@ -143,7 +144,6 @@ function handleToggleFavorite() {
         ⋯
       </button>
 
-      
       <!--<PageActionsController
         ref="actionsRef"
         :anchorEl="menuBtnEl"
@@ -235,7 +235,7 @@ function handleToggleFavorite() {
   font-size: 14px;
   line-height: 1;
   opacity: 0.85;
-  color:var(--icon-main);
+  color: var(--icon-main);
 }
 
 .title-text {
@@ -247,4 +247,3 @@ function handleToggleFavorite() {
   text-overflow: ellipsis;
 }
 </style>
- 

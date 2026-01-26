@@ -291,7 +291,7 @@ async function confirmDelete() {
 
     if (hasChildren.value && keepChildren.value) {
       try {
-        await pagesStore.reparentChildrenToParent(id);
+        await actions.pages.reparentChildrenToParent(id);
       } catch (e) {
         console.error("[PageActions] reparentChildrenToParent failed", e);
         throw e;
@@ -299,7 +299,7 @@ async function confirmDelete() {
     }
 
     try {
-      await pagesStore.deletePage(id);
+      await actions.pages.deletePage(id);
     } catch (e) {
       console.error("[PageActions] deletePage failed", e);
       throw e;

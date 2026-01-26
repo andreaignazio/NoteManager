@@ -113,7 +113,7 @@ const activeSidebarRef = computed(() => {
 
 async function fetchPages() {
   try {
-    await pagesStore.fetchPages();
+    await actions.pages.fetchPages();
   } catch {
     errorMsg.value = "Error while loading pages";
   }
@@ -126,7 +126,7 @@ async function checkRouteAndFetchPages() {
   if (routeId && !pagesStore.pagesById[routeId]) {
     router.push("/");
   } else {
-    pagesStore.ensureVisible(routeId);
+    actions.pages.ensureVisible(routeId);
   }
 }
 
@@ -167,7 +167,7 @@ const handleLogout = async () => {
 function closeAllSidebarTransientUi() {
   // chiudi menu e editing per sicurezza (policy semplice)
   //pagesStore.closeContextMenu();
-  if (editingPageId.value !== null) pagesStore.cancelEdit();
+  if (editingPageId.value !== null) actions.pages.cancelEdit();
 
   flyoutOpen.value = false;
 }
@@ -516,7 +516,7 @@ async function onPieAction(actionId, ctxFromEvent) {
 
   switch (actionId) {
     case "duplicate":
-      if (pageId) blocksStore.duplicateBlockInPlace(pageId, blockId);
+      if (pageId) actions.blocks.duplicateBlock(blockId);
       console.log("[PIE][main] duplicate", blockId);
       break;
 
@@ -645,11 +645,10 @@ const pieController = usePieMenuController({
         ? (blocksStore.blocksById[blockId]?.pageId ?? null)
         : null;
       if (blockId && targetPageId && fromPageId) {
-        await blocksStore.transferSubtreeToPage({
-          fromPageId: String(fromPageId),
-          toPageId: String(targetPageId),
-          rootId: String(blockId),
-        });
+        await actions.blocks.moveBlockTreeToPage(
+          String(blockId),
+          String(targetPageId),
+        );
       }
       return;
     }
@@ -666,7 +665,7 @@ const pieController = usePieMenuController({
 
     const stylePatch = { textColor: String(token) };
     // 👇 usa la tua action reale
-    await blocksStore.updateBlockStyle(blockId, stylePatch);
+    await actions.blocks.updateBlockStyle(blockId, stylePatch);
   },
 
   onSetBgToken: async (token, ctx) => {
@@ -676,7 +675,7 @@ const pieController = usePieMenuController({
     if (!pageId) return;
 
     const stylePatch = { bgColor: String(token) };
-    await blocksStore.updateBlockStyle(blockId, stylePatch);
+    await actions.blocks.updateBlockStyle(blockId, stylePatch);
   },
   onSetHighlightColor: async (color, ctx) => {
     // 1) salva last color nello ui store
@@ -689,7 +688,7 @@ const pieController = usePieMenuController({
     const blockId = ctx?.blockId;
     if (!blockId) return;
 
-    await blocksStore.updateBlockType(blockId, blockType);
+    await actions.blocks.setBlockType(blockId, blockType);
     console.log("[PIE][main] setBlockType", blockType, ctx);
   },
 });

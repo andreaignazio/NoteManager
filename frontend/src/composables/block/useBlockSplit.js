@@ -1,137 +1,123 @@
-/*import { useBlocksStore } from '@/stores/blocks'
-
-export function useBlockSplit(editor, pageId,blockId){
-
-    const blocksStore = useBlocksStore()
-    async function handleSplitAndCreate() {
-        if (!editor.value) return
-
-        const { state } = editor.value
-        const { from } = state.selection
-
-        // === 1. CALCOLA IL TAGLIO ===
-        const endPos = state.doc.content.size
-        
-        // Crea la slice per la parte destra (mantiene grassetto, corsivo, ecc.)
-        const rightSlice = state.doc.slice(from, endPos)
-
-        // === 2. AGGIORNA IL BLOCCO CORRENTE (SINISTRA) ===
-        // Cancelliamo fisicamente il contenuto a destra nell'editor attuale
-        editor.value.commands.deleteRange({ from, to: endPos })
-        
-        // Ottieni il JSON aggiornato del blocco corrente (ora accorciato)
-        const leftJson = editor.value.getJSON()
-        const leftText = editor.value.getText()
-
-        // Salviamo subito il blocco sinistro
-        await blocksStore.updateBlockContent(blockId, { 
-            json: leftJson,
-            text: leftText
-        })
-
-        // === 3. PREPARA IL NUOVO BLOCCO (DESTRA) ===
-        
-        // Convertiamo il contenuto della slice in array JSON
-        // rightSlice.content.toJSON() restituisce un array di nodi (o null se vuoto)
-        const rightContentArray = rightSlice.content.toJSON() || []
-
-        // Creiamo la struttura completa del documento per il nuovo blocco.
-        // Se la slice contiene già nodi block (es. paragraph), NON ri-wrappiamo.
-        const newBlockJson = {
-            type: 'doc',
-            content: rightContentArray.length
-            ? rightContentArray
-            : [{ type: 'paragraph' }],
-        }
-
-        // Calcoliamo il testo puro per il nuovo blocco (opzionale ma utile per il DB)
-        // Possiamo usare un editor temporaneo o estrarlo dai nodi, 
-        // ma per semplicità qui mandiamo stringa vuota o estraiamo dal textContent della slice se necessario.
-        // Nota: ProseMirror Slice ha .content.textBetween se vuoi il testo esatto.
-        const newBlockText = rightSlice.content.textBetween(0, rightSlice.content.size, '\n')
-
-        const blockType = blocksStore.blocksById[blockId].type
-        // === 4. CREA IL BLOCCO ===
-        const newId = await blocksStore.addNewBlockAfter(
-            pageId,
-            { 
-            content: { json: newBlockJson, text: newBlockText }, 
-            type: blockType ?? 'p' // O 'text' se vuoi che lo split resetti il tipo
-            },
-            blockId
-        )
-
-        // ProseMirror selection starts at 1 (0 can be invalid)
-        blocksStore.requestFocus(newId, 1)
-        }
-
-    return {handleSplitAndCreate}
-}*/
-
-import { useBlocksStore } from '@/stores/blocks'
+import { useBlocksStore } from "@/stores/blocks";
+import { useAppActions } from "@/actions/useAppActions";
 
 export function useBlockSplit(editor, pageId, blockId) {
-  const blocksStore = useBlocksStore()
+  const blocksStore = useBlocksStore();
+  const actions = useAppActions();
 
   async function handleSplitAndCreate() {
-    const ed = editor?.value
-    if (!ed) return
+    const ed = editor?.value;
+    if (!ed) return;
 
-    const state = ed.state
-    const { from, to } = state.selection
-    const cutPos = Math.min(from, to)
+    const prevContent = JSON.parse(
+      JSON.stringify(blocksStore.blocksById?.[blockId]?.content ?? {}),
+    );
 
-    const fullDoc = state.doc
-    const endPos = fullDoc.content.size
+    const state = ed.state;
+    const { from, to } = state.selection;
+    const cutPos = Math.min(from, to);
+
+    const fullDoc = state.doc;
+    const endPos = fullDoc.content.size;
 
     // 1) PRENDO LA DESTRA PRIMA DI MODIFICARE
-    const rightSlice = fullDoc.slice(cutPos, endPos)
+    const rightSlice = fullDoc.slice(cutPos, endPos);
 
     // 2) COSTRUISCO IL DOC SINISTRO VIA TR (NO deleteRange => NO onUpdate)
-    const tr = state.tr.delete(cutPos, endPos)
-    const leftDoc = tr.doc
+    const tr = state.tr.delete(cutPos, endPos);
+    const leftDoc = tr.doc;
 
     // 3) APPLICO SUBITO A TIPTAP SENZA EMETTERE UPDATE
-    ed.commands.setContent(leftDoc.toJSON(), { emitUpdate: false })
+    ed.commands.setContent(leftDoc.toJSON(), { emitUpdate: false });
 
     // 4) SALVO SINISTRA SU STORE
-    const leftJson = leftDoc.toJSON()
-    const leftText = leftDoc.textBetween(0, leftDoc.content.size, '\n')
-    await blocksStore.updateBlockContent(blockId, { json: leftJson, text: leftText })
+    const leftJson = leftDoc.toJSON();
+    const leftText = leftDoc.textBetween(0, leftDoc.content.size, "\n");
+    const nextContent = {
+      json: leftJson,
+      text: leftText,
+    };
+    await actions.blocks.updateBlockContent(blockId, nextContent);
 
     // 5) PREPARO JSON DESTRA (doc valido)
-    const rightContentArray = rightSlice.content.toJSON() || []
+    const rightContentArray = rightSlice.content.toJSON() || [];
 
     // se la slice produce top-level text, wrappa in paragraph
-    let rightDocContent
+    let rightDocContent;
     if (!rightContentArray.length) {
-      rightDocContent = [{ type: 'paragraph' }]
+      rightDocContent = [{ type: "paragraph" }];
     } else {
-      const first = rightContentArray[0]
-      const isBlockNode = first && first.type && first.type !== 'text'
+      const first = rightContentArray[0];
+      const isBlockNode = first && first.type && first.type !== "text";
       rightDocContent = isBlockNode
         ? rightContentArray
-        : [{ type: 'paragraph', content: rightContentArray }]
+        : [{ type: "paragraph", content: rightContentArray }];
     }
 
-    const newBlockJson = { type: 'doc', content: rightDocContent }
-    const newBlockText = rightSlice.content.textBetween(0, rightSlice.content.size, '\n')
+    const newBlockJson = { type: "doc", content: rightDocContent };
+    const newBlockText = rightSlice.content.textBetween(
+      0,
+      rightSlice.content.size,
+      "\n",
+    );
 
     // 6) TIPO BLOCCO (il tuo backend usa 'p')
-    const blockType = blocksStore.blocksById?.[blockId]?.type ?? 'p'
+    const blockType = blocksStore.blocksById?.[blockId]?.type ?? "p";
 
     // 7) CREA BLOCCO DOPO
-    const newId = await blocksStore.addNewBlockAfter(
+    const newId = await actions.blocks.addNewBlockAfter(
       pageId,
       {
         content: { json: newBlockJson, text: newBlockText },
         type: blockType,
       },
-      blockId
-    )
+      blockId,
+      { undo: false },
+    );
 
-    blocksStore.requestFocus(newId, 1)
+    const newBlock = blocksStore.blocksById?.[String(newId)] ?? null;
+    if (newBlock) {
+      blocksStore.pushUndoEntry({
+        pageId: String(pageId),
+        undo: {
+          ops: [
+            {
+              op: "update",
+              id: String(blockId),
+              patch: { content: prevContent },
+            },
+            { op: "delete", id: String(newId) },
+          ],
+        },
+        redo: {
+          ops: [
+            {
+              op: "update",
+              id: String(blockId),
+              patch: { content: nextContent },
+            },
+            {
+              op: "create",
+              node: {
+                id: String(newBlock.id),
+                kind: newBlock.kind ?? "block",
+                parentId: newBlock.parentId ?? null,
+                position: String(newBlock.position ?? ""),
+                type: newBlock.type,
+                content: newBlock.content ?? {},
+                props: newBlock.props ?? {},
+                layout: newBlock.layout ?? {},
+                width: newBlock.width ?? null,
+              },
+            },
+          ],
+        },
+        label: "splitBlock",
+      });
+    }
+
+    actions.blocks.requestFocus(newId, 1);
   }
 
-  return { handleSplitAndCreate }
+  return { handleSplitAndCreate };
 }

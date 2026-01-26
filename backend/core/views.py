@@ -461,6 +461,8 @@ class PageViewSet(viewsets.ModelViewSet):
                 for j, idx in enumerate(idxs):
                     positions_by_idx[idx] = pos_list[j]
 
+            print("FLAT:", [(x.get("type"), x.get("tempId"), x.get("_parent_temp"), x.get("_parent_id")) for x in flat])
+
             # 6) bulk create
             to_create = []
             for i, it in enumerate(flat):
@@ -716,12 +718,16 @@ class BlockViewSet(viewsets.ModelViewSet):
             Block.objects.bulk_create(to_create, batch_size=1000)
 
             new_root_id = id_map[src_root.id]
+            new_blocks = Block.objects.filter(id__in=id_map.values()).order_by(
+                "parent_block_id", "position"
+            )
 
         return Response(
             {
                 "ok": True,
                 "new_root_id": str(new_root_id),
                 "duplicated_count": len(subtree_ids),
+                "blocks": BlockSerializer(new_blocks, many=True).data,
             },
             status=status.HTTP_201_CREATED,
         )

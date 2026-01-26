@@ -34,6 +34,7 @@ const actions = useAppActions();
 const pagesStore = usePagesStore();
 const { editingPageId } = storeToRefs(pagesStore);
 const { draftPage } = storeToRefs(pagesStore);
+const { SidebarMoveToArmed, pendingSidebarScrollToPageId } = storeToRefs(ui);
 
 const rows = computed(() => pagesStore.renderRowsPages);
 
@@ -69,7 +70,7 @@ const deletePage = async (pageId) => {
       }
     }
 
-    await pagesStore.deletePage(pageId);
+    await actions.pages.deletePage(pageId);
 
     if (isDeletingOpenPage) {
       if (nextId != null) openPage(nextId);
@@ -148,14 +149,15 @@ const favoritesTreeFlat = computed(() => {
     }));
 });
 
+const hasFavoritePages = computed(() => {
+  return pagesStore.hasFavoritePages();
+});
+
 const handleMoveFavorite = async ({ id, position }) => {
   // optimistic
-  if (pagesStore.pagesById[id]) {
-    pagesStore.pagesById[id].favorite_position = position;
-  }
 
   try {
-    await pagesStore.patchPage(String(id), { favorite_position: position });
+    await actions.pages.updateFavoritePositionWithUndo(id, position);
   } catch (e) {
     console.error(e);
     // fallback hard:
@@ -192,7 +194,7 @@ function buildForest(childrenMap, contentMap, expandedMap) {
 }
 
 const handleToggleExpand = (pageId) => {
-  pagesStore.toggleExpandPage(pageId);
+  actions.pages.toggleExpandPage(pageId);
   console.log(pagesStore.isExpanded(pageId));
 };
 
@@ -217,17 +219,13 @@ const handleMove = async ({ id, parentId, position }) => {
     );
     return;
   }
-  pagesStore.updatePageLocationOptimistic(id, {
-    newParentId: parentId,
-    newPosition: position,
-  });
-  pagesStore.ensureVisible(id);
   try {
-    const res = await pagesStore.patchPage(String(id), {
-      parent: parentId,
-      position: String(position),
+    await actions.pages.movePageWithUndo({
+      pageId: id,
+      newParentId: parentId,
+      newPosition: String(position),
     });
-    console.log("MovedID:", res.data.id, "MovedParentID", res.data.parent);
+    actions.pages.ensureVisible(id);
   } catch (e) {
     console.error(e);
     //await pagesStore.fetchPages()
@@ -260,17 +258,6 @@ function flashMoved(id) {
 onUnmounted(() => {
   if (movedTimer) clearTimeout(movedTimer);
 });
-
-onMounted(pagesStore.fetchPages);
-
-const { SidebarMoveToArmed } = storeToRefs(ui);
-
-const hasFavoritePages = computed(() => {
-  return pagesStore.hasFavoritePages();
-});
-
-const { pendingSidebarScrollToPageId } = storeToRefs(ui);
-
 watch(pendingSidebarScrollToPageId, async (pageId) => {
   if (!pageId) return;
 

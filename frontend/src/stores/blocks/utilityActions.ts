@@ -7,6 +7,7 @@ import type {
   BlocksStoreState,
   FocusRequest,
   OptionsMenu,
+  UndoEntry,
 } from "./types.js";
 
 const KEY_ROOT = "root";
@@ -97,9 +98,9 @@ export function applyTransactionLocal(
     if (op.op === "create") {
       this.applyCreateLocal(pageId, op.node);
     } else if (op.op === "move") {
-      if (op.id != null && op.parentId != null && op.position != null) {
+      if (op.id != null && op.position != null) {
         this.applyMoveLocal(pageId, op.id, {
-          newParentId: op.parentId,
+          newParentId: op.parentId ?? null,
           newPosition: String(op.position),
         });
       }
@@ -114,6 +115,264 @@ export function applyTransactionLocal(
     }
   }
   return true;
+}
+
+export function makeTempId(
+  _this: BlocksStoreState,
+  prefix: string = "tmp",
+): string {
+  const ts = Date.now().toString(36);
+  const rnd = Math.random().toString(36).slice(2, 8);
+  return `${prefix}_${ts}_${rnd}`;
+}
+
+export function rebuildPageIndex(
+  this: BlocksStoreState & {
+    blocksById: Record<string, Block>;
+    blocksByPage: Record<string, string[]>;
+    childrenByParentId: Record<string, Record<string, string[]>>;
+    sortSiblingsByPosition: (ids: (string | number)[]) => void;
+  },
+  pageId: string | number,
+): void {
+  const pageIdStr = String(pageId);
+  const blocks = Object.values(this.blocksById).filter(
+    (b) => b.pageId === pageIdStr,
+  );
+
+  this.blocksByPage[pageIdStr] = blocks.map((b) => b.id);
+
+  const pageMap = blocks.reduce((dict: Record<string, string[]>, b) => {
+    const parentKey = parentKeyOf(b.parentId);
+    if (!dict[parentKey]) dict[parentKey] = [];
+    dict[parentKey].push(b.id);
+    return dict;
+  }, {});
+
+  Object.values(pageMap).forEach((ids) => this.sortSiblingsByPosition(ids));
+  this.childrenByParentId[pageIdStr] = pageMap;
+}
+
+export function reconcileTempIds(
+  this: BlocksStoreState & {
+    blocksById: Record<string, Block>;
+    blocksByPage: Record<string, string[]>;
+    childrenByParentId: Record<string, Record<string, string[]>>;
+    currentBlockId: string | null;
+    focusRequestId: FocusRequest | null;
+    optionsMenu: OptionsMenu;
+    expandedById: Record<string, boolean>;
+  },
+  map: Record<string, string>,
+): void {
+  const entries = Object.entries(map ?? {});
+  if (!entries.length) return;
+
+  for (const [tempRaw, realRaw] of entries) {
+    const tempId = String(tempRaw);
+    const realId = String(realRaw);
+    if (!tempId || tempId === realId) continue;
+
+    const tempBlock = this.blocksById[tempId];
+    if (tempBlock) {
+      tempBlock.id = realId;
+      this.blocksById[realId] = tempBlock;
+      delete this.blocksById[tempId];
+    }
+
+    for (const b of Object.values(this.blocksById)) {
+      if (b.parentId === tempId) b.parentId = realId;
+    }
+
+    for (const pageId in this.blocksByPage) {
+      const next = (this.blocksByPage[pageId] ?? []).map((id) =>
+        String(id) === tempId ? realId : String(id),
+      );
+      this.blocksByPage[pageId] = Array.from(new Set(next));
+    }
+
+    for (const pageId in this.childrenByParentId) {
+      const pageMap = this.childrenByParentId[pageId];
+      if (pageMap[tempId]) {
+        const merged = pageMap[realId]
+          ? [...pageMap[realId], ...pageMap[tempId]]
+          : [...pageMap[tempId]];
+        pageMap[realId] = Array.from(new Set(merged));
+        delete pageMap[tempId];
+      }
+      for (const key in pageMap) {
+        const next = pageMap[key]
+          .map((id) => (String(id) === tempId ? realId : String(id)))
+          .filter(Boolean);
+        pageMap[key] = Array.from(new Set(next));
+      }
+    }
+
+    if (this.currentBlockId === tempId) this.currentBlockId = realId;
+    if (this.focusRequestId?.blockId === tempId)
+      this.focusRequestId.blockId = realId;
+    if (this.optionsMenu?.blockId === tempId) this.optionsMenu.blockId = realId;
+
+    if (this.expandedById[tempId] != null) {
+      this.expandedById[realId] = this.expandedById[tempId];
+      delete this.expandedById[tempId];
+    }
+  }
+}
+
+export function replaceTempBlock(
+  this: BlocksStoreState & {
+    blocksById: Record<string, Block>;
+    reconcileTempIds: (map: Record<string, string>) => void;
+  },
+  tempId: string,
+  next: Block,
+): void {
+  const tempIdStr = String(tempId);
+  const realId = String(next.id);
+  if (tempIdStr && tempIdStr !== realId) {
+    this.reconcileTempIds({ [tempIdStr]: realId });
+  }
+  this.blocksById[realId] = next;
+}
+
+export function removeBlocksLocal(
+  this: BlocksStoreState & {
+    blocksById: Record<string, Block>;
+    blocksByPage: Record<string, string[]>;
+    childrenByParentId: Record<string, Record<string, string[]>>;
+    currentBlockId: string | null;
+    focusRequestId: FocusRequest | null;
+    optionsMenu: OptionsMenu;
+    expandedById: Record<string, boolean>;
+  },
+  blockIds: (string | number)[],
+): void {
+  const ids = blockIds.map(String);
+  const idSet = new Set(ids);
+
+  const idsByPage: Record<string, string[]> = {};
+  for (const id of ids) {
+    const b = this.blocksById[id];
+    if (!b) continue;
+    if (!idsByPage[b.pageId]) idsByPage[b.pageId] = [];
+    idsByPage[b.pageId].push(id);
+  }
+
+  for (const id of ids) {
+    delete this.blocksById[id];
+    delete this.expandedById[id];
+
+    if (this.currentBlockId === id) this.currentBlockId = null;
+    if (this.focusRequestId?.blockId === id) this.focusRequestId = null;
+    if (this.optionsMenu?.blockId === id)
+      this.optionsMenu = { open: false, blockId: null, anchorRect: null };
+  }
+
+  for (const pageId in idsByPage) {
+    const pageIds = new Set(idsByPage[pageId]);
+
+    const pageList = (this.blocksByPage[pageId] ?? []).filter(
+      (id) => !pageIds.has(String(id)),
+    );
+    this.blocksByPage[pageId] = pageList;
+
+    const pageMap = this.childrenByParentId[pageId];
+    if (!pageMap) continue;
+
+    for (const key of Object.keys(pageMap)) {
+      if (idSet.has(String(key))) {
+        delete pageMap[key];
+        continue;
+      }
+      pageMap[key] = (pageMap[key] ?? []).filter(
+        (id) => !pageIds.has(String(id)),
+      );
+    }
+  }
+}
+
+export function pushUndoEntry(
+  this: BlocksStoreState & {
+    _undoStack: UndoEntry[];
+    _redoStack: UndoEntry[];
+  },
+  entry: UndoEntry,
+): void {
+  const enriched: UndoEntry = {
+    ...entry,
+    createdAt: entry.createdAt ?? Date.now(),
+  };
+  this._undoStack = [...(this._undoStack ?? []), enriched];
+  this._redoStack = [];
+}
+
+export async function undoLastEntry(
+  this: BlocksStoreState & {
+    _undoStack: UndoEntry[];
+    _redoStack: UndoEntry[];
+    applyTransactionLocal: (
+      pageId: string | number,
+      tx: Transaction,
+    ) => boolean;
+    persistTransaction: (
+      pageId: string | number,
+      tx: Transaction,
+    ) => Promise<void>;
+    fetchBlocksForPage: (pageId: string | number) => Promise<void>;
+  },
+  pageId?: string | number,
+): Promise<void> {
+  const stack = this._undoStack ?? [];
+  const entry = stack.pop();
+  if (!entry) return;
+
+  const targetPageId = pageId ?? entry.pageId;
+  this._undoStack = stack;
+
+  this.applyTransactionLocal(targetPageId, entry.undo);
+  try {
+    await this.persistTransaction(targetPageId, entry.undo);
+    if (entry.redo) {
+      this._redoStack = [...(this._redoStack ?? []), entry];
+    }
+  } catch (error) {
+    await this.fetchBlocksForPage(targetPageId);
+    throw error;
+  }
+}
+
+export async function redoLastEntry(
+  this: BlocksStoreState & {
+    _undoStack: UndoEntry[];
+    _redoStack: UndoEntry[];
+    applyTransactionLocal: (
+      pageId: string | number,
+      tx: Transaction,
+    ) => boolean;
+    persistTransaction: (
+      pageId: string | number,
+      tx: Transaction,
+    ) => Promise<void>;
+    fetchBlocksForPage: (pageId: string | number) => Promise<void>;
+  },
+  pageId?: string | number,
+): Promise<void> {
+  const stack = this._redoStack ?? [];
+  const entry = stack.pop();
+  if (!entry?.redo) return;
+
+  const targetPageId = pageId ?? entry.pageId;
+  this._redoStack = stack;
+
+  this.applyTransactionLocal(targetPageId, entry.redo);
+  try {
+    await this.persistTransaction(targetPageId, entry.redo);
+    this._undoStack = [...(this._undoStack ?? []), entry];
+  } catch (error) {
+    await this.fetchBlocksForPage(targetPageId);
+    throw error;
+  }
 }
 
 export function setCurrentBlock(
@@ -162,7 +421,8 @@ export function isExpanded(
   if (block.type === "toggle") {
     return block.content?.isExpanded ?? false;
   }
-  return this.expandedById[blockIdStr] ?? false;
+  //return this.expandedById[blockIdStr] ?? false;
+  return true;
 }
 
 export function expandBlock(
@@ -174,7 +434,7 @@ export function expandBlock(
 ): void {
   const blockIdStr = String(blockId);
   const block = this.blocksById[blockIdStr];
-  if (block?.type === "toggle") return;
+  //if (block?.type === "toggle") return;
   this.expandedById[blockIdStr] = true;
 }
 
@@ -189,7 +449,7 @@ export function toggleExpandBlock(
   const block = this.blocksById[blockIdStr];
   if (!block) return;
 
-  if (block.type === "toggle") return;
+  //if (block.type === "toggle") return;
 
   const currentState = this.expandedById[blockIdStr] ?? false;
   this.expandedById[blockIdStr] = !currentState;

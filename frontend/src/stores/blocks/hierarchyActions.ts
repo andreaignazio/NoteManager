@@ -353,3 +353,34 @@ export function isCircularMove(
 
   return false;
 }
+
+export function collectSubtreeIds(
+  this: BlocksStoreState & {
+    childrenByParentId: Record<string, Record<string, string[]>>;
+  },
+  pageId: string | number,
+  rootId: string | number,
+): string[] {
+  const pageIdStr = String(pageId);
+  const rootIdStr = String(rootId);
+  const pageMap = this.childrenByParentId[pageIdStr] ?? {};
+
+  const out: string[] = [];
+  const stack: string[] = [rootIdStr];
+  const seen = new Set<string>();
+
+  while (stack.length) {
+    const cur = stack.pop() as string;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    out.push(cur);
+
+    const key = parentKeyOf(cur);
+    const children = pageMap[key] ?? [];
+    for (const childId of children) {
+      stack.push(String(childId));
+    }
+  }
+
+  return out;
+}

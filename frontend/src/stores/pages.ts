@@ -55,6 +55,10 @@ interface PagesStoreState {
 
   // Focus
   pendingFocusTitlePageId: string | number | null;
+
+  // Undo/Redo
+  _undoStack: PageUndoEntry[];
+  _redoStack: PageUndoEntry[];
 }
 
 interface PagePayload {
@@ -63,6 +67,15 @@ interface PagePayload {
   position?: string;
   icon?: string;
   favorite?: boolean;
+  favorite_position?: string | null;
+}
+
+interface PageUndoEntry {
+  pageId: string;
+  undo: PagePayload;
+  redo?: PagePayload;
+  label?: string;
+  createdAt?: number;
 }
 
 interface DuplicateBlockPayload {
@@ -114,6 +127,10 @@ export const usePagesStore = defineStore("pagesStore", {
 
     // Focus
     pendingFocusTitlePageId: null,
+
+    // Undo/Redo
+    _undoStack: [],
+    _redoStack: [],
   }),
 
   getters: {
@@ -609,6 +626,114 @@ export const usePagesStore = defineStore("pagesStore", {
       }
       const res = await api.patch(`/pages/${pageId}/`, payload);
       return res;
+    },
+
+    applyPagePatchLocal(
+      pageId: string | number,
+      payload: PagePayload,
+    ): boolean {
+      const id = String(pageId);
+      const page = this.pagesById[id];
+      if (!page) return false;
+
+      const prevParentId = page.parentId ?? null;
+      const prevParentKey = parentKeyOf(prevParentId);
+
+      const nextParentId =
+        payload.parent !== undefined ? (payload.parent ?? null) : prevParentId;
+      const nextParentKey = parentKeyOf(nextParentId);
+
+      if (payload.title !== undefined) page.title = payload.title;
+      if (payload.icon !== undefined) page.icon = payload.icon as any;
+      if (payload.favorite !== undefined) page.favorite = !!payload.favorite;
+      if (payload.favorite_position !== undefined)
+        page.favorite_position = payload.favorite_position ?? null;
+
+      if (payload.position !== undefined) {
+        page.position = String(payload.position ?? "");
+      }
+      if (payload.parent !== undefined) {
+        page.parentId = nextParentId;
+      }
+
+      if (prevParentKey !== nextParentKey) {
+        this.childrenByParentId[prevParentKey] = (
+          this.childrenByParentId[prevParentKey] ?? []
+        ).filter((pid) => String(pid) !== id) as any;
+
+        if (!this.childrenByParentId[nextParentKey]) {
+          this.childrenByParentId[nextParentKey] = [];
+        }
+
+        const nextList = (this.childrenByParentId[nextParentKey] ?? []).map(
+          String,
+        );
+        if (!nextList.includes(id)) nextList.push(id);
+        this.childrenByParentId[nextParentKey] = nextList as any;
+      }
+
+      const sortKey = prevParentKey === nextParentKey ? prevParentKey : null;
+      const keysToSort = sortKey ? [sortKey] : [prevParentKey, nextParentKey];
+
+      keysToSort.forEach((key) => {
+        const ids = this.childrenByParentId[key];
+        if (!ids) return;
+        ids.sort((idA, idB) => {
+          const posA = (this.pagesById[idA]?.position ?? "\uffff") as string;
+          const posB = (this.pagesById[idB]?.position ?? "\uffff") as string;
+          const cmp = posA < posB ? -1 : posA > posB ? 1 : 0;
+          return cmp !== 0 ? cmp : String(idA).localeCompare(String(idB));
+        });
+      });
+
+      return true;
+    },
+
+    pushUndoEntry(entry: PageUndoEntry): void {
+      const enriched: PageUndoEntry = {
+        ...entry,
+        createdAt: entry.createdAt ?? Date.now(),
+      };
+      this._undoStack = [...(this._undoStack ?? []), enriched];
+      this._redoStack = [];
+    },
+
+    async undoLastEntry(): Promise<void> {
+      const stack = this._undoStack ?? [];
+      const entry = stack.pop();
+      if (!entry) return;
+
+      const pageId = entry.pageId;
+      this._undoStack = stack;
+
+      this.applyPagePatchLocal(pageId, entry.undo);
+      try {
+        await this.patchPage(pageId, entry.undo);
+        if (entry.redo) {
+          this._redoStack = [...(this._redoStack ?? []), entry];
+        }
+      } catch (e) {
+        await this.fetchPages();
+        throw e;
+      }
+    },
+
+    async redoLastEntry(): Promise<void> {
+      const stack = this._redoStack ?? [];
+      const entry = stack.pop();
+      if (!entry?.redo) return;
+
+      const pageId = entry.pageId;
+      this._redoStack = stack;
+
+      this.applyPagePatchLocal(pageId, entry.redo);
+      try {
+        await this.patchPage(pageId, entry.redo);
+        this._undoStack = [...(this._undoStack ?? []), entry];
+      } catch (e) {
+        await this.fetchPages();
+        throw e;
+      }
     },
 
     updatePageLocationOptimistic(

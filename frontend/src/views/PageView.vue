@@ -28,10 +28,12 @@ import { usePageBlankClickFocus } from "@/composables/page/usePageBlankClickFocu
 import { usePageTitleEditor } from "@/composables/page/usePageTitleEditor";
 
 import { useOverlayBinding } from "@/composables/useOverlayBinding";
+import { useAppActions } from "@/actions/useAppActions";
 
 const ui = useUiStore();
 const pagesStore = usePagesStore();
 const blocksStore = useBlocksStore();
+const actions = useAppActions();
 
 const { currentPageId } = storeToRefs(pagesStore);
 
@@ -81,7 +83,7 @@ watch(
   (newPageId) => {
     if (newPageId === props.id) {
       focusTitleInput();
-      pagesStore.consumeTitleFocusRequest(newPageId);
+      actions.pages.consumeTitleFocusRequest(newPageId);
     }
   },
 );
@@ -91,8 +93,7 @@ watch(
 watch(
   () => props.id,
   async (newId) => {
-    await pagesStore.openPage(newId);
-    await blocksStore.fetchBlocksForPage(newId);
+    await actions.pages.openPageAndLoadBlocks(newId);
     const rootIds = blocksStore.childrenByParentId[newId]?.root;
     const firstId = rootIds?.[0];
     const title = titleValueForInput.value;
@@ -149,6 +150,7 @@ function buildForest(childrenMap, contentMap, expandedMap) {
     const hasChildren = allChildIds.length > 0;
 
     let isExpanded = blocksStore.isExpanded(id);
+    console.log(isExpanded);
 
     const visibleChildren = isExpanded
       ? allChildIds.map((childId) => buildNode(childId)).filter(Boolean)
@@ -188,7 +190,7 @@ const handleMove = async ({ id, parentId, position }) => {
   }
 
   try {
-    await blocksStore.moveBlock(props.id, id, { parentId, position });
+    await actions.blocks.moveBlock(props.id, id, { parentId, position });
   } catch (e) {
     console.error(e);
     //await pagesStore.fetchPages()
@@ -199,15 +201,15 @@ async function onCreateFirstToggleChild(toggleEl) {
   const toggleId = String(toggleEl.id);
 
   // assicura che sia aperto
-  blocksStore.expandBlock(toggleId);
+  actions.blocks.expandBlock(toggleId);
 
-  const newId = await blocksStore.addChildBlock(props.pageId, toggleId, {
+  const newId = await actions.blocks.addChildBlock(props.pageId, toggleId, {
     type: DEFAULT_BLOCK_TYPE, // o 'p'
     content: { text: "" },
   });
 
   await nextTick();
-  blocksStore.requestFocus(newId, 0);
+  actions.blocks.requestFocus(newId, 0);
 }
 
 //===PAGE BLANK CLICK FOCUS===
@@ -310,8 +312,8 @@ async function setBlockTypeFromToolbar(nextType) {
 
   // 3) cambia tipo
   try {
-    await blocksStore.updateBlockType(blocksStore.currentBlockId, nextType);
-    blocksStore.requestFocus(blocksStore.currentBlockId, -1);
+    await actions.blocks.setBlockType(blocksStore.currentBlockId, nextType);
+    actions.blocks.requestFocus(blocksStore.currentBlockId, -1);
   } catch {
     errorMsg.value = "Error changing block type";
   }

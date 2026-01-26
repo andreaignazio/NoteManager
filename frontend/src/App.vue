@@ -1,31 +1,34 @@
 <script setup>
 // Qui ci andrà la logica
-import useAuthStore from '@/stores/auth'
-import {ref, watch, onMounted} from 'vue'
-const authStore = useAuthStore()
+import useAuthStore from "@/stores/auth";
+import useShortcuts from "@/composables/useShortcuts";
+import { ref, watch, onMounted } from "vue";
+const authStore = useAuthStore();
+
+useShortcuts();
 
 onMounted(() => {
-  authStore.init()
-})
+  authStore.init();
+});
 
-const token = ref(null)
-token.value = authStore.token
-if(!token.value){
-  token.value = "Token null"
+const token = ref(null);
+token.value = authStore.token;
+if (!token.value) {
+  token.value = "Token null";
 }
 
-watch(() => authStore.token, (newTokenValue) => {
-  token.value = authStore.token
-}
-
-)
+watch(
+  () => authStore.token,
+  (newTokenValue) => {
+    token.value = authStore.token;
+  },
+);
 </script>
 
 <template>
   <div class="app-container">
-    
-    
-    <router-view></router-view> </div>
+    <router-view></router-view>
+  </div>
 </template>
 
 <style>
@@ -39,6 +42,8 @@ body {
   margin: 0;
   background-color: var(--bg-color);
   color: var(--text-color);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
+    Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
 }
 </style>

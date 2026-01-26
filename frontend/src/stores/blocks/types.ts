@@ -80,6 +80,14 @@ export interface Transaction {
   ops: TransactionOp[];
 }
 
+export interface UndoEntry {
+  pageId: string;
+  undo: Transaction;
+  redo?: Transaction;
+  label?: string;
+  createdAt?: number;
+}
+
 export interface BatchBlockItem {
   tempId?: string;
   kind?: string;
@@ -126,4 +134,15 @@ export interface BlocksStoreState {
 
   // anti-race fetch
   _fetchTokenByPage: Record<string, number>;
+
+  // undo/redo
+  _undoStack: UndoEntry[];
+  _redoStack: UndoEntry[];
 }
+
+export type IdLike = string | number | null;
+
+export type BaseCreateBlockPayload = {
+  type?: string;
+  content?: BlockContent;
+};

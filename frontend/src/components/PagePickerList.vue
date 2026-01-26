@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch, nextTick } from "vue";
 import { getIconComponent } from "@/icons/catalog";
 import usePagesStore from "@/stores/pages";
+import { useAppActions } from "@/actions/useAppActions";
 
 const props = defineProps({
   // data / context
@@ -42,6 +43,7 @@ const emit = defineEmits([
 ]);
 
 const pagesStore = usePagesStore();
+const actions = useAppActions();
 
 const KEY_ROOT = "root";
 const keyOf = (parentId) => (parentId == null ? KEY_ROOT : String(parentId));
@@ -233,7 +235,7 @@ async function ensurePagesLoaded() {
   if (!props.fetchIfEmpty) return;
   if (Object.keys(pagesStore.pagesById ?? {}).length) return;
   try {
-    await pagesStore.fetchPages();
+    await actions.pages.fetchPages();
   } catch (_) {}
 }
 

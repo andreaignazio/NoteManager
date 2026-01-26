@@ -85,9 +85,11 @@ function openLangMenu() {
 
 function handleToggleWrap() {
   console.log("TOGGLE WRAP for block:", props.block.id);
-  blocksStore.updateBlockContent(props.block.id, {
-    wrap: !(props.block.content?.wrap ?? true),
-  });
+  actions.blocks.updateBlockContent(
+    props.block.id,
+    { wrap: !(props.block.content?.wrap ?? true) },
+    { undo: true, label: "toggleWrap" },
+  );
 }
 
 async function handleInsertAfter() {
@@ -99,7 +101,8 @@ const isToggle = computed(() => props.block.type === "toggle");
 const isExpanded = computed(() => blocksStore.isExpanded(props.block.id));
 function handleToggleExpand(e) {
   e?.stopPropagation?.();
-  blocksStore.toggleExpandBlock?.(props.block.id);
+  console.log("TOGGLE EXPAND for block:", props.block.id);
+  actions.blocks.toggleExpandBlock?.(props.block.id);
 }
 
 ///===FOR BLANCK DETECTION==== IMPORTANT!

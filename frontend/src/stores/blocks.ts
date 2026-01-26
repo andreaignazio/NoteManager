@@ -56,6 +56,10 @@ export const useBlocksStore = defineStore("blocksStore", {
 
     // anti-race fetch
     _fetchTokenByPage: {},
+
+    // undo/redo
+    _undoStack: [],
+    _redoStack: [],
   }),
 
   getters: {
@@ -175,6 +179,7 @@ export const useBlocksStore = defineStore("blocksStore", {
     indentBlock: hierarchyActions.indentBlock,
     outdentBlock: hierarchyActions.outdentBlock,
     isCircularMove: hierarchyActions.isCircularMove,
+    collectSubtreeIds: hierarchyActions.collectSubtreeIds,
 
     // ===========================
     // CONTENT ACTIONS
@@ -204,6 +209,7 @@ export const useBlocksStore = defineStore("blocksStore", {
     addNewBlock: crudActions.addNewBlock,
     addNewBlockAfter: crudActions.addNewBlockAfter,
     addNewBlockAfterAdoptChildren: crudActions.addNewBlockAfterAdoptChildren,
+    addBlockAfterWithParent: crudActions.addBlockAfterWithParent,
     mapBatchItem: crudActions.mapBatchItem,
     batchAddBlocksAfter: crudActions.batchAddBlocksAfter,
 
@@ -213,6 +219,14 @@ export const useBlocksStore = defineStore("blocksStore", {
     applyCreateLocal: utilityActions.applyCreateLocal,
     applyUpdateLocal: utilityActions.applyUpdateLocal,
     applyTransactionLocal: utilityActions.applyTransactionLocal,
+    makeTempId: utilityActions.makeTempId,
+    rebuildPageIndex: utilityActions.rebuildPageIndex,
+    reconcileTempIds: utilityActions.reconcileTempIds,
+    replaceTempBlock: utilityActions.replaceTempBlock,
+    removeBlocksLocal: utilityActions.removeBlocksLocal,
+    pushUndoEntry: utilityActions.pushUndoEntry,
+    undoLastEntry: utilityActions.undoLastEntry,
+    redoLastEntry: utilityActions.redoLastEntry,
     setCurrentBlock: utilityActions.setCurrentBlock,
     clearCurrentBlock: utilityActions.clearCurrentBlock,
     requestFocus: utilityActions.requestFocus,

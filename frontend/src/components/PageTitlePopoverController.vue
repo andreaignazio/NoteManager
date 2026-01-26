@@ -1,236 +1,243 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref, unref, watch, onMounted, onUnmounted } from 'vue'
-import usePagesStore from '@/stores/pages'
-import useLiveAnchorRect from '@/composables/useLiveAnchorRect'
-import ActionMenuDB from '@/components/ActionMenuDB.vue'
-import PageTitlePopoverDB from '@/components/PageTitlePopoverDB.vue'
-import IconPickerDB from '@/components/IconPickerDB.vue'
-import { useOverlayLayer } from '@/composables/useOverlayLayer'
-import { ICONS } from "@/icons/catalog"
-import { anchorKey } from '@/ui/anchorsKeyBind'
-import { useAnchorRegistryStore } from '@/stores/anchorRegistry'
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  ref,
+  unref,
+  watch,
+  onMounted,
+  onUnmounted,
+} from "vue";
+import usePagesStore from "@/stores/pages";
+import useLiveAnchorRect from "@/composables/useLiveAnchorRect";
+import ActionMenuDB from "@/components/ActionMenuDB.vue";
+import PageTitlePopoverDB from "@/components/PageTitlePopoverDB.vue";
+import IconPickerDB from "@/components/IconPickerDB.vue";
+import { useOverlayLayer } from "@/composables/useOverlayLayer";
+import { ICONS } from "@/icons/catalog";
+import { anchorKey } from "@/ui/anchorsKeyBind";
+import { useAnchorRegistryStore } from "@/stores/anchorRegistry";
+import { useAppActions } from "@/actions/useAppActions";
 
 const props = defineProps({
   pageId: { type: [String, Number], default: null },
   anchorEl: { type: [Object, null], default: null }, // HTMLElement | ref
   anchorKey: { type: [String, Number], default: null }, // anchor registry key
   // title popover positioning
-  placement: { type: String, default: 'bottom-start' },
+  placement: { type: String, default: "bottom-start" },
   minWidth: { type: Number, default: 320 },
   gap: { type: Number, default: 8 },
   sideOffsetX: { type: Number, default: 0 },
 
   // icon picker positioning
-  iconPlacement: { type: String, default: 'right' },
+  iconPlacement: { type: String, default: "right" },
   iconMinWidth: { type: Number, default: 320 },
   iconGap: { type: Number, default: 6 },
   iconSideOffsetX: { type: Number, default: 0 },
   lockScrollOnOpen: { type: Boolean, default: false },
-  anchorLocation: {type: String, default: ''},
-  scope: { type: String, default: 'tree' },
-})
+  anchorLocation: { type: String, default: "" },
+  scope: { type: String, default: "tree" },
+});
 
-const emit = defineEmits(['close', 'commit'])
+const emit = defineEmits(["close", "commit"]);
 
-const pagesStore = usePagesStore()
-const anchorsStore = useAnchorRegistryStore()
+const pagesStore = usePagesStore();
+const anchorsStore = useAnchorRegistryStore();
+const actions = useAppActions();
 
-const titleOpen = ref(false)
-const iconOpen = ref(false)
-const anyOpen = computed(() => titleOpen.value || iconOpen.value)
+const titleOpen = ref(false);
+const iconOpen = ref(false);
+const anyOpen = computed(() => titleOpen.value || iconOpen.value);
 
 // --- anchor rect live: title ---
 const titleAnchorResolved = computed(() => {
-  if (props.anchorKey) return anchorsStore.getAnchorEl(props.anchorKey)
-  return unref(props.anchorEl) ?? null
-})
+  if (props.anchorKey) return anchorsStore.getAnchorEl(props.anchorKey);
+  return unref(props.anchorEl) ?? null;
+});
 //const titleAnchorResolved = computed(() => unref(props.anchorEl) ?? null)
 const { anchorRect: titleAnchorRect, scheduleUpdate: bumpTitleRect } =
-  useLiveAnchorRect(titleAnchorResolved, titleOpen)
-
-
+  useLiveAnchorRect(titleAnchorResolved, titleOpen);
 
 //===OVERLAY REGISTER===
-const titleMenuRef = ref(null)
-const iconMenuRef = ref(null)
+const titleMenuRef = ref(null);
+const iconMenuRef = ref(null);
 
 const activeMenuEl = computed(() => {
-  if (iconOpen.value) return iconMenuRef.value?.el?.value ?? null
-  if (titleOpen.value) return titleMenuRef.value?.el?.value ?? null
-  return null
-})
+  if (iconOpen.value) return iconMenuRef.value?.el?.value ?? null;
+  if (titleOpen.value) return titleMenuRef.value?.el?.value ?? null;
+  return null;
+});
 
 function requestCloseTopmost() {
-  if (iconOpen.value) { closeIconPicker(); return }
-  if (titleOpen.value) closeAll()
+  if (iconOpen.value) {
+    closeIconPicker();
+    return;
+  }
+  if (titleOpen.value) closeAll();
 }
 
 onMounted(() => {
-  console.log('[PageTitlePopover] mounted, registering overlay close handler. PageId:', props.pageId)
-})
+  console.log(
+    "[PageTitlePopover] mounted, registering overlay close handler. PageId:",
+    props.pageId,
+  );
+});
 
-const layerId = computed(() => props.pageId ? `${props.anchorLocation}:page-title:${props.pageId}:${props.scope}` : null)
+const layerId = computed(() =>
+  props.pageId
+    ? `${props.anchorLocation}:page-title:${props.pageId}:${props.scope}`
+    : null,
+);
 
-const { syncOpen } = useOverlayLayer(
-  layerId,
-  () => ({
-    getMenuEl: () => titleMenuRef.value?.getMenuEl?.() ?? null,
-    getAnchorEl: () => titleAnchorResolved.value,
-    close: () => closeTitle(),
-    options: {
-      closeOnEsc: true,
-      closeOnOutside: true,
-      stopPointerOutside: true,
-      lockScroll: !!props.lockScrollOnOpen,
-      restoreFocus: true,
-      allowAnchorClick: true,
-    },
-  })
-)
+const { syncOpen } = useOverlayLayer(layerId, () => ({
+  getMenuEl: () => titleMenuRef.value?.getMenuEl?.() ?? null,
+  getAnchorEl: () => titleAnchorResolved.value,
+  close: () => closeTitle(),
+  options: {
+    closeOnEsc: true,
+    closeOnOutside: true,
+    stopPointerOutside: true,
+    lockScroll: !!props.lockScrollOnOpen,
+    restoreFocus: true,
+    allowAnchorClick: true,
+  },
+}));
 //const test = computed(() => !!layerId.value && anyOpen.value)
-syncOpen(computed(() => !!layerId.value && titleOpen.value))
+syncOpen(computed(() => !!layerId.value && titleOpen.value));
 
-let layerIdIcon = computed(() => props.pageId ? `${props.anchorLocation}:page-actions:${props.pageId}:${props.scope}` : null)
+let layerIdIcon = computed(() =>
+  props.pageId
+    ? `${props.anchorLocation}:page-actions:${props.pageId}:${props.scope}`
+    : null,
+);
 
 //layerIdIcon = "blblblfdldlf"
 
-const { syncOpen: syncOpenIcon } = useOverlayLayer(
-  layerIdIcon,
-  () => ({
-    getMenuEl: () => iconMenuRef.value?.getMenuEl?.() ?? null,
-    getAnchorEl: () => titleAnchorResolved.value,
-    close: () => closeIconPicker(),
-    options: {
-      closeOnEsc: true,
-      closeOnOutside: true,
-      stopPointerOutside: true,
-      lockScroll: !!props.lockScrollOnOpen,
-      restoreFocus: true,
-      allowAnchorClick: true,
-    },
-  })
-)
+const { syncOpen: syncOpenIcon } = useOverlayLayer(layerIdIcon, () => ({
+  getMenuEl: () => iconMenuRef.value?.getMenuEl?.() ?? null,
+  getAnchorEl: () => titleAnchorResolved.value,
+  close: () => closeIconPicker(),
+  options: {
+    closeOnEsc: true,
+    closeOnOutside: true,
+    stopPointerOutside: true,
+    lockScroll: !!props.lockScrollOnOpen,
+    restoreFocus: true,
+    allowAnchorClick: true,
+  },
+}));
 //const test = computed(() => !!layerId.value && anyOpen.value)
-syncOpenIcon(computed(() => !!layerIdIcon && iconOpen.value))
-
-
-
-
-
-
-
+syncOpenIcon(computed(() => !!layerIdIcon && iconOpen.value));
 
 // --- UI ref (DB): icon anchor + set icon ---
-const titleUiRef = ref(null)
+const titleUiRef = ref(null);
 const iconAnchorResolved = computed(() => {
-  const r = titleUiRef.value?.iconAnchorEl // ref<HTMLElement>
-  return unref(r) ?? null
-})
+  const r = titleUiRef.value?.iconAnchorEl; // ref<HTMLElement>
+  return unref(r) ?? null;
+});
 
 // --- anchor rect live: icon picker ---
 const { anchorRect: iconAnchorRect, scheduleUpdate: bumpIconRect } =
-  useLiveAnchorRect(iconAnchorResolved, iconOpen)
-
-
+  useLiveAnchorRect(iconAnchorResolved, iconOpen);
 
 // --- page source ---
 const page = computed(() => {
-  const id = props.pageId != null ? String(props.pageId) : null
-  if (!id) return null
-  return pagesStore.pagesById?.[id] ?? null
-})
+  const id = props.pageId != null ? String(props.pageId) : null;
+  if (!id) return null;
+  return pagesStore.pagesById?.[id] ?? null;
+});
 
 //===OPEN/CLOSE===
 function open() {
-  console.log('[PageTitlePopover] open called, pageId:', props.pageId, titleAnchorResolved.value)
-  if (!props.pageId) return
-  titleOpen.value = true
-  iconOpen.value = false
-  nextTick(() => bumpTitleRect())
-  
+  console.log(
+    "[PageTitlePopover] open called, pageId:",
+    props.pageId,
+    titleAnchorResolved.value,
+  );
+  if (!props.pageId) return;
+  titleOpen.value = true;
+  iconOpen.value = false;
+  nextTick(() => bumpTitleRect());
 }
 
 function closeIconPicker() {
-  iconOpen.value = false
-  nextTick(() => titleUiRef.value?.focusTitle?.())
+  iconOpen.value = false;
+  nextTick(() => titleUiRef.value?.focusTitle?.());
 }
 
 function closeTitle() {
-  titleOpen.value = false
-  iconOpen.value = false
-  emit('close')
+  titleOpen.value = false;
+  iconOpen.value = false;
+  emit("close");
 }
 
 function closeAll() {
-  closeTitle()
+  closeTitle();
 }
 
 function toggle() {
-  titleOpen.value ? closeAll() : open()
+  titleOpen.value ? closeAll() : open();
 }
 
-defineExpose({ open, close: closeAll, toggle })
+defineExpose({ open, close: closeAll, toggle });
 
 function openIconPicker() {
-  if (!titleOpen.value) return
-  iconOpen.value = true
-  nextTick(() => bumpIconRect())
+  if (!titleOpen.value) return;
+  iconOpen.value = true;
+  nextTick(() => bumpIconRect());
 }
 
 function onSelectIcon(icon) {
   try {
-    titleUiRef.value?.setDraftIcon?.(icon)
+    titleUiRef.value?.setDraftIcon?.(icon);
   } catch (e) {
-    console.error('[PageTitlePopover] setDraftIcon failed', e)
+    console.error("[PageTitlePopover] setDraftIcon failed", e);
   } finally {
-    closeIconPicker() 
-
-    
+    closeIconPicker();
   }
 }
 
-
 function onCancel() {
-  closeAll()
+  closeAll();
 }
 
 async function onCommit({ icon, title }) {
-  const p = page.value
-  if (!p) return closeAll()
+  const p = page.value;
+  if (!p) return closeAll();
 
-  const prevIcon = (p.icon ?? '') || ''
-  const prevTitle = (p.title ?? '') || ''
+  const prevIcon = (p.icon ?? "") || "";
+  const prevTitle = (p.title ?? "") || "";
 
   if (icon === prevIcon && title === prevTitle) {
-    closeAll()
-    return
+    closeAll();
+    return;
   }
 
-  // optimistic
-  try { p.icon = icon; p.title = title } catch (e) { console.error('[PageTitlePopover] optimistic update failed', e) }
-
-  console.group('[PageTitlePopover] commit')
-  console.log('pageId:', p.id, 'icon:', icon, 'title:', title)
+  console.group("[PageTitlePopover] commit");
+  console.log("pageId:", p.id, "icon:", icon, "title:", title);
 
   try {
-    await pagesStore.patchPage(p.id, { icon, title })
-    emit('commit', { pageId: p.id, icon, title })
+    await actions.pages.updatePageMetaWithUndo({
+      pageId: p.id,
+      icon,
+      title,
+    });
+    emit("commit", { pageId: p.id, icon, title });
   } catch (e) {
-    console.error('[PageTitlePopover] patchPage failed', e)
+    console.error("[PageTitlePopover] patchPage failed", e);
   } finally {
-    console.groupEnd()
-    closeAll()
+    console.groupEnd();
+    closeAll();
   }
 }
-
-
 </script>
 
 <template>
   <Teleport to="body">
     <!-- Title editor popover -->
     <ActionMenuDB
-    ref="titleMenuRef"
+      ref="titleMenuRef"
       :open="titleOpen"
       :anchorRect="titleAnchorRect"
       :anchorEl="anchorEl"
@@ -253,9 +260,9 @@ async function onCommit({ icon, title }) {
       />
     </ActionMenuDB>
 
-    <!-- Icon picker popover (layered) --> 
+    <!-- Icon picker popover (layered) -->
     <ActionMenuDB
-    ref="iconMenuRef"
+      ref="iconMenuRef"
       :open="iconOpen"
       :anchorRect="iconAnchorRect"
       :anchorEl="titleUiRef?.iconAnchorEl"
@@ -264,23 +271,17 @@ async function onCommit({ icon, title }) {
       :minWidth="iconMinWidth"
       :gap="iconGap"
       :sideOffsetX="iconSideOffsetX"
-
       :scroll="true"
       :maxHeight="200"
-
       @close="closeIconPicker"
     >
       <IconPickerDB
         :icons="ICONS"
-        
         @select="onSelectIcon"
-        @close="closeIconPicker"  
+        @close="closeIconPicker"
       />
     </ActionMenuDB>
   </Teleport>
 </template>
 
-<style scoped>
-
-
-</style>
+<style scoped></style>

@@ -3,7 +3,6 @@ import PageTitlePopoverController from "@/components/PageTitlePopoverController.
 import { ref, onMounted, onBeforeUnmount, onUnmounted, nextTick } from "vue";
 import { useUIOverlayStore } from "@/stores/uioverlay";
 import PageActionsController from "@/components/PageActionsController.vue";
-import BlockMenuController from "@/components/BlockMenuController.vue";
 import CodeLanguageMenuController from "@/components/CodeLanguageMenuController.vue";
 import MoveDestinationController from "@/components/menu/popover/MoveToDestinationController.vue";
 import ConfirmPopoverController from "@/components/ConfirmPopoverController.vue";
@@ -206,7 +205,7 @@ async function onMoveDestSelect(targetPageId: string | null) {
 }
 
 const confirmRef = ref(null);
-const confirmPayload = ref(null);
+const confirmPayload = ref<any>({});
 
 async function openConfirm(req: {
   menuId: string;
@@ -430,20 +429,6 @@ async function onMenuAction(a: MenuActionPayload) {
       @moved="() => {}"
       @close="() => {}"
     />
-    <!--<BlockMenuController
-      ref="blockMenuRef"
-      :pageId="blockMenuPayload?.pageId"
-      :blockId="blockMenuPayload?.blockId"
-      :anchorKey="blockMenuPayload?.anchorKey"
-      anchorLocation="blockRow"
-      :placement="blockMenuPayload?.placement"
-      :sideOffsetX="0"
-      :lockScrollOnOpen="true"
-      :enableMoveTo="false"
-      :enableDuplicate="false"
-      :enableCopyLink="false"
-      :enableComment="false"
-    />-->
     <CodeLanguageMenuController
       ref="langMenuRef"
       :pageId="langMenuPayload?.pageId"
@@ -472,7 +457,7 @@ async function onMenuAction(a: MenuActionPayload) {
       ref="confirmRef"
       :anchorKey="confirmPayload?.anchorKey || ''"
       :menuId="confirmPayload?.menuId || ''"
-      :payload="confirmPayload"
+      :payload="confirmPayload || {}"
       placement="center"
       @close="() => {}"
     />

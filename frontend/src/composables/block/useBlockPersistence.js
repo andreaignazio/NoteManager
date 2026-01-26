@@ -1,31 +1,31 @@
-import { useBlocksStore } from '@/stores/blocks'
+import { useAppActions } from "@/actions/useAppActions";
 
 function debounce(fn, delay) {
-  let t = null
+  let t = null;
   return (...args) => {
-    if (t) clearTimeout(t)
-    t = setTimeout(() => fn(...args), delay)
-  }
+    if (t) clearTimeout(t);
+    t = setTimeout(() => fn(...args), delay);
+  };
 }
 
 export function useBlockPersistence(blockId, opts = {}) {
-  const blocksStore = useBlocksStore()
-  const delay = opts.delay ?? 400
+  const actions = useAppActions();
+  const delay = opts.delay ?? 400;
 
   const save = debounce(async (payload) => {
-    await blocksStore.updateBlockContent(blockId, payload)
-  }, delay)
+    await actions.blocks.updateBlockContent(blockId, payload);
+  }, delay);
 
   function saveCode({ text, language, wrap }) {
-    const payload = { text }
-    if (language != null) payload.language = language
-    if (wrap != null) payload.wrap = wrap
-    return save(payload)
+    const payload = { text };
+    if (language != null) payload.language = language;
+    if (wrap != null) payload.wrap = wrap;
+    return save(payload);
   }
 
   function saveRich(json, text) {
-    return save({ json, text })
+    return save({ json, text });
   }
 
-  return { saveCode, saveRich }
+  return { saveCode, saveRich };
 }

@@ -99,8 +99,8 @@ const editor = useEditor({
     }),
     Highlight.configure({ multicolor: true }),
     PasteSplitExtension.configure({
-      onPasteSplit: ({ slice, state }) => {
-        console.log("onPasteSplit slice:", slice, "state:", state);
+      onPasteSplit: ({ slice, state, itemsOverride }) => {
+        //console.log("onPasteSplit slice:", slice, "state:", state);
         actions.editor.pasteSplitFlow({
           pageId: props.pageId,
           blockId: props.block.id,
@@ -108,6 +108,7 @@ const editor = useEditor({
           afterBlockId: props.block.id,
           editorState: state,
           slice: slice,
+          itemsOverride: itemsOverride,
         });
       },
     }),
@@ -233,7 +234,7 @@ function handleIconOpen() {
 
 function onSelectIcon(selectedIconId) {
   console.log("onSelectIcon", selectedIconId);
-  blocksStore.updateBlockIcon(props.block.id, selectedIconId);
+  actions.blocks.updateBlockIcon(props.block.id, selectedIconId);
 }
 
 //=== TODO BLOCKS ===
@@ -254,7 +255,11 @@ async function toggleTodoChecked(e) {
   localChecked.value = next;
 
   try {
-    await blocksStore.updateBlockContent(props.block.id, { checked: next });
+    await actions.blocks.updateBlockContent(
+      props.block.id,
+      { checked: next },
+      { undo: true, label: "toggleTodo" },
+    );
   } catch (err) {
     // rollback locale se fallisce
     localChecked.value = !!props.block.content?.checked;
@@ -308,9 +313,9 @@ async function onKeydown(e) {
       editor.value?.state?.selection?.from ?? e.target?.selectionStart ?? 0;
     try {
       if (e.shiftKey)
-        await blocksStore.outdentBlock(props.pageId, props.block.id);
-      else await blocksStore.indentBlock(props.pageId, props.block.id);
-      blocksStore.requestFocus(props.block.id, caret);
+        await actions.blocks.outdentBlock(props.pageId, props.block.id);
+      else await actions.blocks.indentBlock(props.pageId, props.block.id);
+      actions.blocks.requestFocus(props.block.id, caret);
     } catch {
       errorMsg.value = "Error modifying blocks hierarchy";
     }
@@ -414,7 +419,7 @@ function caretAt(el, caret) {
 }
 
 function focusCodeEnd() {
-  blocksStore.requestFocus(props.block.id, -1);
+  actions.blocks.requestFocus(props.block.id, -1);
 }
 
 watch(

@@ -178,10 +178,14 @@ class PageSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
 
 class PageDetailSerializer(PageSerializer):
-    blocks = BlockSerializer(many=True, read_only=True)
+    blocks = serializers.SerializerMethodField()
 
     class Meta(PageSerializer.Meta):
         fields = PageSerializer.Meta.fields + ['blocks']
+    
+    def get_blocks(self, obj):
+        qs = Block.objects.filter(page=obj).order_by("parent_block_id", "position", "id")
+        return BlockSerializer(qs, many=True).data
 
 class TransferSubtreeSerializer(serializers.Serializer):
     root_id = serializers.UUIDField()
