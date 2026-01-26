@@ -8,7 +8,7 @@ import MoveDestinationController from "@/components/menu/popover/MoveToDestinati
 import ConfirmPopoverController from "@/components/ConfirmPopoverController.vue";
 import { usePagesStore } from "@/stores/pages";
 import MegaHoverMenuController from "@/components/menu/MegaHoverMenuController.vue";
-import LinkPopover from "@/components/LinkPopover.vue";
+import LinkPopoverController from "@/components/LinkPopoverController.vue";
 
 import { useHostMenu } from "@/composables/useHostMenu";
 import CascadingHoverMenuController from "@/components/CascadingHoverMenuController.vue";
@@ -18,7 +18,7 @@ import { useAppActions } from "@/actions/useAppActions";
 import { useTempAnchors } from "@/actions/tempAnchors.actions";
 
 import type { MenuActionPayload } from "@/domain/menuActions";
-import { MENU_COMMANDS } from "@/domain/menuActions";
+import { useMenuActionDispatcher } from "@/composables/useMenuActionDispatcher";
 import { anchorKey } from "@/ui/anchorsKeyBind";
 
 const uiOverlay = useUIOverlayStore();
@@ -123,6 +123,7 @@ async function openMoveBlock(req: {
   payload?: any;
 }) {
   console.log("Opening move block menu from OverlayHost.vue", req);
+  moveDestPayload.value?.cleanup?.();
   const blockId = String(req.payload?.blockId);
   const fromPageId = String(blocksStore.blocksById?.[blockId]?.pageId ?? "");
 
@@ -135,6 +136,7 @@ async function openMoveBlock(req: {
     placement: req.payload?.placement ?? "left-start",
     blockId,
     fromPageId,
+    cleanup: req.payload?.cleanup,
   };
 
   await nextTick();
@@ -142,6 +144,8 @@ async function openMoveBlock(req: {
 }
 
 function closeMoveBlock() {
+  moveDestPayload.value?.cleanup?.();
+  moveDestPayload.value = null;
   moveDestRef.value?.close?.();
 }
 
@@ -160,8 +164,12 @@ async function openMovePage(req: {
 }) {
   const pageId = String(req.payload?.pageId);
 
+  moveDestPayload.value?.cleanup?.();
   // calcola discendenti -> disabilitati per evitare cicli
-  const disabled = pagesStore.collectDescendantsIds(pagesStore, pageId); // Set<string>
+  const disabled = pagesStore.collectDescendantsIds(
+    pageId,
+    pagesStore.childrenByParentId,
+  ); // Set<string>
   disabled.add(pageId);
 
   moveDestPayload.value = {
@@ -174,6 +182,7 @@ async function openMovePage(req: {
     rootLabel: "Top level",
     placement: req.payload?.placement ?? "left-start",
     pageId,
+    cleanup: req.payload?.cleanup,
   };
 
   await nextTick();
@@ -181,6 +190,8 @@ async function openMovePage(req: {
 }
 
 function closeMovePage() {
+  moveDestPayload.value?.cleanup?.();
+  moveDestPayload.value = null;
   moveDestRef.value?.close?.();
 }
 
@@ -204,7 +215,9 @@ async function onMoveDestSelect(targetPageId: string | null) {
   }
 }
 
-const confirmRef = ref(null);
+const confirmRef = ref<InstanceType<typeof ConfirmPopoverController> | null>(
+  null,
+);
 const confirmPayload = ref<any>({});
 
 async function openConfirm(req: {
@@ -241,8 +254,8 @@ onUnmounted(() => {
 });
 
 // === LINK POPOVER ===
-const linkPopoverEl = ref<any>(null);
 const linkPopoverPayload = ref<any>(null);
+const linkPopoverOpen = ref(false);
 const LINK_POPOVER_ID = "commons.linkPopover";
 
 async function openLinkPopover(req: {
@@ -250,17 +263,31 @@ async function openLinkPopover(req: {
   anchorKey: string;
   payload?: any;
 }) {
+  linkPopoverPayload.value?.cleanup?.();
   linkPopoverPayload.value = {
-    memuId: req.menuId,
+    menuId: req.menuId,
     anchorKey: req.anchorKey,
     blockId: req.payload?.blockId,
     pageId: req.payload?.pageId,
-    anchorRect: req.payload?.anchorRect,
+    currentPageId: req.payload?.currentPageId ?? req.payload?.pageId,
     initialHref: req.payload?.initialHref,
+    cleanup: req.payload?.cleanup,
   };
-  await nextTick();
-  linkPopoverEl.value?.open?.();
+  linkPopoverOpen.value = true;
 }
+
+function closeLinkPopover() {
+  linkPopoverPayload.value?.cleanup?.();
+  linkPopoverPayload.value = null;
+  linkPopoverOpen.value = false;
+}
+
+const unregLinkPopover = uiOverlay.registerMenu({
+  menuId: LINK_POPOVER_ID,
+  open: openLinkPopover,
+  close: closeLinkPopover,
+});
+onUnmounted(() => unregLinkPopover?.());
 
 // === STYLE MENU CONTROLLER ===
 const STYLE_MENU_ID = "block.menu";
@@ -305,105 +332,10 @@ function onStyleMenuDismiss() {
   uiOverlay.requestClose?.(STYLE_MENU_ID); // o il metodo equivalente nel tuo store
 }
 
-const commandHandlers: Record<
-  string,
-  (a: MenuActionPayload & { type: "command" }) => any
-> = {
-  [MENU_COMMANDS.BLOCK_DUPLICATE]: async (a) => {
-    const blockId = a.ctx.blockId;
-    if (!blockId) return;
-
-    await actions.blocks?.duplicateBlock?.(blockId);
-  },
-  [MENU_COMMANDS.BLOCK_DELETE]: async (a) => {
-    const blockId = a.ctx.blockId;
-    const pageId = a.ctx.pageId;
-
-    const tmpanchor = tempAnchors.registerViewportCenter();
-    try {
-      if (!blockId || !pageId || !tmpanchor) return;
-      await actions.blocks?.deleteBlockFlow?.({
-        blockId,
-        pageId,
-        anchorKey: tmpanchor.key,
-        placement: "center",
-      });
-    } finally {
-      tmpanchor?.unregister();
-    }
-  },
-
-  [MENU_COMMANDS.BLOCK_MOVE_TO_PAGE]: async (a) => {
-    const blockId = a.ctx.blockId;
-    if (!blockId) return;
-    const tmpanchor = tempAnchors.registerViewportCenter();
-    uiOverlay.requestOpen?.({
-      menuId: "block.moveTo",
-      anchorKey: tmpanchor!.key,
-      payload: {
-        blockId,
-        placement: "center",
-      },
-    });
-  },
-
-  // (opzionale già pronto, non serve per test)
-  [MENU_COMMANDS.BLOCK_APPLY_TYPE]: async (a) => {
-    const blockId = a.ctx.blockId;
-    if (!blockId) return;
-    const blockType = a.payload?.blockType;
-    if (!blockType) return;
-
-    await actions.blocks?.setBlockType?.(blockId, blockType);
-  },
-
-  [MENU_COMMANDS.BLOCK_SET_TEXT_COLOR]: async (a) => {
-    const blockId = a.ctx.blockId;
-    if (!blockId) return;
-    const colorToken = a.payload?.token;
-    if (!colorToken) return;
-
-    await actions.blocks?.setBlockTextColor?.(blockId, colorToken);
-  },
-  [MENU_COMMANDS.BLOCK_SET_BG_COLOR]: async (a) => {
-    const blockId = a.ctx.blockId;
-    if (!blockId) return;
-    const colorToken = a.payload?.token;
-    if (!colorToken) return;
-
-    await actions.blocks?.setBlockBgColor?.(blockId, colorToken);
-  },
-  [MENU_COMMANDS.BLOCK_SET_FONT]: async (a) => {
-    const blockId = a.ctx.blockId;
-    if (!blockId) return;
-    const fontId = a.payload?.fontId;
-    if (!fontId) return;
-
-    await actions.blocks?.setBlockFont?.(blockId, fontId);
-  },
-};
+const { dispatchMenuAction } = useMenuActionDispatcher();
 
 async function onMenuAction(a: MenuActionPayload) {
-  if (a.type === "openMenu") {
-    uiOverlay.requestOpen?.({
-      menuId: a.menuId,
-      anchorKey: a.anchorKey ?? a.ctx.anchorKey!,
-      payload: a.payload,
-    });
-    return;
-  }
-
-  if (a.type === "navigate") {
-    // router.push(a.to) ...
-    return;
-  }
-
-  if (a.type === "command") {
-    console.log("[OverlayHost] Menu command action:", a);
-    const fn = commandHandlers[a.command];
-    if (fn) return fn(a);
-    console.warn("[OverlayHost] Unhandled menu command:", a.command, a);
-  }
+  return dispatchMenuAction(a);
 }
 </script>
 
@@ -483,14 +415,13 @@ async function onMenuAction(a: MenuActionPayload) {
       @action="onMenuAction"
       @dismiss="onStyleMenuDismiss"
     />
-    <!--<LinkPopover
-      ref="linkPopoverEl"
+    <LinkPopoverController
       :open="linkPopoverOpen"
-      :blockId="linkPopoverState?.blockId"
-      :currentPageId="linkPopoverState?.currentPageId"
-      :anchorRect="linkPopoverState?.anchorRect"
-      :initialHref="linkPopoverState?.initialHref"
-    />-->
+      :blockId="linkPopoverPayload?.blockId || null"
+      :currentPageId="linkPopoverPayload?.currentPageId || null"
+      :anchorKey="linkPopoverPayload?.anchorKey || null"
+      :initialHref="linkPopoverPayload?.initialHref || null"
+    />
   </Teleport>
 </template>
 

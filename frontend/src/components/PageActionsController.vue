@@ -1,16 +1,14 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref, unref, watch } from "vue";
-import router from "@/router";
-import usePagesStore from "@/stores/pages";
+import { computed, nextTick, ref, unref, watch } from "vue";
 import useLiveAnchorRect from "@/composables/useLiveAnchorRect";
 import { useTempAnchors } from "@/actions/tempAnchors.actions";
 import ActionMenuDB from "@/components/ActionMenuDB.vue";
 
-import { getIconComponent } from "@/icons/catalog";
-import { useUIOverlayStore } from "@/stores/uioverlay";
 import { useAnchorRegistryStore } from "@/stores/anchorRegistry";
-import { useAppActions } from "@/actions/useAppActions";
 import { useOverlayBindingKeyed } from "@/composables/useOverlayBindingKeyed";
+import { useMenuActionDispatcher } from "@/composables/useMenuActionDispatcher";
+import { MENU_COMMANDS } from "@/domain/menuActions";
+import { buildPageActionsMenu } from "@/domain/pageMenuBuilders";
 const tempAnchors = useTempAnchors();
 
 const props = defineProps({
@@ -27,21 +25,13 @@ const props = defineProps({
 
 const emit = defineEmits(["rename", "deleted", "duplicated", "moved", "close"]);
 
-const pagesStore = usePagesStore();
-const uiOverlay = useUIOverlayStore();
 const anchorsStore = useAnchorRegistryStore();
-const actions = useAppActions();
+const { dispatchMenuAction } = useMenuActionDispatcher();
 // open states
 const rectTriggerOpen = ref(false);
 const menuOpen = ref(false);
-const moveOpen = ref(false);
-const delOpen = ref(false);
-const keepChildren = ref(true);
 
-const anyOpen = computed(
-  () =>
-    menuOpen.value || moveOpen.value || delOpen.value || rectTriggerOpen.value,
-);
+const anyOpen = computed(() => menuOpen.value || rectTriggerOpen.value);
 
 // anchor rect live (wrapper responsibility)
 //const anchorResolved = computed(() => unref(props.anchorEl) ?? null)
@@ -80,8 +70,6 @@ async function open() {
 function close() {
   rectTriggerOpen.value = false;
   menuOpen.value = false;
-  moveOpen.value = false;
-  delOpen.value = false;
   emit("close");
 }
 function toggle() {
@@ -97,14 +85,9 @@ watch(anyOpen, (v) => {
 
 //DOM Refs
 const mainMenuRef = ref(null);
-const moveMenuRef = ref(null);
-const delMenuRef = ref(null);
 
 const activeMenuEl = computed(() => {
-  if (delOpen.value) return delMenuRef.value?.el?.value ?? null;
-  if (moveOpen.value) return moveMenuRef.value?.el?.value ?? null;
-  if (menuOpen.value) return mainMenuRef.value?.el?.value ?? null;
-  return null;
+  return menuOpen.value ? (mainMenuRef.value?.el?.value ?? null) : null;
 });
 
 //====OVERLAY LAYER STACK====
@@ -146,57 +129,7 @@ useOverlayBindingKeyed(() => {
   };
 });
 
-function closeMainOnly() {
-  menuOpen.value = false;
-}
-
-function openDeletePopover() {
-  if (!props.pageId) return;
-  keepChildren.value = hasChildren.value;
-  delOpen.value = true;
-  nextTick(() => scheduleUpdate());
-}
-
-const menuItems = computed(() => [
-  { type: "item", id: "rename", label: "Rename", iconId: "lucide:edit-3" },
-  { type: "item", id: "duplicate", label: "Duplicate", iconId: "lucide:copy" },
-  { type: "separator" },
-  {
-    type: "item",
-    id: "move",
-    label: "Move to…",
-    iconId: "lucide:folder-input",
-  },
-  {
-    type: "item",
-    id: "share",
-    label: "Share…",
-    iconId: "lucide:link",
-    disabled: true,
-  },
-  { type: "separator" },
-  {
-    type: "item",
-    id: "delete",
-    label: "Delete",
-    iconId: "lucide:trash-2",
-    danger: true,
-  },
-]);
-
-const hasChildren = computed(() => {
-  try {
-    const id = props.pageId;
-    if (!id) return false;
-    return (
-      pagesStore.hasChildren?.(id) ??
-      (pagesStore.childrenByParentId?.[String(id)] ?? []).length > 0
-    );
-  } catch (e) {
-    console.error("[PageActions] hasChildren failed", e);
-    return false;
-  }
-});
+const menuItems = computed(() => buildPageActionsMenu());
 
 // handlers
 async function onMenuAction({ id }) {
@@ -209,12 +142,12 @@ async function onMenuAction({ id }) {
 
     if (id === "rename") {
       close();
-      uiOverlay.requestOpen({
+      await dispatchMenuAction({
+        type: "openMenu",
+        ctx: { pageId: String(props.pageId), anchorKey: props.anchorKey },
         menuId: "page.titlePopover",
-        anchorKey: props.anchorKey,
-        payload: {
-          pageId: props.pageId,
-        },
+        anchorKey: props.anchorKey ?? undefined,
+        payload: { pageId: props.pageId },
       });
 
       return;
@@ -222,31 +155,37 @@ async function onMenuAction({ id }) {
 
     if (id === "duplicate") {
       close();
-      await actions.pages.duplicatePage(props.pageId);
+      await dispatchMenuAction({
+        type: "command",
+        ctx: { pageId: String(props.pageId) },
+        command: MENU_COMMANDS.PAGE_DUPLICATE,
+      });
       return;
     }
 
     if (id === "move") {
       const tmpanchor = tempAnchors.registerViewportCenter();
-
-      uiOverlay.requestOpen({
+      close();
+      await dispatchMenuAction({
+        type: "openMenu",
+        ctx: { pageId: String(props.pageId) },
         menuId: "page.moveTo",
         anchorKey: tmpanchor.key,
         payload: {
           pageId: props.pageId,
           placement: "center",
+          cleanup: tmpanchor.unregister,
         },
       });
       return;
     }
 
     if (id === "delete") {
-      const tmpanchor = tempAnchors.registerViewportCenter();
       close();
-      actions.pages.deletePageFlow({
-        pageId: props.pageId,
-        anchorKey: tmpanchor.key,
-        placement: "center",
+      await dispatchMenuAction({
+        type: "command",
+        ctx: { pageId: String(props.pageId) },
+        command: MENU_COMMANDS.PAGE_DELETE,
       });
       return;
     }
@@ -255,63 +194,6 @@ async function onMenuAction({ id }) {
   } catch (e) {
     console.error("[PageActions] onMenuAction failed", e);
     close();
-  } finally {
-    console.groupEnd();
-  }
-}
-//===MOVE TO====
-
-const KEY_ROOT = "root";
-const parentKeyOf = (parentId) =>
-  parentId == null ? KEY_ROOT : String(parentId);
-
-const expandedMove = ref(new Set()); // Set<string>
-
-function isMoveExpanded(id) {
-  return expandedMove.value.has(String(id));
-}
-
-function toggleMoveExpanded(id) {
-  const k = String(id);
-  const next = new Set(expandedMove.value);
-  next.has(k) ? next.delete(k) : next.add(k);
-  expandedMove.value = next;
-}
-
-//===DELETE ===
-async function confirmDelete() {
-  const id = props.pageId;
-  if (!id) return;
-
-  console.group("[PageActions] delete confirm");
-  console.log("pageId:", id);
-
-  try {
-    const nextId = pagesStore.getNextPageIdAfterDelete?.(id);
-
-    if (hasChildren.value && keepChildren.value) {
-      try {
-        await actions.pages.reparentChildrenToParent(id);
-      } catch (e) {
-        console.error("[PageActions] reparentChildrenToParent failed", e);
-        throw e;
-      }
-    }
-
-    try {
-      await actions.pages.deletePage(id);
-    } catch (e) {
-      console.error("[PageActions] deletePage failed", e);
-      throw e;
-    }
-
-    emit("deleted", id);
-    close();
-
-    if (nextId) router.push({ name: "pageDetail", params: { id: nextId } });
-    else router.push("/");
-  } catch (e) {
-    console.error("[PageActions] DELETE FLOW FAILED", e);
   } finally {
     console.groupEnd();
   }
@@ -333,46 +215,6 @@ async function confirmDelete() {
         @action="onMenuAction"
         @close="close"
       />
-
-      <!-- DELETE POPOVER -->
-      <ActionMenuDB
-        ref="delMenuRef"
-        :open="delOpen"
-        :anchorRect="anchorRect"
-        :anchorEl="anchorEl"
-        :custom="true"
-        :minWidth="minWidthDelete"
-        :placement="placement"
-        :maxWPost="400"
-        :minHPre="800"
-        @close="close"
-      >
-        <div class="del-pop">
-          <div class="del-title">Delete page?</div>
-          <div class="del-text">
-            This will delete the page
-            <span v-if="hasChildren"> and its subpages.</span>
-          </div>
-
-          <label v-if="hasChildren" class="del-check">
-            <input type="checkbox" v-model="keepChildren" />
-            Keep subpages (move to parent)
-          </label>
-
-          <div class="del-actions">
-            <button class="btn-ghost" type="button" @click="close">
-              Cancel
-            </button>
-            <button
-              class="btn-ghost danger"
-              type="button"
-              @click="confirmDelete"
-            >
-              Delete
-            </button>
-          </div>
-        </div>
-      </ActionMenuDB>
     </Teleport>
   </div>
 </template>

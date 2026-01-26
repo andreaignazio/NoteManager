@@ -13,7 +13,6 @@ import PieMenu from "@/components/menu/PieMenu.vue";
 import PieColorMenu from "@/components/menu/PieColorMenu.vue";
 import PieHighlightMenu from "@/components/menu/PieHighlightMenu.vue";
 import PieBlockTypeMenu from "@/components/menu/PieBlockTypeMenu.vue";
-import LinkPopover from "@/components/LinkPopover.vue";
 import { usePieMenuPolicy } from "@/composables/usePieMenuPolicy";
 import { usePieMenuController } from "@/composables/usePieMenuController";
 import FlyoutSidebar from "@/components/shell/FlyoutSidebar.vue";
@@ -21,13 +20,11 @@ import PagesSidebar from "@/components/shell/PagesSidebar.vue";
 import Topbar from "@/components/shell/Topbar.vue";
 import { computeFloatingPosition } from "@/utils/computeFloatingPosition";
 import { useAppActions } from "@/actions/useAppActions";
-import { useEditorRegistryStore } from "@/stores/editorRegistry";
 import OverlayHost from "@/components/shell/OverlayHost.vue";
 
-import { useUIOverlayStore } from "@/stores/uioverlay";
-import { useAnchorRegistryStore } from "@/stores/anchorRegistry";
 import { anchorKey, anchorKind } from "@/ui/anchorsKeyBind";
-import { useTempAnchors } from "@/actions/tempAnchors.actions";
+import { MENU_COMMANDS } from "@/domain/menuActions";
+import { useMenuActionDispatcher } from "@/composables/useMenuActionDispatcher";
 
 const authStore = useAuthStore();
 const pagesStore = usePagesStore();
@@ -35,9 +32,6 @@ const blocksStore = useBlocksStore();
 const ui = useUiStore();
 const overlay = useOverlayStore();
 const actions = useAppActions();
-const editorRegStore = useEditorRegistryStore();
-const uiOverlay = useUIOverlayStore();
-const tempAnchors = useTempAnchors();
 ui.hydrate();
 
 const errorMsg = ref("");
@@ -451,6 +445,27 @@ function isInvertKey(ctx) {
   return ctx?.mods?.alt;
 }
 
+const { dispatchMenuAction } = useMenuActionDispatcher();
+
+function dispatchCommand(command, ctx, payload) {
+  return dispatchMenuAction({
+    type: "command",
+    ctx,
+    command,
+    payload,
+  });
+}
+
+function dispatchOpenMenu({ ctx, menuId, anchorKey, payload }) {
+  return dispatchMenuAction({
+    type: "openMenu",
+    ctx,
+    menuId,
+    anchorKey,
+    payload,
+  });
+}
+
 async function onPieAction(actionId, ctxFromEvent) {
   const ctx = ctxFromEvent ?? pieContext.value ?? {};
   console.log("[PIE] action:", actionId, ctx);
@@ -462,17 +477,19 @@ async function onPieAction(actionId, ctxFromEvent) {
       case "share":
         const BASE_URL = "http://localhost:5173";
         const URL = BASE_URL + `/pages/${pageId}`;
-        actions.utility.copyToClipboard(URL);
-        console.log("[PIE][sidebar] share", ctx);
+        await dispatchCommand(
+          MENU_COMMANDS.COPY_TO_CLIPBOARD,
+          { pageId },
+          {
+            text: URL,
+          },
+        );
         break;
       case "ai":
         console.log("[PIE][sidebar] ai tools", ctx);
         break;
       case "newPage":
-        console.log("[PIE][sidebar] new page", ctx);
-        console.log("PIE context:", ctx.pageId);
-        //actions.pages.createChildAndActivate(null)
-        actions.pages.createPageAfterAndActivate(pageId);
+        await dispatchCommand(MENU_COMMANDS.PAGE_CREATE_AFTER, { pageId });
         break;
       case "renamePage":
         const kind_title = anchorKind(
@@ -482,22 +499,18 @@ async function onPieAction(actionId, ctxFromEvent) {
           ctx.anchorScope,
         );
         const key_title = anchorKey(kind_title, pageId);
-
-        uiOverlay.requestOpen({
+        await dispatchOpenMenu({
+          ctx: { pageId, anchorKey: key_title },
           menuId: "page.titlePopover",
           anchorKey: key_title,
-          payload: { pageId: pageId },
+          payload: { pageId },
         });
-
-        //dockedSidebarRef.value?.onRenameFromMenu(pageId, ctx.anchorScope)
-        console.log("[PIE][sidebar] rename page", ctx);
         break;
       case "duplicatePage":
-        console.log("[PIE][sidebar] duplicate page", ctx);
-        await actions.pages.duplicatePage(pageId);
+        await dispatchCommand(MENU_COMMANDS.PAGE_DUPLICATE, { pageId });
         break;
       case "deletePage":
-        await actions.pages.deletePage(pageId);
+        await dispatchCommand(MENU_COMMANDS.PAGE_DELETE, { pageId });
         break;
       default:
         console.log("[PIE][sidebar] action:", actionId, ctx);
@@ -516,8 +529,7 @@ async function onPieAction(actionId, ctxFromEvent) {
 
   switch (actionId) {
     case "duplicate":
-      if (pageId) actions.blocks.duplicateBlock(blockId);
-      console.log("[PIE][main] duplicate", blockId);
+      await dispatchCommand(MENU_COMMANDS.BLOCK_DUPLICATE, { blockId, pageId });
       break;
 
     case "color":
@@ -526,40 +538,18 @@ async function onPieAction(actionId, ctxFromEvent) {
       break;
 
     case "highlight":
-      console.log(
-        "[PIE][main] highlight (default)",
-        ui.lastHighlightColor,
-        blockId,
+      await dispatchCommand(
+        MENU_COMMANDS.EDITOR_TOGGLE_HIGHLIGHT,
+        { blockId, pageId },
+        { color: ui.lastHighlightColor, unset: isInvertKey(ctx) },
       );
-
-      const ed = editorRegStore.getEditor(blockId);
-      if (!ed) return;
-
-      console.log("PIE CONEXT:", ctx.mods.alt);
-      if (isInvertKey(ctx)) {
-        console.log("[PIE][main] highlight unset (invert key)");
-        ed.commands.unsetHighlight();
-        //ed.chain().focus().unsetHighlight().run()
-      } else {
-        ed.chain()
-          .focus()
-          .toggleHighlight({ color: ui.lastHighlightColor })
-          .run();
-      }
       break;
 
     case "moveTo":
-      const tmpanchor = tempAnchors.registerViewportCenter();
-
-      uiOverlay.requestOpen({
-        menuId: "block.moveTo",
-        anchorKey: tmpanchor.key,
-        payload: {
-          blockId: blockId,
-          placement: "right",
-        },
+      await dispatchCommand(MENU_COMMANDS.BLOCK_MOVE_TO_PAGE, {
+        blockId,
+        pageId,
       });
-      console.log("[PIE][main] moveTo", blockId);
       break;
 
     case "changeType":
@@ -575,40 +565,43 @@ async function onPieAction(actionId, ctxFromEvent) {
       break;
 
     case "copy":
-      console.log("[PIE][main] copy", blockId);
-      await actions.text.copyBlockRich(blockId);
+      await dispatchCommand(MENU_COMMANDS.EDITOR_COPY, { blockId, pageId });
       break;
     case "paste":
-      await actions.text.pasteSmart(blockId);
-      console.log("[PIE][main] paste", blockId);
+      await dispatchCommand(MENU_COMMANDS.EDITOR_PASTE, { blockId, pageId });
       break;
 
     case "bold":
-      actions.text.toggleBold(blockId);
+      await dispatchCommand(MENU_COMMANDS.EDITOR_BOLD, { blockId, pageId });
       break;
 
     case "italic":
-      actions.text.toggleItalic(blockId);
+      await dispatchCommand(MENU_COMMANDS.EDITOR_ITALIC, { blockId, pageId });
       break;
 
     case "strike":
-      actions.text.toggleStrike(blockId);
+      await dispatchCommand(MENU_COMMANDS.EDITOR_STRIKE, { blockId, pageId });
       break;
 
     case "underline":
-      actions.text.toggleUnderline(blockId);
+      await dispatchCommand(MENU_COMMANDS.EDITOR_UNDERLINE, {
+        blockId,
+        pageId,
+      });
       break;
 
     case "link":
       if (ctx?.mods?.alt) {
-        console.log("[PIE][main] remove link", blockId);
-        actions.text.removeLinkInSelectionOrAtCaret(blockId);
+        await dispatchCommand(MENU_COMMANDS.EDITOR_REMOVE_LINK, {
+          blockId,
+          pageId,
+        });
         break;
-      } else {
-        onOpenLinkPopover(ctx);
-        console.log("[PIE][main] open link popover", blockId);
       }
-
+      await dispatchCommand(MENU_COMMANDS.EDITOR_OPEN_LINK, {
+        blockId,
+        pageId,
+      });
       break;
 
     default:
@@ -660,36 +653,37 @@ const pieController = usePieMenuController({
   onSetTextToken: async (token, ctx) => {
     const blockId = ctx?.blockId;
     if (!blockId) return;
-    const pageId = blocksStore.blocksById[blockId]?.pageId ?? null;
-    if (!pageId) return;
-
-    const stylePatch = { textColor: String(token) };
-    // 👇 usa la tua action reale
-    await actions.blocks.updateBlockStyle(blockId, stylePatch);
+    await dispatchCommand(
+      MENU_COMMANDS.BLOCK_SET_TEXT_COLOR,
+      { blockId },
+      { token: String(token) },
+    );
   },
 
   onSetBgToken: async (token, ctx) => {
     const blockId = ctx?.blockId;
     if (!blockId) return;
-    const pageId = blocksStore.blocksById[blockId]?.pageId ?? null;
-    if (!pageId) return;
-
-    const stylePatch = { bgColor: String(token) };
-    await actions.blocks.updateBlockStyle(blockId, stylePatch);
+    await dispatchCommand(
+      MENU_COMMANDS.BLOCK_SET_BG_COLOR,
+      { blockId },
+      { token: String(token) },
+    );
   },
   onSetHighlightColor: async (color, ctx) => {
-    // 1) salva last color nello ui store
-    ui.lastHighlightColor = color;
-    const ed = editorRegStore.getEditor(ctx?.blockId);
-    ed?.chain().focus().toggleHighlight({ color }).run();
-    console.log("[PIE][main] setHighlight", color, ctx);
+    await dispatchCommand(
+      MENU_COMMANDS.EDITOR_SET_HIGHLIGHT,
+      { blockId: ctx?.blockId },
+      { color },
+    );
   },
   onSetBlockType: async (blockType, ctx) => {
     const blockId = ctx?.blockId;
     if (!blockId) return;
-
-    await actions.blocks.setBlockType(blockId, blockType);
-    console.log("[PIE][main] setBlockType", blockType, ctx);
+    await dispatchCommand(
+      MENU_COMMANDS.BLOCK_APPLY_TYPE,
+      { blockId },
+      { blockType },
+    );
   },
 });
 
@@ -778,64 +772,6 @@ const HIGHLIGHT_COLORS = [
   "#80DEEA",
   "#A5D6A7",
 ];
-
-// ====== LINK POPOVER OVERLAY ======
-
-const linkPopoverOpen = ref(false);
-const linkPopoverState = ref(null);
-const linkPopoverEl = ref(null);
-
-useOverlayBinding({
-  id: "link-popover",
-  kind: "modal",
-  priority: 220, // > pie (es. pie=20)
-  behaviour: "exclusiveKinds",
-  exclusiveKinds: ["pie", "dropdown", "hoverbar", "tooltip"],
-
-  isOpen: () => linkPopoverOpen.value,
-
-  // importante: con un modal spesso vuoi scope "local" (click fuori lo chiude),
-  // oppure "global" se vuoi far passare i pointerdown fuori senza stopPropagation
-  getInteractionScope: () => "local",
-
-  requestClose: (reason) => {
-    onCloseLinkPopover();
-  },
-
-  getMenuEl: () => linkPopoverEl.value,
-  getAnchorEl: () => null,
-
-  options: {
-    closeOnEsc: true,
-    closeOnOutside: true,
-    lockScroll: false, // o true se è proprio un modal blocking
-    stopPointerOutside: true,
-    allowAnchorClick: true,
-    restoreFocus: true,
-  },
-});
-
-function onOpenLinkPopover(ctx) {
-  const blockId = ctx?.blockId;
-  if (!blockId) return;
-  const ed = editorRegStore.getEditor(blockId);
-  const activeHref = ed ? actions.text.getActiveLinkHref(blockId) : null;
-  const anchorRect = ed ? actions.text.getSelectionRect(ed) : null;
-  const pageId = blocksStore.blocksById[blockId]?.pageId ?? null;
-  linkPopoverState.value = {
-    blockId: String(blockId),
-    anchorRect,
-    initialHref: activeHref ?? "",
-    currentPageId: pageId,
-  };
-
-  linkPopoverOpen.value = true;
-}
-
-function onCloseLinkPopover() {
-  linkPopoverState.value = null;
-  linkPopoverOpen.value = false;
-}
 </script>
 
 <template>
@@ -972,16 +908,6 @@ function onCloseLinkPopover() {
       :currentType="currentBlockType"
       :onRegisterApi="pieController.registerMenuApi"
       :onUnregisterApi="pieController.unregisterMenuApi"
-    />
-  </Teleport>
-  <Teleport to="body">
-    <LinkPopover
-      ref="linkPopoverEl"
-      :open="linkPopoverOpen"
-      :blockId="linkPopoverState ? linkPopoverState?.blockId : null"
-      :currentPageId="linkPopoverState ? linkPopoverState?.currentPageId : null"
-      :anchorRect="linkPopoverState ? linkPopoverState?.anchorRect : null"
-      :initialHref="linkPopoverState ? linkPopoverState?.initialHref : null"
     />
   </Teleport>
   <OverlayHost />

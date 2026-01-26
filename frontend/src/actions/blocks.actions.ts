@@ -1,6 +1,6 @@
 import { useBlocksStore } from "@/stores/blocks";
 import { nextTick } from "vue";
-import { useUIOverlayStore } from "@/stores/uiOverlay";
+import { useUIOverlayStore } from "@/stores/uioverlay";
 
 export function useBlockActions() {
   const blocksStore = useBlocksStore();
