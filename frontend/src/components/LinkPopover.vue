@@ -7,7 +7,7 @@ import PagePickerList from "@/components/PagePickerList.vue"; // <- aggiusta pat
 
 const props = defineProps<{
   open: boolean;
-  blockId: string;
+  blockId: string | null;
   currentPageId?: string | null;
   anchorRect: {
     left: number;
@@ -16,7 +16,7 @@ const props = defineProps<{
     bottom: number;
     width: number;
     height: number;
-  };
+  } | null;
   initialHref?: string | null;
 }>();
 

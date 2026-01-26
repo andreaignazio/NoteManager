@@ -9,6 +9,7 @@ import MoveDestinationController from "@/components/menu/popover/MoveToDestinati
 import ConfirmPopoverController from "@/components/ConfirmPopoverController.vue";
 import { usePagesStore } from "@/stores/pages";
 import MegaHoverMenuController from "@/components/menu/MegaHoverMenuController.vue";
+import LinkPopover from "@/components/LinkPopover.vue";
 
 import { useHostMenu } from "@/composables/useHostMenu";
 import CascadingHoverMenuController from "@/components/CascadingHoverMenuController.vue";
@@ -19,6 +20,7 @@ import { useTempAnchors } from "@/actions/tempAnchors.actions";
 
 import type { MenuActionPayload } from "@/domain/menuActions";
 import { MENU_COMMANDS } from "@/domain/menuActions";
+import { anchorKey } from "@/ui/anchorsKeyBind";
 
 const uiOverlay = useUIOverlayStore();
 const blocksStore = useBlocksStore();
@@ -82,36 +84,6 @@ const unregisterActions = uiOverlay.registerMenu({
   close: closePageActions,
 });
 onUnmounted(() => unregisterActions?.());
-
-/*
-//===BLOCK MENU====
-const blockMenuRef = ref<any>(null);
-const blockMenuPayload = ref<any>(null);
-async function openBlockMenu(req: {
-  menuId: string;
-  anchorKey: string;
-  payload?: any;
-}) {
-  console.log("Opening block menu from OverlayHost.vue", req);
-  blockMenuPayload.value = {
-    pageId: blocksStore.blocksById[req.payload?.blockId]?.pageId,
-    blockId: req.payload?.blockId,
-    anchorKey: req.anchorKey,
-    placement: req.payload?.placement || "right",
-  };
-  await nextTick();
-  blockMenuRef.value?.open?.();
-}
-function closeBlockMenu() {
-  blockMenuRef.value?.close?.();
-}
-const unregisterBlockMenu = uiOverlay.registerMenu({
-  menuId: "block.menu",
-  open: openBlockMenu,
-  close: closeBlockMenu,
-});
-onUnmounted(() => unregisterBlockMenu?.());
-*/
 
 //===CODE LANGUAGE MENU====
 const langMenuRef = ref<any>(null);
@@ -269,34 +241,27 @@ onUnmounted(() => {
   unregBlockConfirm?.();
 });
 
-/*const tmpItems = [
-  { id: "rename", label: "Rename", action: () => console.log("rename") },
-  {
-    id: "move",
-    label: "Move to…",
-    children: [
-      { id: "move:a", label: "Page A", action: () => console.log("A") },
-      { id: "move:b", label: "Page B", action: () => console.log("B") },
-    ],
-  },
-  { id: "delete", label: "Delete", action: () => console.log("delete") },
-];
+// === LINK POPOVER ===
+const linkPopoverEl = ref<any>(null);
+const linkPopoverPayload = ref<any>(null);
+const LINK_POPOVER_ID = "commons.linkPopover";
 
-const blockMenuRef = ref<any>(null);
-const blockMenuPayload = ref<any>(null);
-useHostMenu(
-  "block.menu",
-  blockMenuRef,
-  blockMenuPayload,
-  (req: { menuId: string; anchorKey: string; payload?: any }) => {
-    return {
-      anchorKey: req.anchorKey,
-      blockId: req.payload?.blockId,
-      placement: req.payload?.placement,
-      items: tmpItems,
-    };
-  },
-);*/
+async function openLinkPopover(req: {
+  menuId: string;
+  anchorKey: string;
+  payload?: any;
+}) {
+  linkPopoverPayload.value = {
+    memuId: req.menuId,
+    anchorKey: req.anchorKey,
+    blockId: req.payload?.blockId,
+    pageId: req.payload?.pageId,
+    anchorRect: req.payload?.anchorRect,
+    initialHref: req.payload?.initialHref,
+  };
+  await nextTick();
+  linkPopoverEl.value?.open?.();
+}
 
 // === STYLE MENU CONTROLLER ===
 const STYLE_MENU_ID = "block.menu";
@@ -533,6 +498,14 @@ async function onMenuAction(a: MenuActionPayload) {
       @action="onMenuAction"
       @dismiss="onStyleMenuDismiss"
     />
+    <!--<LinkPopover
+      ref="linkPopoverEl"
+      :open="linkPopoverOpen"
+      :blockId="linkPopoverState?.blockId"
+      :currentPageId="linkPopoverState?.currentPageId"
+      :anchorRect="linkPopoverState?.anchorRect"
+      :initialHref="linkPopoverState?.initialHref"
+    />-->
   </Teleport>
 </template>
 

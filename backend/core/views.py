@@ -5,8 +5,13 @@ from rest_framework.exceptions import PermissionDenied
 from django.db.models import Prefetch
 from rest_framework.exceptions import ValidationError
 from .serializers import TransferSubtreeSerializer, DuplicatePageDeepSerializer, PageSerializer,  DuplicateBlockSubtreeSerializer
+from .serializers import BlockBatchCreateSerializer
 from django.db import transaction, IntegrityError
-from fractional_indexing import generate_key_between
+from fractional_indexing import generate_key_between, generate_n_keys_between
+from core.utils.tree import flatten_tree
+from collections import defaultdict
+
+
 import uuid
 
 from .models import Page, Block
@@ -329,6 +334,167 @@ class PageViewSet(viewsets.ModelViewSet):
                     "include_children": include_children,
                 },
                 status=status.HTTP_201_CREATED
+            )
+
+    
+
+    @action(detail=True, methods=["post"], url_path="blocks/batch")
+    def batch_create_blocks(self, request, pk=None):
+        page = self.get_object()
+
+        ser = BlockBatchCreateSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+
+        parent_id = data.get("parent_block", None)
+        after_id = data.get("after_block_id", None)
+        tree_items = data["blocks"]  # adesso è tree
+
+        with transaction.atomic():
+            # 1) resolve/lock parent esterno (se presente)
+            target_parent_id = None
+            if parent_id is not None:
+                try:
+                    target_parent_id = str(
+                        Block.objects.select_for_update().get(id=parent_id, page=page).id
+                    )
+                except Block.DoesNotExist:
+                    raise ValidationError({"parent_block": "parent_block must belong to the same page"})
+
+            # 2) flatten tree
+            flat = flatten_tree(tree_items)  # lista di dict con _parent_temp
+
+            # 3) alloc UUIDs + map tempId -> uuid
+            temp_map = {}
+            node_ids = []
+            for it in flat:
+                bid = uuid.uuid4()
+                node_ids.append(bid)
+                tid = it.get("tempId")
+                if tid:
+                    # opzionale: valida unicità tempId
+                    if tid in temp_map:
+                        raise ValidationError({"blocks": f"Duplicate tempId: {tid}"})
+                    temp_map[tid] = str(bid)
+
+            # 4) resolve parent_block_id per ogni node
+            #    - se _parent_temp è presente => parent è un blocco nuovo (lookup in temp_map)
+            #    - altrimenti => parent è target_parent_id (può essere None)
+            for idx, it in enumerate(flat):
+                ptemp = it.get("_parent_temp")
+                if ptemp:
+                    pid = temp_map.get(ptemp)
+                    if not pid:
+                        raise ValidationError({"blocks": f"Unknown parent tempId: {ptemp}"})
+                    it["_parent_id"] = pid
+                else:
+                    it["_parent_id"] = target_parent_id  # None ok
+
+            # 5) per ogni parent_id: lock siblings + calcola positions
+            #    manteniamo l'ordine di input per ogni gruppo
+            groups = defaultdict(list)  # parent_id -> list of node indexes
+            for idx, it in enumerate(flat):
+                groups[it["_parent_id"]].append(idx)
+
+            positions_by_idx = {}
+
+            # ✅ LOCK ONCE: tutti i siblings di tutti i parent che toccheremo
+            parent_ids_to_lock = set(groups.keys())
+            
+            # Separa None dai veri parent_ids (ORM non supporta None in __in)
+            from django.db.models import Q
+            parent_ids_nonnull = {pid for pid in parent_ids_to_lock if pid is not None}
+            
+            query = Q(page=page)
+            if parent_ids_nonnull:
+                query &= Q(parent_block_id__in=parent_ids_nonnull)
+                if None in parent_ids_to_lock:
+                    query |= Q(page=page, parent_block_id__isnull=True)
+            else:
+                query &= Q(parent_block_id__isnull=True)
+            
+            all_siblings = list(
+                Block.objects.select_for_update()
+                .filter(query)
+                .values_list("id", "parent_block_id", "position")
+                .order_by("parent_block_id", "position", "id")
+            )
+
+            # Organizza siblings per parent
+            siblings_by_parent = defaultdict(list)
+            for bid, pid, pos in all_siblings:
+                siblings_by_parent[pid].append((bid, pos))
+
+            # 5a) gruppo root: usa after_id come prima
+            root_pid = target_parent_id
+            if root_pid in groups:
+                siblings = siblings_by_parent.get(root_pid, [])
+
+                if after_id is not None:
+                    # Trova after_id nei siblings
+                    after_pos = next((pos for bid, pos in siblings if bid == after_id), None)
+                    if after_pos is None:
+                        raise ValidationError({"after_block_id": "after_block_id must be a sibling under target parent"})
+                    prev_pos = after_pos
+                    nxt = next((pos for bid, pos in siblings if pos > prev_pos), None)
+                    next_pos = nxt
+                else:
+                    last_pos = siblings[-1][1] if siblings else None
+                    prev_pos = last_pos
+                    next_pos = None
+
+                idxs = groups[root_pid]
+                pos_list = generate_n_keys_between(prev_pos, next_pos, n=len(idxs))
+                for j, idx in enumerate(idxs):
+                    positions_by_idx[idx] = pos_list[j]
+
+            # 5b) gruppi figli: append sotto parent nuovo
+            for pid, idxs in groups.items():
+                if pid == root_pid:
+                    continue
+                siblings = siblings_by_parent.get(pid, [])
+                last_pos = siblings[-1][1] if siblings else None
+                prev_pos = last_pos
+                next_pos = None
+
+                pos_list = generate_n_keys_between(prev_pos, next_pos, n=len(idxs))
+                for j, idx in enumerate(idxs):
+                    positions_by_idx[idx] = pos_list[j]
+
+            # 6) bulk create
+            to_create = []
+            for i, it in enumerate(flat):
+                bid = node_ids[i]
+                to_create.append(Block(
+                    id=bid,
+                    page=page,
+                    parent_block_id=it["_parent_id"],  # string uuid or None
+                    kind=it["kind"],
+                    type=it["type"],
+                    content=it.get("content") or {},
+                    props=it.get("props") or {},
+                    layout=it.get("layout") or {},
+                    width=it.get("width"),
+                    position=positions_by_idx[i],
+                    version=1,
+                ))
+
+            Block.objects.bulk_create(to_create, batch_size=1000)
+
+            # 7) top-level ids (utile al client)
+            top_level_ids = []
+            for idx, it in enumerate(flat):
+                if it.get("_parent_temp") is None:
+                    top_level_ids.append(str(node_ids[idx]))
+
+            return Response(
+                {
+                    "ok": True,
+                    "map": temp_map,  # tempId -> uuid
+                    "ids": [str(x) for x in node_ids],
+                    "topLevelIds": top_level_ids,
+                },
+                status=status.HTTP_201_CREATED,
             )
 
     def _append_favorite_position(self, owner, parent_id=None):

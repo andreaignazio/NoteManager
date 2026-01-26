@@ -37,7 +37,11 @@ import { useFocusRequestRouter } from "@/composables/block/useFocusRequestRouter
 
 import { fontCssVar } from "@/domain/fontCatalog";
 
+import { PasteSplitExtension } from "@/editor/extensions/pasteSplit";
+import { useAppActions } from "@/actions/useAppActions";
+
 const blocksStore = useBlocksStore();
+const actions = useAppActions();
 
 const props = defineProps({
   block: Object,
@@ -94,6 +98,19 @@ const editor = useEditor({
       showOnlyCurrent: true,
     }),
     Highlight.configure({ multicolor: true }),
+    PasteSplitExtension.configure({
+      onPasteSplit: ({ slice, state }) => {
+        console.log("onPasteSplit slice:", slice, "state:", state);
+        actions.editor.pasteSplitFlow({
+          pageId: props.pageId,
+          blockId: props.block.id,
+          parentBlockId: props.block.parentId ?? null,
+          afterBlockId: props.block.id,
+          editorState: state,
+          slice: slice,
+        });
+      },
+    }),
   ],
   editorProps: {
     attributes: {
@@ -101,6 +118,30 @@ const editor = useEditor({
       "data-block-editor": "true",
       "data-block-id": props.block.id,
     },
+    /*handlePaste(view, event, slice) {
+      console.log(
+        "handlePaste slice:",
+        slice,
+        "viewStateSchema:",
+        view.state.schema,
+      );
+      const units = sliceToUnits(slice, view.state.schema);
+      console.log("handlePaste units:", units);
+      // se è un solo paragraph “semplice”, lascia paste normale
+      if (units.kind === "singleInline") return false;
+
+      event.preventDefault();
+      actions.blocks.pasteSplitFlow({
+        pageId,
+        blockId: currentBlockId,
+        parentBlockId: currentParentId ?? null,
+        afterBlockId: currentBlockId,
+        selection: view.state.selection,
+        slice,
+        units,
+      });
+      return true;
+    },*/
     handleKeyDown: (view, event) => {
       if (event.key === "Enter" && !event.shiftKey) {
         onKeydown(event);

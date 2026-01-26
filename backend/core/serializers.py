@@ -86,7 +86,91 @@ class BlockCreateSerializer(serializers.ModelSerializer):
         else:
             attrs.setdefault("content", {})
         return attrs
+    
+class RecursiveField(serializers.Field):
+    """Permette a un serializer di referenziarsi ricorsivamente (children)."""
+    def to_internal_value(self, data):
+        parent = self.parent
+        # se il field è ListSerializer -> parent.parent è il serializer “vero”
+        serializer = parent.parent.__class__(context=self.context)
+        return serializer.to_internal_value(data)
 
+    def to_representation(self, value):
+        parent = self.parent
+        serializer = parent.parent.__class__(context=self.context)
+        return serializer.to_representation(value)
+
+class BlockBatchItemSerializer(serializers.Serializer):
+    tempId = serializers.CharField(required=False)
+    kind = serializers.CharField()
+    type = serializers.CharField()
+
+    content = serializers.JSONField(required=False)
+    props = serializers.JSONField(required=False)
+    layout = serializers.JSONField(required=False)
+    width = serializers.IntegerField(required=False, allow_null=True)
+
+    # ✅ nuovo: children ricorsivo
+    children = serializers.ListField(
+        child=RecursiveField(),
+        required=False,
+        allow_empty=True,
+    )
+
+    def validate(self, attrs):
+        # normalizza defaults
+        attrs.setdefault("content", {})
+        attrs.setdefault("props", {})
+        attrs.setdefault("layout", {})
+
+        # applica normalizzazione content come fai già
+        kind = attrs.get("kind", BlockKind.BLOCK)
+        if kind == BlockKind.BLOCK:
+            block_type = attrs.get("type", BlockType.PARAGRAPH)
+            attrs["content"] = normalize_block_content(block_type, attrs.get("content"))
+        else:
+            # se hai altri kind, decidi la policy
+            attrs["content"] = attrs.get("content") or {}
+
+        return attrs
+
+class BlockBatchCreateSerializer(serializers.Serializer):
+    parent_block = serializers.UUIDField(required=False, allow_null=True)
+    after_block_id = serializers.UUIDField(required=False, allow_null=True)
+    blocks = BlockBatchItemSerializer(many=True)
+
+    MAX_NODES = 2000
+    MAX_DEPTH = 50  # scegli tu
+
+    def _walk(self, items, depth=0):
+        if depth > self.MAX_DEPTH:
+            raise serializers.ValidationError(f"tree too deep (>{self.MAX_DEPTH})")
+        for it in items:
+            yield it, depth
+            ch = it.get("children") or []
+            yield from self._walk(ch, depth + 1)
+
+    def validate(self, attrs):
+        blocks = attrs.get("blocks") or []
+        if not blocks:
+            raise serializers.ValidationError({"blocks": "blocks cannot be empty"})
+
+        # conta nodi + tempId unique
+        count = 0
+        seen = set()
+        for it, depth in self._walk(blocks, 0):
+            count += 1
+            tid = it.get("tempId")
+            if tid:
+                if tid in seen:
+                    raise serializers.ValidationError({"blocks": f"duplicate tempId: {tid}"})
+                seen.add(tid)
+
+        if count > self.MAX_NODES:
+            raise serializers.ValidationError({"blocks": f"too many blocks (>{self.MAX_NODES})"})
+
+        return attrs
+    
 class PageSerializer(serializers.ModelSerializer):
     class Meta:
         model = Page

@@ -789,7 +789,7 @@ const linkPopoverEl = ref(null);
 useOverlayBinding({
   id: "link-popover",
   kind: "modal",
-  priority: 100, // > pie (es. pie=20)
+  priority: 220, // > pie (es. pie=20)
   behaviour: "exclusiveKinds",
   exclusiveKinds: ["pie", "dropdown", "hoverbar", "tooltip"],
 
@@ -979,10 +979,10 @@ function onCloseLinkPopover() {
     <LinkPopover
       ref="linkPopoverEl"
       :open="linkPopoverOpen"
-      :blockId="linkPopoverState?.blockId"
-      :currentPageId="linkPopoverState?.currentPageId"
-      :anchorRect="linkPopoverState?.anchorRect"
-      :initialHref="linkPopoverState?.initialHref"
+      :blockId="linkPopoverState ? linkPopoverState?.blockId : null"
+      :currentPageId="linkPopoverState ? linkPopoverState?.currentPageId : null"
+      :anchorRect="linkPopoverState ? linkPopoverState?.anchorRect : null"
+      :initialHref="linkPopoverState ? linkPopoverState?.initialHref : null"
     />
   </Teleport>
   <OverlayHost />

@@ -2,6 +2,7 @@ import { usePageActions } from "./pages.actions";
 import { useTextActions } from "./text.actions";
 import { useUtilityActions } from "./utility.actions";
 import { useBlockActions } from "./blocks.actions";
+import { useEditorActions } from "./editor.actions";
 import { nextTick } from "vue";
 import { useBlocksStore } from "@/stores/blocks";
 import usePagesStore from "@/stores/pages";
@@ -19,6 +20,7 @@ export function useAppActions() {
   const text = useTextActions();
   const utility = useUtilityActions();
   const blocks = useBlockActions();
+  const editor = useEditorActions();
   // const blocks = useBlockActions()
   // const overlays = useOverlayActions()
 
@@ -40,6 +42,7 @@ export function useAppActions() {
     text,
     utility,
     blocks,
+    editor,
     moveBlockTreeToPageAndFocus /*, overlays*/,
   };
 }

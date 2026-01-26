@@ -1,0 +1,1427 @@
+import { defineStore } from "pinia";
+import api from "@/services/api";
+import { DEFAULT_BLOCK_TYPE } from "@/domain/blockTypes";
+import { posBetween } from "@/domain/position";
+import { normalizeProps, isTextToken, isBgToken } from "@/theme/colorsCatalog";
+import { DEFAULT_ICON_ID } from "@/icons/catalog";
+import { isFontToken } from "@/domain/fontCatalog";
+
+// ===========================
+// TYPE DEFINITIONS
+// ===========================
+
+interface BlockStyle {
+  textColor?: string;
+  bgColor?: string;
+  font?: string;
+  [key: string]: any;
+}
+
+interface BlockProps {
+  style?: BlockStyle;
+  iconId?: string | null;
+  [key: string]: any;
+}
+
+interface BlockContent {
+  text?: string;
+  json?: any;
+  isExpanded?: boolean;
+  language?: string;
+  wrap?: boolean;
+  [key: string]: any;
+}
+
+interface BlockLayout {
+  [key: string]: any;
+}
+
+interface Block {
+  id: string;
+  pageId: string;
+  parentId: string | null;
+  kind: "block" | "row" | string;
+  type: string;
+  content: BlockContent;
+  layout: BlockLayout;
+  width: string | null;
+  position: string;
+  version: number;
+  updatedAt: string | null;
+  props: BlockProps;
+}
+
+interface RawBlock {
+  id: string | number;
+  page: string | number;
+  parent_block: string | number | null;
+  kind?: string;
+  type: string;
+  content?: BlockContent;
+  layout?: BlockLayout;
+  width?: string | null;
+  position?: string;
+  version?: number;
+  updated_at?: string | null;
+  props?: any;
+}
+
+interface FocusRequest {
+  blockId: string;
+  caret: number;
+}
+
+interface OptionsMenu {
+  open: boolean;
+  blockId: string | null;
+  anchorRect: any;
+}
+
+interface TransactionOp {
+  op: "create" | "move" | "update" | "delete";
+  id?: string;
+  node?: any;
+  parentId?: string | null;
+  position?: string;
+  patch?: Record<string, any>;
+}
+
+interface Transaction {
+  ops: TransactionOp[];
+}
+
+interface BatchBlockItem {
+  tempId?: string;
+  kind?: string;
+  type?: string;
+  content?: BlockContent;
+  props?: BlockProps;
+  layout?: BlockLayout;
+  width?: string | null;
+  children?: BatchBlockItem[];
+}
+
+interface BatchAddResponse {
+  ids: string[];
+  map: Record<string, string>;
+}
+
+interface FlattenedBlock {
+  id: string;
+  level: number;
+}
+
+interface RenderRow {
+  block: Block;
+  level: number;
+}
+
+interface BlocksStoreState {
+  // data
+  blocksById: Record<string, Block>;
+  blocksByPage: Record<string, string[]>;
+  childrenByParentId: Record<string, Record<string, string[]>>;
+  expandedById: Record<string, boolean>;
+
+  // selection
+  currentBlockId: string | null;
+  focusRequestId: FocusRequest | null;
+
+  _contentTokens: Record<string, number>;
+  _patchTokens?: Record<string, number>;
+
+  // options menu
+  optionsMenu: OptionsMenu;
+
+  // anti-race fetch
+  _fetchTokenByPage: Record<string, number>;
+}
+
+// ===========================
+// HELPER FUNCTIONS
+// ===========================
+
+function normalizeBlock(raw: RawBlock): Block {
+  return {
+    id: String(raw.id),
+    pageId: String(raw.page),
+    parentId: raw.parent_block == null ? null : String(raw.parent_block),
+    kind: raw.kind ?? "block",
+    type: raw.type,
+    content: raw.content ?? { text: "" },
+    layout: raw.layout ?? {},
+    width: raw.width ?? null,
+    position: raw.position ?? "",
+    version: raw.version ?? 1,
+    updatedAt: raw.updated_at ?? null,
+    props: normalizeProps(raw.props),
+  };
+}
+
+const KEY_ROOT = "root";
+const parentKeyOf = (parentId: string | null): string =>
+  parentId == null ? KEY_ROOT : String(parentId);
+const normalizeParentForApi = (
+  pid: string | null | undefined,
+): string | null => (pid === "root" || pid === undefined ? null : String(pid));
+
+// ===========================
+// STORE DEFINITION
+// ===========================
+
+export const useBlocksStore = defineStore("blocksStore", {
+  state: (): BlocksStoreState => ({
+    // data
+    blocksById: {},
+    blocksByPage: {},
+    childrenByParentId: {},
+    expandedById: {},
+
+    // selection
+    currentBlockId: null,
+    focusRequestId: null,
+
+    _contentTokens: {},
+
+    // options menu
+    optionsMenu: {
+      open: false,
+      blockId: null,
+      anchorRect: null,
+    },
+
+    // anti-race fetch
+    _fetchTokenByPage: {},
+  }),
+
+  getters: {
+    currentBlock(state): Block | null {
+      return state.currentBlockId
+        ? state.blocksById[state.currentBlockId]
+        : null;
+    },
+
+    blocksForPage:
+      (state) =>
+      (pageId: string | number): Block[] => {
+        const pageIdStr = String(pageId);
+        return (state.blocksByPage[pageIdStr] ?? [])
+          .map((blockId) => state.blocksById[blockId])
+          .filter(Boolean);
+      },
+
+    flattenForPage:
+      (state) =>
+      (pageId: string | number): FlattenedBlock[] => {
+        const pageIdStr = String(pageId);
+        const pageMap = state.childrenByParentId[pageIdStr] ?? {};
+        const out: FlattenedBlock[] = [];
+
+        const visit = (parentKey: string, level: number): void => {
+          const childIds = pageMap[parentKey] ?? [];
+          for (const id of childIds) {
+            const block = state.blocksById[id];
+            if (!block) continue;
+            out.push({ id, level });
+            visit(String(id), level + 1);
+          }
+        };
+
+        visit(KEY_ROOT, 0);
+        return out;
+      },
+
+    renderRowsForPage:
+      (state) =>
+      (pageId: string | number): RenderRow[] => {
+        const pageIdStr = String(pageId);
+        const pageMap = state.childrenByParentId[pageIdStr] ?? {};
+        const out: FlattenedBlock[] = [];
+
+        const visit = (parentKey: string, level: number): void => {
+          const childIds = pageMap[parentKey] ?? [];
+          for (const id of childIds) {
+            const block = state.blocksById[id];
+            if (!block) continue;
+            out.push({ id, level });
+            visit(String(id), level + 1);
+          }
+        };
+
+        visit(KEY_ROOT, 0);
+
+        return (out ?? [])
+          .map(({ id, level }) => {
+            const block = state.blocksById[id];
+            return block ? { block, level } : null;
+          })
+          .filter((item): item is RenderRow => item !== null);
+      },
+
+    getOlNumber:
+      (state) =>
+      (pageId: string | number, blockId: string | number): number | null => {
+        const pageIdStr = String(pageId);
+        const blockIdStr = String(blockId);
+
+        const b = state.blocksById[blockIdStr];
+        if (!b) return null;
+        if (b.type !== "ol") return null;
+
+        const pageMap = state.childrenByParentId[pageIdStr] ?? {};
+        const key = parentKeyOf(b.parentId);
+
+        const sibIds = (pageMap[key] ?? []).map(String);
+        const idx = sibIds.indexOf(blockIdStr);
+        if (idx < 0) return 1;
+
+        // find start of contiguous ol run
+        let start = idx;
+        while (start - 1 >= 0) {
+          const prevId = sibIds[start - 1];
+          const prev = state.blocksById[prevId];
+          if (!prev) break;
+          if (prev.kind !== "block") break;
+          if (prev.type !== "ol") break;
+          start--;
+        }
+
+        // count ol blocks from start to idx
+        let n = 0;
+        for (let i = start; i <= idx; i++) {
+          const it = state.blocksById[sibIds[i]];
+          if (!it || it.kind !== "block" || it.type !== "ol") break;
+          n++;
+        }
+        return n;
+      },
+  },
+
+  actions: {
+    // ===========================
+    // INTERNAL HELPERS
+    // ===========================
+
+    ensurePageMap(pageId: string | number): void {
+      const pageIdStr = String(pageId);
+      if (!this.childrenByParentId[pageIdStr]) {
+        this.childrenByParentId[pageIdStr] = {};
+      }
+    },
+
+    getKind(id: string | number): string {
+      const n = this.blocksById[String(id)];
+      return n?.kind ?? "block";
+    },
+
+    hasRowAncestor(blockId: string | number): boolean {
+      let cur = String(blockId);
+      while (true) {
+        const node = this.blocksById[cur];
+        if (!node) return false;
+
+        const pid = node.parentId;
+        if (!pid) return false;
+
+        const parent = this.blocksById[String(pid)];
+        if (!parent) return false;
+
+        if ((parent.kind ?? "block") === "row") return true;
+        cur = String(pid);
+      }
+    },
+
+    sortSiblingsByPosition(ids: (string | number)[]): void {
+      ids.sort((a, b) => {
+        const aStr = String(a);
+        const bStr = String(b);
+        const pa = this.blocksById[aStr]?.position ?? "\uffff";
+        const pb = this.blocksById[bStr]?.position ?? "\uffff";
+        return pa < pb ? -1 : pa > pb ? 1 : aStr.localeCompare(bStr);
+      });
+    },
+
+    applyMoveLocal(
+      pageId: string | number,
+      blockId: string | number,
+      {
+        newParentId,
+        newPosition,
+      }: { newParentId: string | null; newPosition: string },
+    ): boolean {
+      const blockIdStr = String(blockId);
+      const pageIdStr = String(pageId);
+      const block = this.blocksById[blockIdStr];
+      if (!block) return false;
+
+      this.ensurePageMap(pageIdStr);
+
+      const oldKey = parentKeyOf(block.parentId);
+      const newKey = parentKeyOf(newParentId);
+
+      // update metadata
+      block.parentId = newParentId;
+      block.position = newPosition;
+
+      // remove from old list
+      const oldList = (this.childrenByParentId[pageIdStr][oldKey] ?? [])
+        .map(String)
+        .filter((id) => id !== blockIdStr);
+      this.childrenByParentId[pageIdStr][oldKey] = oldList;
+
+      // insert into new list (avoid dup)
+      const baseNew =
+        oldKey === newKey
+          ? oldList
+          : (this.childrenByParentId[pageIdStr][newKey] ?? []).map(String);
+
+      const nextNew = baseNew.filter((id) => id !== blockIdStr);
+      nextNew.push(blockIdStr);
+      this.childrenByParentId[pageIdStr][newKey] = nextNew;
+
+      this.sortSiblingsByPosition(this.childrenByParentId[pageIdStr][newKey]);
+      return true;
+    },
+
+    applyDeleteLocal(
+      pageId: string | number,
+      blockId: string | number,
+    ): boolean {
+      const blockIdStr = String(blockId);
+      const pageIdStr = String(pageId);
+      const block = this.blocksById[blockIdStr];
+      if (!block) return false;
+
+      this.ensurePageMap(pageIdStr);
+
+      const parentKey = parentKeyOf(block.parentId);
+      const siblings = (
+        this.childrenByParentId[pageIdStr][parentKey] ?? []
+      ).map(String);
+
+      // children of the block being deleted
+      const selfKey = parentKeyOf(blockIdStr);
+      const children = (this.childrenByParentId[pageIdStr][selfKey] ?? []).map(
+        String,
+      );
+
+      // replace the block with its children, maintaining position
+      const idx = siblings.indexOf(blockIdStr);
+      const nextSiblings =
+        idx === -1
+          ? siblings.filter((id) => id !== blockIdStr)
+          : [
+              ...siblings.slice(0, idx),
+              ...children,
+              ...siblings.slice(idx + 1),
+            ];
+
+      this.childrenByParentId[pageIdStr][parentKey] = nextSiblings;
+
+      // re-parent children
+      for (const childId of children) {
+        const child = this.blocksById[String(childId)];
+        if (child) child.parentId = block.parentId;
+      }
+
+      // clean up children list of deleted block
+      delete this.childrenByParentId[pageIdStr][selfKey];
+
+      // delete only the block
+      delete this.blocksById[blockIdStr];
+
+      if (this.currentBlockId === blockIdStr) this.currentBlockId = null;
+      if (this.optionsMenu?.blockId === blockIdStr) this.closeOptionsMenu();
+
+      return true;
+    },
+
+    getParentKeyOf(parentId: string | null): string {
+      return parentKeyOf(parentId);
+    },
+
+    applyCreateLocal(pageId: string | number, rawNode: any): boolean {
+      const pageIdStr = String(pageId);
+      const node: Block = {
+        id: String(rawNode.id),
+        pageId: String(rawNode.pageId ?? pageIdStr),
+        parentId: rawNode.parentId == null ? null : String(rawNode.parentId),
+        kind: rawNode.kind ?? "block",
+        type: rawNode.type ?? DEFAULT_BLOCK_TYPE,
+        content: rawNode.content ?? { text: "" },
+        layout: rawNode.layout ?? {},
+        width: rawNode.width ?? null,
+        position: String(rawNode.position ?? ""),
+        version: rawNode.version ?? 1,
+        updatedAt: rawNode.updatedAt ?? null,
+        props: normalizeProps(rawNode.props),
+      };
+
+      this.blocksById[node.id] = node;
+
+      // blocksByPage
+      if (!this.blocksByPage[pageIdStr]) this.blocksByPage[pageIdStr] = [];
+      if (!this.blocksByPage[pageIdStr].includes(node.id))
+        this.blocksByPage[pageIdStr].push(node.id);
+
+      // children map
+      this.ensurePageMap(pageIdStr);
+      const key = parentKeyOf(node.parentId);
+      const arr = (this.childrenByParentId[pageIdStr][key] ?? []).map(String);
+      if (!arr.includes(node.id)) arr.push(node.id);
+      this.childrenByParentId[pageIdStr][key] = arr;
+      this.sortSiblingsByPosition(this.childrenByParentId[pageIdStr][key]);
+
+      return true;
+    },
+
+    applyUpdateLocal(blockId: string | number, patch: Partial<Block>): boolean {
+      const blockIdStr = String(blockId);
+      const b = this.blocksById[blockIdStr];
+      if (!b) return false;
+
+      // don't allow changing id/pageId here
+      const next: Block = { ...b, ...patch };
+      next.id = b.id;
+      next.pageId = b.pageId;
+
+      // if parent/position changes, use move (update doesn't do move)
+      if ("parentId" in patch || "position" in patch) {
+        console.warn("applyUpdateLocal: parentId/position should use move op");
+      }
+
+      this.blocksById[blockIdStr] = next;
+      return true;
+    },
+
+    applyTransactionLocal(pageId: string | number, tx: Transaction): boolean {
+      if (!tx?.ops?.length) return false;
+      const pageIdStr = String(pageId);
+
+      for (const op of tx.ops) {
+        if (!op) continue;
+
+        if (op.op === "create") {
+          this.applyCreateLocal(pageIdStr, op.node);
+          continue;
+        }
+
+        if (op.op === "move") {
+          const parentId = op.parentId == null ? null : String(op.parentId);
+          this.applyMoveLocal(pageIdStr, op.id!, {
+            newParentId: parentId,
+            newPosition: String(op.position),
+          });
+          continue;
+        }
+
+        if (op.op === "update") {
+          this.applyUpdateLocal(op.id!, op.patch ?? {});
+          continue;
+        }
+
+        if (op.op === "delete") {
+          this.applyDeleteLocal(pageIdStr, op.id!);
+          continue;
+        }
+
+        console.warn("Unknown tx op", op);
+      }
+
+      return true;
+    },
+
+    // ===========================
+    // SELECTION / FOCUS / MENU
+    // ===========================
+
+    setCurrentBlock(blockId: string | number): void {
+      this.currentBlockId = String(blockId);
+    },
+
+    clearCurrentBlock(): void {
+      this.currentBlockId = null;
+    },
+
+    requestFocus(blockId: string | number, caret: number = 0): void {
+      this.focusRequestId = { blockId: String(blockId), caret };
+    },
+
+    clearFocusRequest(): void {
+      this.focusRequestId = null;
+    },
+
+    closeOptionsMenu(): void {
+      this.optionsMenu = { open: false, blockId: null, anchorRect: null };
+    },
+
+    isExpanded(blockId: string | number): boolean {
+      const block = this.blocksById[String(blockId)];
+      const v = block?.content?.isExpanded;
+      return v ?? true; // default true if null/undefined
+    },
+
+    expandBlock(blockId: string | number): void {
+      const blockIdStr = String(blockId);
+      const block = this.blocksById[blockIdStr];
+      if (!block) return;
+      if (!block.content) block.content = {};
+      block.content.isExpanded = true;
+      this.updateBlockContent(blockIdStr, { isExpanded: true });
+    },
+
+    toggleExpandBlock(blockId: string | number): void {
+      const blockIdStr = String(blockId);
+      const block = this.blocksById[blockIdStr];
+      if (!block) return;
+
+      const next = !(block.content?.isExpanded ?? true);
+      if (!block.content) block.content = {};
+      block.content.isExpanded = next;
+
+      // optimistic + sync
+      this.updateBlockContent(blockIdStr, { isExpanded: next });
+    },
+
+    collapseAll(): void {
+      this.expandedById = {};
+    },
+
+    // ===========================
+    // FETCH (Hard resync)
+    // ===========================
+
+    async fetchBlocksForPage(pageId: string | number): Promise<void> {
+      const pageIdStr = String(pageId);
+      const token = (this._fetchTokenByPage[pageIdStr] ?? 0) + 1;
+      this._fetchTokenByPage[pageIdStr] = token;
+
+      try {
+        const response = await api.get(`/pages/${pageIdStr}/`);
+        if (this._fetchTokenByPage[pageIdStr] !== token) return;
+
+        const blocks = (response.data.blocks ?? []) as RawBlock[];
+        const normBlocks = blocks.map((b) => normalizeBlock(b));
+
+        // remember previous ids for this page
+        const prevIds = (this.blocksByPage[pageIdStr] ?? []).map(String);
+
+        // write/update fetched blocks
+        for (const b of normBlocks) {
+          this.blocksById[b.id] = b;
+        }
+
+        // update page ids list
+        const nextIds = normBlocks.map((b) => b.id);
+        this.blocksByPage[pageIdStr] = nextIds;
+
+        // remove blocks that were in this page but are now gone
+        const nextIdSet = new Set(nextIds);
+        for (const id of prevIds) {
+          if (nextIdSet.has(id)) continue;
+          const old = this.blocksById[id];
+          if (old?.pageId === pageIdStr) {
+            delete this.blocksById[id];
+          }
+        }
+
+        // rebuild children map for this page
+        const pageMap = normBlocks.reduce(
+          (dict: Record<string, string[]>, b) => {
+            const parentKey = parentKeyOf(b.parentId);
+            if (!dict[parentKey]) dict[parentKey] = [];
+            dict[parentKey].push(b.id);
+            return dict;
+          },
+          {},
+        );
+
+        Object.values(pageMap).forEach((childIds) => {
+          childIds.sort((idA, idB) => {
+            const posA = this.blocksById[idA]?.position ?? "\uffff";
+            const posB = this.blocksById[idB]?.position ?? "\uffff";
+            const cmp = posA < posB ? -1 : posA > posB ? 1 : 0;
+            return cmp !== 0 ? cmp : String(idA).localeCompare(String(idB));
+          });
+        });
+
+        this.childrenByParentId[pageIdStr] = pageMap;
+      } catch (error) {
+        console.error("Error loading page:", error);
+        throw error;
+      }
+
+      const anyBlockForPage = (this.blocksByPage[pageIdStr]?.length ?? 0) > 0;
+
+      // If page is empty, create first block
+      if (!anyBlockForPage) {
+        await this.addNewBlock(
+          pageIdStr,
+          { type: DEFAULT_BLOCK_TYPE, content: { text: "" } },
+          null,
+        );
+        return;
+      }
+    },
+
+    // ===========================
+    // PERSIST HELPERS
+    // ===========================
+
+    async patchBlock(
+      blockId: string | number,
+      payload: Record<string, any>,
+    ): Promise<any> {
+      try {
+        const res = await api.patch(`/blocks/${blockId}/`, payload);
+        return res.data;
+      } catch (error) {
+        console.warn(
+          "Error patching block:",
+          (error as any)?.response?.data ?? error,
+        );
+        throw error;
+      }
+    },
+
+    async persistTransaction(
+      pageId: string | number,
+      tx: Transaction,
+    ): Promise<void> {
+      const pageIdStr = String(pageId);
+      try {
+        for (const op of tx.ops ?? []) {
+          if (op.op === "create") {
+            const n = op.node;
+            const payload = {
+              id: n.id,
+              kind: n.kind ?? "block",
+              parent_block: n.parentId ?? null,
+              position: String(n.position ?? ""),
+              type: n.type ?? DEFAULT_BLOCK_TYPE,
+              content: n.content ?? { text: "" },
+              props: normalizeProps(n.props),
+              layout: n.layout ?? {},
+              width: n.width ?? null,
+            };
+            await api.post(`/pages/${pageIdStr}/blocks/`, payload);
+            continue;
+          }
+
+          if (op.op === "move") {
+            await this.patchBlock(String(op.id), {
+              parent_block: op.parentId ?? null,
+              position: String(op.position),
+            });
+            continue;
+          }
+
+          if (op.op === "update") {
+            await this.patchBlock(String(op.id), op.patch ?? {});
+            continue;
+          }
+
+          if (op.op === "delete") {
+            await api.delete(`/blocks/${String(op.id)}/`);
+            continue;
+          }
+        }
+      } catch (e) {
+        // hard resync
+        await this.fetchBlocksForPage(pageIdStr);
+        throw e;
+      }
+    },
+
+    // ===========================
+    // UI-OPTIMISTIC ACTIONS
+    // ===========================
+
+    async moveBlock(
+      pageId: string | number,
+      blockId: string | number,
+      { parentId, position }: { parentId: string | null; position: string },
+    ): Promise<void> {
+      const parentNorm = normalizeParentForApi(parentId);
+      const pos = String(position);
+
+      // optimistic local
+      this.applyMoveLocal(pageId, blockId, {
+        newParentId: parentNorm,
+        newPosition: pos,
+      });
+
+      try {
+        await this.patchBlock(String(blockId), {
+          parent_block: parentNorm,
+          position: pos,
+        });
+      } catch (e) {
+        await this.fetchBlocksForPage(pageId);
+        throw e;
+      }
+    },
+
+    async indentBlock(
+      pageId: string | number,
+      blockId: string | number,
+    ): Promise<void> {
+      if (this.hasRowAncestor(blockId)) return;
+      const blockIdStr = String(blockId);
+      const pageIdStr = String(pageId);
+      const block = this.blocksById[blockIdStr];
+      if (!block) return;
+
+      this.ensurePageMap(pageIdStr);
+
+      const oldKey = parentKeyOf(block.parentId);
+      const siblings = (this.childrenByParentId[pageIdStr][oldKey] ?? []).map(
+        String,
+      );
+      const idx = siblings.indexOf(blockIdStr);
+      if (idx <= 0) return;
+
+      const newParentId = siblings[idx - 1];
+      const prev = this.blocksById[String(newParentId)];
+      if (!prev || (prev.kind ?? "block") !== "block") return;
+      if (this.hasRowAncestor(newParentId)) return;
+
+      const newKey = parentKeyOf(newParentId);
+      const newSiblings = (
+        this.childrenByParentId[pageIdStr][newKey] ?? []
+      ).map(String);
+
+      const lastId = newSiblings[newSiblings.length - 1] ?? null;
+      const lastPos = lastId
+        ? (this.blocksById[String(lastId)]?.position ?? null)
+        : null;
+      const newPos = posBetween(lastPos, null);
+
+      this.applyMoveLocal(pageIdStr, blockIdStr, {
+        newParentId,
+        newPosition: newPos,
+      });
+
+      try {
+        await this.patchBlock(blockIdStr, {
+          parent_block: newParentId,
+          position: newPos,
+        });
+      } catch (e) {
+        await this.fetchBlocksForPage(pageIdStr);
+        throw e;
+      }
+    },
+
+    async outdentBlock(
+      pageId: string | number,
+      blockId: string | number,
+    ): Promise<void> {
+      if (this.hasRowAncestor(blockId)) return;
+      const blockIdStr = String(blockId);
+      const pageIdStr = String(pageId);
+      const block = this.blocksById[blockIdStr];
+      if (!block?.parentId) return;
+
+      this.ensurePageMap(pageIdStr);
+
+      const oldParentId = String(block.parentId);
+      const oldParent = this.blocksById[oldParentId];
+      if (!oldParent) return;
+
+      const newParentId = oldParent.parentId ?? null;
+      const oldKey = parentKeyOf(oldParentId);
+      const newKey = parentKeyOf(newParentId);
+
+      const siblings = (this.childrenByParentId[pageIdStr][oldKey] ?? []).map(
+        String,
+      );
+      const idx = siblings.indexOf(blockIdStr);
+      if (idx === -1) return;
+
+      const adoptedChildren = siblings.slice(idx + 1);
+
+      const parentSiblings = (
+        this.childrenByParentId[pageIdStr][newKey] ?? []
+      ).map(String);
+      const parentIdx = parentSiblings.indexOf(oldParentId);
+
+      const prevPos = oldParent.position ?? null;
+      const nextId =
+        parentIdx >= 0 ? (parentSiblings[parentIdx + 1] ?? null) : null;
+      const nextPos = nextId
+        ? (this.blocksById[String(nextId)]?.position ?? null)
+        : null;
+      const newPos = posBetween(prevPos, nextPos);
+
+      // OPTIMISTIC LOCAL
+      this.applyMoveLocal(pageIdStr, blockIdStr, {
+        newParentId,
+        newPosition: newPos,
+      });
+      this.childrenByParentId[pageIdStr][oldKey] = siblings.slice(0, idx);
+
+      const blockKey = parentKeyOf(blockIdStr);
+      const existingChildren = (
+        this.childrenByParentId[pageIdStr][blockKey] ?? []
+      ).map(String);
+      const nextChildren = existingChildren.concat(adoptedChildren);
+      this.childrenByParentId[pageIdStr][blockKey] = nextChildren;
+
+      for (const cid of adoptedChildren) {
+        const child = this.blocksById[cid];
+        if (child) child.parentId = blockIdStr;
+      }
+
+      // PERSIST
+      try {
+        await this.patchBlock(blockIdStr, {
+          parent_block: newParentId,
+          position: newPos,
+        });
+
+        for (const cid of adoptedChildren) {
+          await this.patchBlock(cid, { parent_block: blockIdStr });
+        }
+      } catch (e) {
+        await this.fetchBlocksForPage(pageIdStr);
+        throw e;
+      }
+    },
+
+    async deleteBlock(
+      blockId: string | number,
+      pageId: string | number,
+    ): Promise<void> {
+      const blockIdStr = String(blockId);
+
+      // optimistic local
+      this.applyDeleteLocal(pageId, blockIdStr);
+
+      try {
+        await api.delete(`/blocks/${blockIdStr}/`);
+      } catch (error) {
+        console.warn(
+          "Error deleting block:",
+          (error as any)?.response?.data ?? error,
+        );
+        await this.fetchBlocksForPage(pageId);
+        throw error;
+      }
+    },
+
+    // ===========================
+    // CONTENT / TYPE
+    // ===========================
+
+    async updateBlockContent(
+      blockId: string | number,
+      patch: Partial<BlockContent>,
+    ): Promise<void> {
+      const blockIdStr = String(blockId);
+      const editedBlock = this.blocksById[blockIdStr];
+      if (!editedBlock) return;
+
+      if (!this._contentTokens) this._contentTokens = {};
+
+      const token = (this._contentTokens[blockIdStr] =
+        (this._contentTokens[blockIdStr] ?? 0) + 1);
+
+      // safe clone
+      const previousContent = JSON.parse(
+        JSON.stringify(editedBlock.content ?? {}),
+      );
+      const nextContent = { ...previousContent, ...patch };
+
+      // optimistic
+      editedBlock.content = nextContent;
+
+      try {
+        await api.patch(`/blocks/${blockIdStr}/`, { content: nextContent });
+
+        if (this._contentTokens[blockIdStr] !== token) return;
+      } catch (error) {
+        if (this._contentTokens[blockIdStr] === token) {
+          editedBlock.content = previousContent;
+        }
+        console.warn(
+          "Error updating block:",
+          (error as any)?.response?.data ?? error,
+        );
+        throw error;
+      }
+    },
+
+    buildNextProps(
+      existingProps: any,
+      stylePatch: Partial<BlockStyle>,
+    ): BlockProps {
+      const base = normalizeProps(existingProps);
+      const prevStyle = base.style ?? {};
+      const next: BlockProps = {
+        ...base,
+        style: {
+          ...prevStyle,
+          ...stylePatch,
+        },
+      };
+      return normalizeProps(next);
+    },
+
+    async updateBlockType(
+      blockId: string | number,
+      newType: string,
+    ): Promise<void> {
+      const blockIdStr = String(blockId);
+      const b = this.blocksById[blockIdStr];
+      if (!b) return;
+
+      const previousType = b.type;
+      const previousProps = b.props;
+      const previousContent = b.content;
+
+      let nextProps = previousProps;
+      let nextContent = previousContent;
+
+      const prevStyle = normalizeProps(previousProps).style ?? {};
+      const prevBg = prevStyle.bgColor ?? "default";
+
+      if (newType === "code" && prevBg === "default") {
+        nextProps = this.buildNextProps(previousProps, { bgColor: "gray_bg" });
+      }
+      if (
+        previousType === "code" &&
+        newType !== "code" &&
+        prevBg === "gray_bg"
+      ) {
+        nextProps = this.buildNextProps(previousProps, { bgColor: "default" });
+      }
+
+      if (newType === "callout" && prevBg === "default") {
+        nextProps = this.buildNextProps(previousProps, {
+          bgColor: "darkgray_bg",
+        });
+      }
+      if (
+        previousType === "callout" &&
+        newType !== "callout" &&
+        prevBg === "darkgray_bg"
+      ) {
+        nextProps = this.buildNextProps(previousProps, { bgColor: "default" });
+      }
+      if (newType === "callout" && !b.props?.iconId) {
+        nextProps.iconId = DEFAULT_ICON_ID;
+      }
+      if (newType === "toggle") {
+        nextContent = { ...(previousContent ?? {}), isExpanded: true };
+      }
+
+      // optimistic
+      b.type = newType;
+      if (nextProps !== previousProps) b.props = nextProps;
+      if (nextContent !== previousContent) b.content = nextContent;
+
+      try {
+        const payload: Record<string, any> = { type: newType };
+        if (nextProps !== previousProps) payload.props = nextProps;
+        if (nextContent !== previousContent) payload.content = nextContent;
+        await api.patch(`/blocks/${blockIdStr}/`, payload);
+      } catch (error) {
+        console.warn(
+          "Error updating block type:",
+          (error as any)?.response?.data ?? error,
+        );
+        b.type = previousType;
+        b.props = previousProps;
+        throw error;
+      }
+    },
+
+    async updateBlockStyle(
+      blockId: string | number,
+      stylePatch: Partial<BlockStyle>,
+    ): Promise<void> {
+      console.log("updateBlockStyle", blockId, stylePatch);
+      const blockIdStr = String(blockId);
+      const b = this.blocksById[blockIdStr];
+      if (!b) return;
+
+      const prevProps = normalizeProps(b.props);
+      const prevStyle = prevProps.style ?? {};
+      const nextStyle: BlockStyle = { ...prevStyle };
+
+      if ("textColor" in stylePatch && isTextToken(stylePatch.textColor)) {
+        nextStyle.textColor = stylePatch.textColor;
+      }
+      if ("bgColor" in stylePatch && isBgToken(stylePatch.bgColor)) {
+        nextStyle.bgColor = stylePatch.bgColor;
+      }
+      if ("font" in stylePatch && isFontToken(stylePatch.font)) {
+        nextStyle.font = stylePatch.font;
+      }
+
+      const nextProps = { ...prevProps, style: nextStyle };
+
+      b.props = nextProps;
+      try {
+        const res = await api.patch(`/blocks/${blockIdStr}/`, {
+          props: nextProps,
+        });
+        console.log("PATCH", res);
+      } catch (e) {
+        b.props = prevProps;
+        throw e;
+      }
+    },
+
+    async updateBlockIcon(
+      blockId: string | number,
+      iconId: string | null,
+    ): Promise<void> {
+      const blockIdStr = String(blockId);
+      const b = this.blocksById[blockIdStr];
+      if (!b) return;
+
+      const prevProps = b.props ?? {};
+      const nextProps: BlockProps = {
+        ...prevProps,
+        iconId: iconId ?? null,
+      };
+
+      b.props = nextProps;
+
+      try {
+        await api.patch(`/blocks/${blockIdStr}/`, { props: nextProps });
+      } catch (e) {
+        b.props = prevProps;
+        throw e;
+      }
+    },
+
+    async patchBlockOptimistic(
+      blockId: string | number,
+      patch: Partial<Block>,
+    ): Promise<void> {
+      const blockIdStr = String(blockId);
+      const b = this.blocksById[blockIdStr];
+      if (!b) return;
+
+      if (!this._patchTokens) this._patchTokens = {};
+      const token = (this._patchTokens[blockIdStr] =
+        (this._patchTokens[blockIdStr] ?? 0) + 1);
+
+      const prev = {
+        type: b.type,
+        props: JSON.parse(JSON.stringify(b.props ?? {})),
+        content: JSON.parse(JSON.stringify(b.content ?? {})),
+        layout: JSON.parse(JSON.stringify(b.layout ?? {})),
+        width: b.width ?? null,
+      };
+
+      // optimistic merge (known fields only)
+      if (patch && typeof patch === "object") {
+        if ("type" in patch) b.type = patch.type as string;
+        if ("props" in patch) b.props = patch.props ?? {};
+        if ("content" in patch) b.content = patch.content ?? {};
+        if ("layout" in patch) b.layout = patch.layout ?? {};
+        if ("width" in patch) b.width = patch.width ?? null;
+      }
+
+      try {
+        await api.patch(`/blocks/${blockIdStr}/`, patch);
+
+        if (this._patchTokens[blockIdStr] !== token) return;
+      } catch (error) {
+        // rollback if still latest patch
+        if (this._patchTokens[blockIdStr] === token) {
+          b.type = prev.type;
+          b.props = prev.props;
+          b.content = prev.content;
+          b.layout = prev.layout;
+          b.width = prev.width;
+        }
+        console.warn(
+          "Error patching block:",
+          (error as any)?.response?.data ?? error,
+        );
+        throw error;
+      }
+    },
+
+    // ===========================
+    // ADD NEW BLOCK
+    // ===========================
+
+    async addNewBlock(
+      pageId: string | number,
+      payload: { type?: string; content?: BlockContent },
+      blockId: string | number | null,
+    ): Promise<string> {
+      const key = String(blockId);
+      const childIds = this.childrenByParentId[String(pageId)]?.[key] ?? [];
+      const hasChildren = childIds.length > 0;
+
+      if (hasChildren) {
+        return await this.addNewBlockAfterAdoptChildren(
+          pageId,
+          payload,
+          blockId,
+        );
+      }
+      return await this.addNewBlockAfter(pageId, payload, blockId);
+    },
+
+    async addNewBlockAfter(
+      pageId: string | number,
+      payload: { type?: string; content?: BlockContent },
+      blockId: string | number | null,
+    ): Promise<string> {
+      const pageIdStr = String(pageId);
+      try {
+        let postData: Record<string, any>;
+
+        if (!blockId) {
+          const parentKey = KEY_ROOT;
+          const rootIds = this.childrenByParentId[pageIdStr]?.[parentKey] ?? [];
+          const lastId = rootIds.length ? rootIds[rootIds.length - 1] : null;
+          const lastPos = lastId
+            ? (this.blocksById[String(lastId)]?.position ?? null)
+            : null;
+          const newPos = posBetween(lastPos, null);
+
+          postData = {
+            type: payload.type ?? DEFAULT_BLOCK_TYPE,
+            content: payload.content ?? { text: "" },
+            parent_block: null,
+            position: newPos,
+          };
+        } else {
+          const blockIdStr = String(blockId);
+          const anchor = this.blocksById[blockIdStr];
+          if (!anchor) throw new Error("anchor block not found");
+
+          const parentKey = parentKeyOf(anchor.parentId);
+          const siblingsIds =
+            this.childrenByParentId[pageIdStr]?.[parentKey] ?? [];
+          const idx = siblingsIds.map(String).indexOf(blockIdStr);
+          if (idx === -1)
+            throw new Error(`blockId ${blockId} not found in siblings`);
+
+          const prevPos = this.blocksById[blockIdStr]?.position ?? null;
+          const nextId =
+            idx + 1 < siblingsIds.length ? siblingsIds[idx + 1] : null;
+          const nextPos = nextId
+            ? (this.blocksById[String(nextId)]?.position ?? null)
+            : null;
+          const newPos = posBetween(prevPos, nextPos);
+
+          postData = {
+            type: payload.type ?? DEFAULT_BLOCK_TYPE,
+            content: payload.content ?? { text: "" },
+            parent_block: anchor.parentId,
+            position: newPos,
+          };
+        }
+
+        const res = await api.post(`/pages/${pageIdStr}/blocks/`, postData);
+        await this.fetchBlocksForPage(pageIdStr);
+        return String(res.data.id);
+      } catch (error) {
+        console.warn(
+          "Error adding new block:",
+          (error as any)?.response?.data ?? error,
+        );
+        throw error;
+      }
+    },
+
+    async addNewBlockAfterAdoptChildren(
+      pageId: string | number,
+      payload: { type?: string; content?: BlockContent },
+      blockId: string | number | null,
+    ): Promise<string> {
+      const newId = await this.addNewBlockAfter(pageId, payload, blockId);
+
+      const childKey = String(blockId);
+      const childIds =
+        this.childrenByParentId[String(pageId)]?.[childKey] ?? [];
+      if (!childIds.length) return newId;
+
+      for (const childId of childIds) {
+        await api.patch(`/blocks/${childId}/`, { parent_block: newId });
+      }
+
+      await this.fetchBlocksForPage(pageId);
+      return newId;
+    },
+
+    mapBatchItem(b: BatchBlockItem, fallbackTempId: string): BatchBlockItem {
+      return {
+        tempId: b.tempId || fallbackTempId,
+        kind: b.kind || "block",
+        type: b.type || DEFAULT_BLOCK_TYPE,
+        content: b.content || {},
+        props: b.props || {},
+        layout: b.layout || {},
+        width: typeof b.width === "undefined" ? null : b.width,
+        children: Array.isArray(b.children)
+          ? b.children.map((c, j) =>
+              this.mapBatchItem(c, `${fallbackTempId}_${j}`),
+            )
+          : undefined,
+      };
+    },
+
+    async batchAddBlocksAfter(
+      pageId: string | number,
+      afterBlockId: string | number | null,
+      blocks: BatchBlockItem[],
+      parentId?: string | number | null,
+      opts?: any,
+    ): Promise<BatchAddResponse> {
+      const pageIdStr = String(pageId);
+      const afterId = afterBlockId ? String(afterBlockId) : null;
+
+      if (!Array.isArray(blocks) || blocks.length === 0) {
+        return { ids: [], map: {} };
+      }
+
+      try {
+        let resolvedParentId: string | null = null;
+
+        if (typeof parentId !== "undefined") {
+          resolvedParentId = parentId ? String(parentId) : null;
+        } else if (afterId) {
+          const anchor = this.blocksById[afterId];
+          if (!anchor) throw new Error("anchor block not found");
+          resolvedParentId = anchor.parentId ? String(anchor.parentId) : null;
+        } else {
+          resolvedParentId = null;
+        }
+
+        const payload = {
+          parent_block: resolvedParentId,
+          after_block_id: afterId,
+          blocks: blocks.map((b, i) => this.mapBatchItem(b, `t${i}`)),
+        };
+
+        const res = await api.post(
+          `/pages/${pageIdStr}/blocks/batch/`,
+          payload,
+        );
+
+        const ids = (res.data?.ids || []).map(String);
+        const map = res.data?.map || {};
+
+        return { ids, map };
+      } catch (error) {
+        console.warn(
+          "Error batch adding blocks:",
+          (error as any)?.response?.data ?? error,
+        );
+        throw error;
+      }
+    },
+
+    // ===========================
+    // CYCLE CHECK
+    // ===========================
+
+    isCircularMove(
+      draggedId: string | number,
+      targetParentId: string | number | null,
+      blocksById: Record<string, Block>,
+    ): boolean {
+      if (!targetParentId || targetParentId === "root") return false;
+      if (String(draggedId) === String(targetParentId)) return true;
+
+      let currentParentId: string | null = String(targetParentId);
+      const drag = String(draggedId);
+
+      while (currentParentId) {
+        if (currentParentId === drag) return true;
+        const parentNode: Block | undefined = blocksById[currentParentId];
+        if (!parentNode) break;
+        currentParentId =
+          parentNode.parentId != null ? String(parentNode.parentId) : null;
+      }
+
+      return false;
+    },
+
+    // ===========================
+    // ADVANCED OPERATIONS
+    // ===========================
+
+    async transferSubtreeToPage({
+      fromPageId,
+      toPageId,
+      rootId,
+      toParentId = null,
+      afterBlockId = null,
+    }: {
+      fromPageId: string | number;
+      toPageId: string | number;
+      rootId: string | number;
+      toParentId?: string | number | null;
+      afterBlockId?: string | number | null;
+    }): Promise<void> {
+      const fromPageIdStr = String(fromPageId);
+      const toPageIdStr = String(toPageId);
+      const rootIdStr = String(rootId);
+
+      console.log(
+        "fromPageId",
+        fromPageIdStr,
+        "toPageId",
+        toPageIdStr,
+        "rootId",
+        rootIdStr,
+        "toParentId",
+        toParentId,
+        "afterBlockId",
+        afterBlockId,
+      );
+
+      try {
+        await api.post(`/pages/${fromPageIdStr}/transfer-subtree/`, {
+          root_id: rootIdStr,
+          to_page_id: toPageIdStr,
+          to_parent_block: toParentId,
+          after_block_id: afterBlockId,
+        });
+
+        // hard resync
+        await this.fetchBlocksForPage(fromPageIdStr);
+        await this.fetchBlocksForPage(toPageIdStr);
+      } catch (e) {
+        // safe resync on error
+        await this.fetchBlocksForPage(fromPageIdStr);
+        if (toPageIdStr !== fromPageIdStr)
+          await this.fetchBlocksForPage(toPageIdStr);
+        throw e;
+      }
+    },
+
+    async duplicateBlockInPlace(
+      pageId: string | number,
+      blockId: string | number,
+    ): Promise<void> {
+      const pageIdStr = String(pageId);
+      const blockIdStr = String(blockId);
+      try {
+        await api.post(`/blocks/${blockIdStr}/duplicate-subtree/`, {});
+        await this.fetchBlocksForPage(pageIdStr);
+      } catch (e) {
+        console.warn(
+          "Error duplicating block:",
+          (e as any)?.response?.data ?? e,
+        );
+        await this.fetchBlocksForPage(pageIdStr);
+        throw e;
+      }
+    },
+  },
+});
+
+export default useBlocksStore;
