@@ -1,3 +1,20 @@
+import { computed } from "vue";
+
+export function usePageBlankClickFocus(pageId, { getLocalTree }) {
+  console.warn("[usePageBlankClickFocus] deprecated (SingleDoc mode)");
+
+  const noop = () => {};
+  const lastEmptyRootId = computed(() => null);
+
+  return {
+    onPagePointerDown: noop,
+    registerRowEl: noop,
+    ensureFirstEmptyBlockAndFocus: async () => {},
+    lastEmptyRootId,
+  };
+}
+
+/*
 import { useBlocksStore } from "@/stores/blocks";
 import { computed, nextTick, watch, unref } from "vue";
 import { useOverlayStore } from "@/stores/overlay";
@@ -240,4 +257,4 @@ export function usePageBlankClickFocus(pageId, { getLocalTree }) {
     ensureFirstEmptyBlockAndFocus,
     lastEmptyRootId,
   };
-}
+}*/

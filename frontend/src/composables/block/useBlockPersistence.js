@@ -1,5 +1,3 @@
-import { useAppActions } from "@/actions/useAppActions";
-
 function debounce(fn, delay) {
   let t = null;
   return (...args) => {
@@ -9,11 +7,10 @@ function debounce(fn, delay) {
 }
 
 export function useBlockPersistence(blockId, opts = {}) {
-  const actions = useAppActions();
   const delay = opts.delay ?? 400;
 
   const save = debounce(async (payload) => {
-    await actions.blocks.updateBlockContent(blockId, payload);
+    console.warn("[useBlockPersistence] deprecated (SingleDoc mode)");
   }, delay);
 
   function saveCode({ text, language, wrap }) {

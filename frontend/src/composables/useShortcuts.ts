@@ -2,8 +2,8 @@ import { onBeforeUnmount, onMounted } from "vue";
 import { useShortcutsStore } from "@/stores/shortcuts";
 import { useAppActions } from "@/actions/useAppActions";
 import { useEditorRegistryStore } from "@/stores/editorRegistry";
-import { useBlocksStore } from "@/stores/blocks";
 import usePagesStore from "@/stores/pages";
+import useDocStore from "@/stores/docstore";
 
 export type ShortcutHandlerContext = {
   event: KeyboardEvent;
@@ -24,38 +24,68 @@ export type ShortcutCommand = {
 const DEFAULT_COMMANDS = (): ShortcutCommand[] => {
   const actions = useAppActions();
   const editorRegistry = useEditorRegistryStore();
-  const blocksStore = useBlocksStore();
   const pagesStore = usePagesStore();
+  const docStore = useDocStore();
 
   const getEditorFromEvent = (event: KeyboardEvent) => {
     const target = event.target as HTMLElement | null;
     if (!target?.closest) return null;
+    const currentDocKey = docStore.currentDocKey ?? null;
+    if (currentDocKey) {
+      const pageId = currentDocKey.startsWith("doc:")
+        ? currentDocKey.slice("doc:".length)
+        : currentDocKey;
+      const currentEditor =
+        editorRegistry.getEditor(currentDocKey) ??
+        editorRegistry.getEditor(pageId);
+      const hasFocus =
+        !!currentEditor?.view?.hasFocus?.() || !!currentEditor?.isFocused;
+      if (currentEditor && hasFocus) return currentEditor;
+    }
+    const docEl = target.closest('[data-doc-editor="true"]');
+    const pageId = docEl?.getAttribute?.("data-doc-page-id") ?? null;
+    if (pageId) return editorRegistry.getEditor(`doc:${pageId}`) ?? null;
+
     const editorEl = target.closest('[data-block-editor="true"]');
     const blockId = editorEl?.getAttribute?.("data-block-id") ?? null;
-    if (!blockId) return null;
-    return editorRegistry.getEditor(blockId) ?? null;
+    if (blockId) return editorRegistry.getEditor(blockId) ?? null;
+
+    return null;
+  };
+
+  const getFocusedDocEditor = () => {
+    const currentDocKey = docStore.currentDocKey ?? null;
+    if (!currentDocKey) return null;
+    const pageId = currentDocKey.startsWith("doc:")
+      ? currentDocKey.slice("doc:".length)
+      : currentDocKey;
+    const currentEditor =
+      editorRegistry.getEditor(currentDocKey) ??
+      editorRegistry.getEditor(pageId);
+    const hasFocus =
+      !!currentEditor?.view?.hasFocus?.() || !!currentEditor?.isFocused;
+    return currentEditor && hasFocus ? currentEditor : null;
   };
 
   const tryEditorUndo = (event: KeyboardEvent, kind: "undo" | "redo") => {
     const editor = getEditorFromEvent(event);
     if (!editor) return false;
     const can = editor.can?.();
+    const hasFocus = !!editor?.view?.hasFocus?.() || !!editor?.isFocused;
     if (kind === "undo") {
-      if (can?.undo?.()) {
+      if (can?.undo?.() || hasFocus) {
         editor.commands?.undo?.();
         return true;
       }
       return false;
     }
-    if (can?.redo?.()) {
+    if (can?.redo?.() || hasFocus) {
       editor.commands?.redo?.();
       return true;
     }
     return false;
   };
 
-  const hasBlocksUndo = () => (blocksStore._undoStack?.length ?? 0) > 0;
-  const hasBlocksRedo = () => (blocksStore._redoStack?.length ?? 0) > 0;
   const hasPagesUndo = () => (pagesStore._undoStack?.length ?? 0) > 0;
   const hasPagesRedo = () => (pagesStore._redoStack?.length ?? 0) > 0;
 
@@ -67,6 +97,13 @@ const DEFAULT_COMMANDS = (): ShortcutCommand[] => {
       allowInInputs: true,
       preventDefault: false,
       handler: async ({ event }) => {
+        const focusedDocEditor = getFocusedDocEditor();
+        if (focusedDocEditor) {
+          event.preventDefault();
+          event.stopPropagation();
+          focusedDocEditor.commands?.undo?.();
+          return;
+        }
         if (tryEditorUndo(event, "undo")) {
           event.preventDefault();
           event.stopPropagation();
@@ -79,12 +116,6 @@ const DEFAULT_COMMANDS = (): ShortcutCommand[] => {
           await actions.pages.undoLastEntry();
           return;
         }
-
-        if (hasBlocksUndo()) {
-          event.preventDefault();
-          event.stopPropagation();
-          await actions.blocks.undoLastEntry();
-        }
       },
     },
     {
@@ -94,6 +125,13 @@ const DEFAULT_COMMANDS = (): ShortcutCommand[] => {
       allowInInputs: true,
       preventDefault: false,
       handler: async ({ event }) => {
+        const focusedDocEditor = getFocusedDocEditor();
+        if (focusedDocEditor) {
+          event.preventDefault();
+          event.stopPropagation();
+          focusedDocEditor.commands?.redo?.();
+          return;
+        }
         if (tryEditorUndo(event, "redo")) {
           event.preventDefault();
           event.stopPropagation();
@@ -105,12 +143,6 @@ const DEFAULT_COMMANDS = (): ShortcutCommand[] => {
           event.stopPropagation();
           await actions.pages.redoLastEntry();
           return;
-        }
-
-        if (hasBlocksRedo()) {
-          event.preventDefault();
-          event.stopPropagation();
-          await actions.blocks.redoLastEntry();
         }
       },
     },

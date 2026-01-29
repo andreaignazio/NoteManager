@@ -2,19 +2,23 @@ import usePagesStore from "@/stores/pages";
 import { computed, ref, watch } from "vue";
 import { useAppActions } from "@/actions/useAppActions";
 
-export function usePageTitleEditor(pageId) {
+export function usePageTitleEditor(pageId: { value: string | number | null }) {
   const pagesStore = usePagesStore();
   const actions = useAppActions();
 
   const titleDraft = ref("");
   const isEditing = ref(false);
 
-  let titleTimer = null;
+  let titleTimer: ReturnType<typeof setTimeout> | null = null;
   let titleOriginal = "";
 
   function syncFromStore() {
     const id = pageId.value;
     if (!id) return;
+    console.log("[PageTitleEditor] syncFromStore", {
+      pageId: id,
+      title: pagesStore.pagesById[id]?.title ?? "",
+    });
     titleDraft.value = pagesStore.pagesById[id]?.title ?? "";
   }
 
@@ -27,9 +31,19 @@ export function usePageTitleEditor(pageId) {
 
   // quando cambia titolo nello store -> sync solo se NON sto editando
   watch(
-    () => pagesStore.pagesById[pageId.value]?.title,
+    () => {
+      const id = pageId.value;
+      if (!id) return null;
+      return pagesStore.pagesById[id]?.title ?? "";
+    },
     () => {
       if (isEditing.value) return;
+      const id = pageId.value;
+      if (!id) return;
+      console.log("[PageTitleEditor] store title changed", {
+        pageId: id,
+        title: pagesStore.pagesById[id]?.title ?? "",
+      });
       syncFromStore();
     },
     { immediate: true },
@@ -45,8 +59,14 @@ export function usePageTitleEditor(pageId) {
     return isUntitled.value ? "" : t;
   });
 
-  function onTitleInput(e) {
-    titleDraft.value = e.target.value;
+  function onTitleInput(e: Event) {
+    const target = e.target as HTMLInputElement | null;
+    if (!target) return;
+    titleDraft.value = target.value;
+    console.log("[PageTitleEditor] onTitleInput", {
+      pageId: pageId.value,
+      titleDraft: titleDraft.value,
+    });
     if (titleTimer) clearTimeout(titleTimer);
     // ✅ salva “live” ma SENZA trim
     titleTimer = setTimeout(() => commitTitle({ trim: false }), 300);
@@ -61,19 +81,38 @@ export function usePageTitleEditor(pageId) {
 
     if ((pagesStore.pagesById[id]?.title ?? "") === nextTitle) return;
 
-    await actions.pages.updatePageMetaWithUndo({
+    console.log("[PageTitleEditor] commitTitle", {
       pageId: id,
-      title: nextTitle,
+      nextTitle,
+      trim,
     });
+
+    try {
+      await actions.pages.updatePageMetaWithUndo({
+        pageId: id,
+        title: nextTitle,
+      });
+    } catch (e) {
+      console.warn("[PageTitleEditor] failed to persist title", e);
+      syncFromStore();
+    }
   }
 
   function onTitleFocus() {
     isEditing.value = true;
     titleOriginal = titleDraft.value ?? "";
+    console.log("[PageTitleEditor] onTitleFocus", {
+      pageId: pageId.value,
+      titleOriginal,
+    });
   }
 
   async function onTitleBlur() {
     isEditing.value = false;
+    console.log("[PageTitleEditor] onTitleBlur", {
+      pageId: pageId.value,
+      titleDraft: titleDraft.value,
+    });
     if (titleTimer) clearTimeout(titleTimer);
     titleTimer = null;
     // ✅ trim solo quando “finito”
@@ -82,15 +121,16 @@ export function usePageTitleEditor(pageId) {
     syncFromStore();
   }
 
-  async function onTitleKeydown(e) {
+  async function onTitleKeydown(e: KeyboardEvent) {
+    const target = e.currentTarget as HTMLInputElement | null;
     if (e.key === "Enter") {
       e.preventDefault();
-      e.currentTarget.blur();
+      target?.blur();
     }
     if (e.key === "Escape") {
       e.preventDefault();
       titleDraft.value = titleOriginal;
-      e.currentTarget.blur();
+      target?.blur();
     }
   }
 

@@ -6,6 +6,7 @@ export type MenuCtx = {
 
   pageId?: string;
   blockId?: string;
+  docNodeId?: string;
 };
 
 export const MENU_COMMANDS = {
@@ -17,6 +18,7 @@ export const MENU_COMMANDS = {
   BLOCK_SET_TEXT_COLOR: "block.setTextColor",
   BLOCK_SET_BG_COLOR: "block.setBgColor",
   BLOCK_SET_FONT: "block.setFont",
+  BLOCK_OPEN_COMMENT: "block.openComment",
 
   // page
   PAGE_CREATE_AFTER: "page.createAfter",

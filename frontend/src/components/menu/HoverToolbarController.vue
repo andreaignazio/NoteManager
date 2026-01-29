@@ -1,8 +1,7 @@
 <script setup>
 import { computed, ref } from "vue";
-import { storeToRefs } from "pinia";
 import { useOverlayStore } from "@/stores/overlay";
-import { useBlocksStore } from "@/stores/blocks";
+import useDocStore from "@/stores/docstore";
 import { useEditorRegistryStore } from "@/stores/editorRegistry";
 import { useSelectionPolicy } from "@/composables/useSelectionPolicy";
 import { useSelectionToolbar } from "@/composables/useSelectionToolbar";
@@ -14,21 +13,54 @@ import { useTempAnchors } from "@/actions/tempAnchors.actions";
 import { useAnchorRegistryStore } from "@/stores/anchorRegistry";
 
 const overlay = useOverlayStore();
-const blocksStore = useBlocksStore();
-const { currentBlockId } = storeToRefs(blocksStore);
+const docStore = useDocStore();
 const editorRegStore = useEditorRegistryStore();
 const { dispatchMenuAction } = useMenuActionDispatcher();
 const tempAnchors = useTempAnchors();
 const anchorsStore = useAnchorRegistryStore();
 
+const DOC_KEY_PREFIX = "doc:";
+
+const activeContextId = computed(() => docStore.currentDocKey ?? null);
+
 const activeEditor = computed(() =>
-  editorRegStore.getEditor(currentBlockId.value),
+  editorRegStore.getEditor(activeContextId.value),
 );
 
+const isDocContext = computed(() => {
+  const id = activeContextId.value;
+  return typeof id === "string" && id.startsWith(DOC_KEY_PREFIX);
+});
+
+const docPageId = computed(() => {
+  if (!isDocContext.value) return null;
+  return String(activeContextId.value).slice(DOC_KEY_PREFIX.length) || null;
+});
+
 const activeType = computed(() => {
-  const id = currentBlockId.value;
-  if (!id) return "p";
-  return blocksStore.blocksById[String(id)]?.type ?? "p";
+  if (!isDocContext.value) return "p";
+  const ed = activeEditor.value;
+  if (!ed) return "p";
+  const { $from } = ed.state.selection;
+  let listType = null;
+  let blockType = null;
+  for (let d = $from.depth; d > 0; d--) {
+    const node = $from.node(d);
+    if (node.type.name === "draggableItem") {
+      listType = node.attrs?.listType ?? null;
+      blockType = node.attrs?.blockType ?? null;
+      break;
+    }
+  }
+  if (listType === "bullet") return "ul";
+  if (listType === "ordered") return "ol";
+  if (blockType) return blockType;
+  if (ed.isActive?.("codeBlock")) return "code";
+  if (ed.isActive?.("blockquote")) return "quote";
+  if (ed.isActive?.("heading", { level: 1 })) return "h1";
+  if (ed.isActive?.("heading", { level: 2 })) return "h2";
+  if (ed.isActive?.("heading", { level: 3 })) return "h3";
+  return "p";
 });
 
 const activeMarks = computed(() => ({
@@ -106,10 +138,12 @@ useOverlayBinding({
 });
 
 function getCtx() {
-  const blockId = currentBlockId.value;
-  if (!blockId) return null;
-  const pageId = blocksStore.blocksById[String(blockId)]?.pageId ?? null;
-  return { blockId: String(blockId), pageId };
+  if (!docStore.currentDocKey) return null;
+  if (!isDocContext.value) return null;
+  return {
+    docNodeId: docStore.currentDocNodeId ?? undefined,
+    pageId: docPageId.value,
+  };
 }
 
 function onCommand(command) {
@@ -145,8 +179,6 @@ async function onSetType(nextType) {
     command: MENU_COMMANDS.BLOCK_APPLY_TYPE,
     payload: { blockType: nextType },
   });
-
-  blocksStore.requestFocus?.(ctx.blockId, -1);
 }
 </script>
 
@@ -172,6 +204,7 @@ async function onSetType(nextType) {
         <BlockToolbar
           :activeType="activeType"
           :activeMarks="activeMarks"
+          :showBlockTypes="true"
           @set-type="onSetType"
           @command="onCommand"
         />

@@ -7,6 +7,13 @@ interface BlockType {
 }
 
 export const BLOCK_TYPES: BlockType[] = [
+  /*{
+    type: "inherit",
+    label: "Inherit",
+    description: "Inherit parent style",
+    icon: "↳",
+    iconId: "lucide:corner-down-right",
+  },*/
   {
     type: "p",
     label: "Paragraph",
@@ -49,13 +56,13 @@ export const BLOCK_TYPES: BlockType[] = [
     icon: "1.",
     iconId: "lucide:list-ordered",
   },
-  {
+  /*{
     type: "toggle",
     label: "Toggle List",
     description: "Collapsible list",
     icon: "▸",
     iconId: "lucide:chevron-right",
-  },
+  },*/
   {
     type: "todo",
     label: "To-do List",
@@ -77,13 +84,13 @@ export const BLOCK_TYPES: BlockType[] = [
     icon: "</>",
     iconId: "lucide:code",
   },
-  {
+  /*{
     type: "callout",
     label: "Callout",
     description: "Highlighted note",
     icon: "💡",
     iconId: "lucide:lightbulb",
-  },
+  },*/
   {
     type: "divider",
     label: "Divider",

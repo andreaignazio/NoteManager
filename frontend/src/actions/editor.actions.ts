@@ -1,18 +1,20 @@
-import { Editor } from "@tiptap/core";
-
 import type { EditorState } from "prosemirror-state";
 
-import { useBlocksStore } from "@/stores/blocks";
 import { Node } from "prosemirror-model";
 import type { Slice, Node as PMNode, Schema } from "prosemirror-model";
 import { DOMParser as PMDOMParser } from "prosemirror-model";
-import type { BatchBlockItem } from "@/stores/blocks/types";
+type BatchBlockItem = {
+  tempId: string;
+  kind: "block";
+  type: string;
+  content: Record<string, any>;
+  parentId?: string | number | null;
+  position?: string;
+};
 
 //import { clipboardHtmlToBlocks } from "./editor/clipboardHtmlToBlocks";
 
 export function useEditorActions() {
-  const blocksStore = useBlocksStore();
-
   function isDocEmpty(pmDocJson: any): boolean {
     const content = pmDocJson?.content ?? [];
     console.log("isDocEmpty content:", content);
@@ -622,123 +624,9 @@ export function useEditorActions() {
     slice: Slice;
     itemsOverride: BatchBlockItem[];
   }) {
-    console.log("Editor Action: pasteSplitFlow");
-    const { beforeJson, afterJson, hasAfter } = splitCurrentDoc(
-      args.editorState,
+    console.warn(
+      "[useEditorActions] pasteSplitFlow deprecated (SingleDoc mode)",
     );
-
-    const prevContent = JSON.parse(
-      JSON.stringify(blocksStore.blocksById[args.blockId]?.content ?? {}),
-    );
-    const nextContent = {
-      text: args.editorState.doc.textContent ?? "",
-      json: beforeJson,
-    };
-
-    //const items = sliceToBatchItems(args.slice, args.editorState.schema);
-    const items = args.itemsOverride;
-    console.log("PasteSplitFlow Items:", items);
-
-    if (hasAfter) {
-      items.push({
-        tempId: makeTempId(),
-        kind: "block",
-        type: blocksStore.blocksById[args.blockId]?.type ?? "p",
-        content: {
-          text: tiptapJsonToPlainText(afterJson, args.editorState.schema),
-          json: afterJson,
-        },
-      });
-    }
-
-    let contentPatched = false;
-    let topLevelIds: string[] = [];
-    let ids: string[] = [];
-
-    try {
-      await blocksStore.patchBlockOptimistic(args.blockId, {
-        content: nextContent,
-      });
-      contentPatched = true;
-
-      const res = await blocksStore.batchAddBlocksAfter(
-        args.pageId,
-        args.afterBlockId,
-        items,
-        args.parentBlockId,
-      );
-      topLevelIds = res.topLevelIds;
-      ids = res.ids;
-    } catch (error) {
-      if (contentPatched) {
-        try {
-          await blocksStore.patchBlockOptimistic(args.blockId, {
-            content: prevContent,
-          });
-        } catch (rollbackError) {
-          console.warn("pasteSplitFlow rollback error:", rollbackError);
-        }
-      }
-      throw error;
-    }
-
-    const first = topLevelIds?.[0] || ids?.[0];
-    if (first) {
-      // usa il tuo meccanismo: focusRequestId / scroll / selection
-      blocksStore.focusRequestId = { blockId: first, caret: 0 };
-      // oppure ui.requestScrollToBlock(first) se ce l’hai
-    }
-
-    const createdIds = (ids?.length ? ids : topLevelIds).map(String);
-    if (createdIds.length) {
-      const deleteIds = [...createdIds].reverse();
-
-      const undoOps = [
-        {
-          op: "update" as const,
-          id: String(args.blockId),
-          patch: { content: prevContent },
-        },
-        ...deleteIds.map((id) => ({ op: "delete" as const, id })),
-      ];
-
-      const redoOps = [
-        {
-          op: "update" as const,
-          id: String(args.blockId),
-          patch: { content: nextContent },
-        },
-        ...createdIds
-          .map((id) => blocksStore.blocksById[id])
-          .filter(Boolean)
-          .map((b) => ({
-            op: "create" as const,
-            node: {
-              id: b.id,
-              kind: b.kind ?? "block",
-              parentId: b.parentId ?? null,
-              position: String(b.position ?? ""),
-              type: b.type,
-              content: b.content ?? {},
-              props: b.props ?? {},
-              layout: b.layout ?? {},
-              width: b.width ?? null,
-            },
-          })),
-      ];
-
-      blocksStore.pushUndoEntry({
-        pageId: String(args.pageId),
-        undo: { ops: undoOps },
-        redo: { ops: redoOps },
-        label: "pasteSplitFlow",
-      });
-    }
-
-    //console.log("pasteSplitFlow ids:", ids, "map:", map);
-    //blocksStore.reconcileTempIds(map)
-
-    //blocksStore.insertChildrenAfter()
   }
   return {
     pasteSplitFlow,

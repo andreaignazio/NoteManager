@@ -5,6 +5,7 @@ import { MENU_COMMANDS } from "@/domain/menuActions";
 const props = defineProps({
   activeType: { type: String, required: true },
   activeMarks: { type: Object, default: () => ({}) },
+  showBlockTypes: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(["set-type", "command"]);
@@ -68,10 +69,10 @@ const isLink = computed(() => props.activeMarks?.link ?? false);
       </button>
     </div>
 
-    <div class="sep" />
+    <div class="sep" v-if="showBlockTypes" />
 
     <!-- BLOCK TYPE -->
-    <div class="group">
+    <div class="group" v-if="showBlockTypes">
       <button
         class="btn"
         :class="{ active: activeType === 'p' }"

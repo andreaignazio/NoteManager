@@ -9,6 +9,7 @@ import { useOverlayBindingKeyed } from "@/composables/useOverlayBindingKeyed";
 import { useMenuActionDispatcher } from "@/composables/useMenuActionDispatcher";
 import { MENU_COMMANDS } from "@/domain/menuActions";
 import { buildPageActionsMenu } from "@/domain/pageMenuBuilders";
+import usePagesStore from "@/stores/pages";
 const tempAnchors = useTempAnchors();
 
 const props = defineProps({
@@ -27,6 +28,7 @@ const emit = defineEmits(["rename", "deleted", "duplicated", "moved", "close"]);
 
 const anchorsStore = useAnchorRegistryStore();
 const { dispatchMenuAction } = useMenuActionDispatcher();
+const pagesStore = usePagesStore();
 // open states
 const rectTriggerOpen = ref(false);
 const menuOpen = ref(false);
@@ -129,7 +131,15 @@ useOverlayBindingKeyed(() => {
   };
 });
 
-const menuItems = computed(() => buildPageActionsMenu());
+const canDelete = computed(() => {
+  if (!props.pageId) return false;
+  const page = pagesStore.pagesById?.[String(props.pageId)];
+  return page?.role === "owner";
+});
+
+const menuItems = computed(() =>
+  buildPageActionsMenu({ canDelete: canDelete.value }),
+);
 
 // handlers
 async function onMenuAction({ id }) {
@@ -175,6 +185,25 @@ async function onMenuAction({ id }) {
           pageId: props.pageId,
           placement: "center",
           cleanup: tmpanchor.unregister,
+        },
+      });
+      return;
+    }
+
+    if (id === "share") {
+      const tmpanchor = props.anchorKey
+        ? null
+        : tempAnchors.registerViewportCenter();
+      close();
+      await dispatchMenuAction({
+        type: "openMenu",
+        ctx: { pageId: String(props.pageId) },
+        menuId: "page.share",
+        anchorKey: props.anchorKey ?? tmpanchor?.key,
+        payload: {
+          pageId: props.pageId,
+          placement: "bottom-end",
+          cleanup: tmpanchor?.unregister,
         },
       });
       return;

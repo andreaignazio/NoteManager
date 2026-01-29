@@ -10,6 +10,8 @@ import PagePickerList from "@/components/PagePickerList.vue"; // <- aggiusta pat
 const props = defineProps<{
   open: boolean;
   blockId: string | null;
+  docKey?: string | null;
+  docNodeId?: string | null;
   currentPageId?: string | null;
   anchorKey?: string | null;
   initialHref?: string | null;
@@ -124,7 +126,7 @@ function close() {
 }
 
 function applyLink(url: string) {
-  const ed = editorReg.getEditor(props.blockId);
+  const ed = editorReg.getEditor(props.docKey ?? props.blockId);
   if (!ed) return;
   const u = (url ?? "").trim();
   if (!u) return;
@@ -134,7 +136,7 @@ function applyLink(url: string) {
 }
 
 function removeLink() {
-  const ed = editorReg.getEditor(props.blockId);
+  const ed = editorReg.getEditor(props.docKey ?? props.blockId);
   if (!ed) return;
   ed.chain().focus().unsetLink().run();
   close();
@@ -274,8 +276,8 @@ useOverlayBinding({
 }
 .card {
   border-radius: 14px;
-  background: var(--bg-menu, rgba(255, 255, 255, 0.94));
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: var(--bg-menu);
+  border: 1px solid var(--border-menu);
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
   display: flex;
   flex-direction: column;
@@ -318,11 +320,24 @@ useOverlayBinding({
   flex: 1 1 auto;
   height: 34px;
   border-radius: 10px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
+  border: 2px solid rgba(0, 0, 0, 0.12);
+  border-color: transparent;
   padding: 0 10px;
   outline: none;
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--bg-search);
   color: inherit;
+  transition:
+    border-color 160ms ease-in-out,
+    background-color 160ms ease-in-out;
+}
+.in:hover {
+  border-color: var(--border-menu-hover);
+}
+
+.in:focus {
+  border: 2px solid var(--border-menu-focus);
+
+  background: var(--bg-search-focus);
 }
 .btn {
   height: 34px;

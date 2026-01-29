@@ -1,5 +1,4 @@
 import usePagesStore from "@/stores/pages";
-import { useBlocksStore } from "@/stores/blocks";
 import router from "@/router";
 import { useUiStore } from "@/stores/ui";
 import { useUIOverlayStore } from "@/stores/uioverlay";
@@ -7,7 +6,6 @@ import { useTempAnchors } from "@/actions/tempAnchors.actions";
 
 export function usePageActions() {
   const pagesStore = usePagesStore();
-  const blocksStore = useBlocksStore();
   const ui = useUiStore();
   const uiOverlay = useUIOverlayStore();
   const tempAnchors = useTempAnchors();
@@ -104,6 +102,10 @@ export function usePageActions() {
     router.push({ name: "pageDetail", params: { id: pageId } });
   }
 
+  async function simpleRedirectToPage(pageId: string) {
+    router.push({ name: "pageDetail", params: { id: pageId } });
+  }
+
   function getFallbackPageId() {
     const rootKey = pagesStore.getParentKey(null as any);
     const rootIds = pagesStore.childrenByParentId?.[rootKey] ?? [];
@@ -161,14 +163,27 @@ export function usePageActions() {
 
     const next = !page.favorite;
     page.favorite = next;
+    if (!next) page.favorite_position = null;
     try {
-      await pagesStore.patchPage(id, { favorite: next });
+      await pagesStore.setFavorite(id, next, before?.favorite_position ?? null);
       const after = snapshotPage(pageId);
       if (before && after) {
         pagesStore.pushUndoEntry({
           pageId: String(pageId),
-          undo: patchFromSnapshot(before, ["favorite"]),
-          redo: patchFromSnapshot(after, ["favorite"]),
+          undoAction: async () => {
+            await pagesStore.setFavorite(
+              id,
+              !!before.favorite,
+              before.favorite_position ?? null,
+            );
+          },
+          redoAction: async () => {
+            await pagesStore.setFavorite(
+              id,
+              !!after.favorite,
+              after.favorite_position ?? null,
+            );
+          },
           label: "toggleFavorite",
         });
       }
@@ -178,41 +193,6 @@ export function usePageActions() {
     }
     ui.setLastAddedPageId(pageId);
   }
-
-  /*async function deletePage(pageId: string) {
-    const hasChildren =
-      pagesStore.hasChildren?.(pageId) ??
-      (pagesStore.childrenByParentId?.[String(pageId)] ?? []).length > 0;
-    const id = pageId;
-    if (!id) return;
-
-    try {
-      const nextId = pagesStore.getNextPageIdAfterDelete?.(id);
-
-      if (hasChildren.value && keepChildren.value) {
-        try {
-          await pagesStore.reparentChildrenToParent(id);
-        } catch (e) {
-          console.error("[PageActions] reparentChildrenToParent failed", e);
-          throw e;
-        }
-      }
-
-      try {
-        await pagesStore.deletePage(id);
-      } catch (e) {
-        console.error("[PageActions] deletePage failed", e);
-        throw e;
-      }
-
-      if (nextId) router.push({ name: "pageDetail", params: { id: nextId } });
-      else router.push("/");
-    } catch (e) {
-      console.error("[PageActions] DELETE FLOW FAILED", e);
-    } finally {
-      console.groupEnd();
-    }
-  }*/
 
   async function movePageToParentAppend(pageId: string, newParentId: string) {
     const before = snapshotPage(pageId);
@@ -228,11 +208,6 @@ export function usePageActions() {
     }
     ui.setLastAddedPageId(pageId);
     redirectToPage(pageId);
-  }
-
-  async function openPageAndLoadBlocks(pageId: string | number) {
-    await pagesStore.openPage(pageId);
-    await blocksStore.fetchBlocksForPage(pageId);
   }
 
   async function fetchPages() {
@@ -457,11 +432,32 @@ export function usePageActions() {
   ) {
     const before = snapshotPage(pageId);
     updatePageFavoritePositionOptimistic(pageId, position);
-    await patchPage(
-      pageId,
-      { favorite_position: position },
-      { undo: true, label: "favoritePosition", before },
-    );
+    try {
+      await pagesStore.setFavoritePosition(pageId, position);
+      const after = snapshotPage(pageId);
+      if (before && after) {
+        pagesStore.pushUndoEntry({
+          pageId: String(pageId),
+          undoAction: async () => {
+            if (before.favorite_position != null) {
+              await pagesStore.setFavoritePosition(
+                pageId,
+                before.favorite_position,
+              );
+            }
+          },
+          redoAction: async () => {
+            await pagesStore.setFavoritePosition(pageId, position);
+          },
+          label: "favoritePosition",
+        });
+      }
+    } catch (e) {
+      if (before?.favorite_position != null) {
+        updatePageFavoritePositionOptimistic(pageId, before.favorite_position);
+      }
+      throw e;
+    }
   }
 
   async function updatePageMetaWithUndo(args: {
@@ -504,7 +500,6 @@ export function usePageActions() {
     /*deletePage,*/
     movePageToParentAppend,
     movePageWithUndo,
-    openPageAndLoadBlocks,
     fetchPages,
     ensureVisible,
     cancelEdit,
@@ -527,5 +522,6 @@ export function usePageActions() {
     reparentChildrenToParent,
     undoLastEntry,
     redoLastEntry,
+    simpleRedirectToPage,
   };
 }

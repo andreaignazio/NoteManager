@@ -39,11 +39,20 @@ const pagesStore = usePagesStore();
 const uiOverlay = useUIOverlayStore();
 const { editingPageId } = storeToRefs(pagesStore);
 const { draftPage } = storeToRefs(pagesStore);
-const { SidebarMoveToArmed, pendingSidebarScrollToPageId } = storeToRefs(ui);
+const {
+  SidebarMoveToArmed,
+  pendingSidebarScrollToPageId,
+  sidebarPrivateFolded,
+  sidebarSharedFolded,
+} = storeToRefs(ui);
 
 const rows = computed(() => pagesStore.renderRowsPages);
 
 const TrashIcon = computed(() => getIconComponent("lucide:trash-2"));
+const ChevronDownIcon = computed(() => getIconComponent("lucide:chevron-down"));
+const ChevronRightIcon = computed(() =>
+  getIconComponent("lucide:chevron-right"),
+);
 const trashButtonEl = ref(null);
 const kind_trash = anchorKind("page", "icon", "sidebar", "tree");
 const key_trash = anchorKey(kind_trash, "trash");
@@ -217,6 +226,46 @@ function buildForest(childrenMap, contentMap, expandedMap) {
   return rootIds.map((rootId) => buildNode(rootId)).filter(Boolean);
 }
 
+function splitTreeByShared(nodes) {
+  const shared = [];
+  const privateNodes = [];
+
+  const splitChildren = (items) => {
+    const sharedOut = [];
+    const privateOut = [];
+
+    for (const node of items) {
+      const isShared = !!node.isShared;
+      const childResult = splitChildren(node.children ?? []);
+
+      if (isShared) {
+        sharedOut.push({ ...node, children: childResult.shared });
+        if (childResult.private.length) {
+          // private descendants should remain private roots
+          privateOut.push(...childResult.private);
+        }
+      } else {
+        privateOut.push({ ...node, children: childResult.private });
+        if (childResult.shared.length) {
+          sharedOut.push(...childResult.shared);
+        }
+      }
+    }
+    console.log("shared:", sharedOut, "private:", privateOut);
+    return { shared: sharedOut, private: privateOut };
+  };
+
+  const result = splitChildren(nodes ?? []);
+  shared.push(...result.shared);
+  privateNodes.push(...result.private);
+
+  return { shared, private: privateNodes };
+}
+
+const splitTrees = computed(() => splitTreeByShared(localTree.value));
+const sharedTree = computed(() => splitTrees.value.shared);
+const privateTree = computed(() => splitTrees.value.private);
+
 const handleToggleExpand = (pageId) => {
   actions.pages.toggleExpandPage(pageId);
   console.log(pagesStore.isExpanded(pageId));
@@ -328,6 +377,8 @@ watch(pendingSidebarScrollToPageId, async (pageId) => {
             :has-children="false"
             :is-expanded="false"
             :is-active="pagesStore.currentPageId === item.id"
+            :show-plus="false"
+            :show-chevron="false"
             :parent-key="'favorites'"
             :page-action-menu-id="overlayTopId"
             :anchor-scope="'favorites'"
@@ -337,19 +388,90 @@ watch(pendingSidebarScrollToPageId, async (pageId) => {
         </template>
       </DndController>
     </div>
-    <div class="sidebar-header-pad">
-      <div class="sidebar-title">All Pages</div>
-    </div>
+
     <div ref="sidebarScrollEl" class="sidebar-scroll scrollbar-auto">
-      <div class="all-pages-zone" :class="{ 'move-armed': SidebarMoveToArmed }">
-        <!-- overlay SOLO qui -->
+      <div class="sidebar-header-pad">
+        <button
+          class="sidebar-section-header"
+          type="button"
+          :aria-expanded="!sidebarPrivateFolded"
+          @click="ui.toggleSidebarPrivateFolded()"
+        >
+          <span class="sidebar-section-icon">
+            <component
+              :is="sidebarPrivateFolded ? ChevronRightIcon : ChevronDownIcon"
+              :size="14"
+            />
+          </span>
+          <span class="sidebar-title">Private Pages</span>
+        </button>
+      </div>
+      <div
+        v-show="!sidebarPrivateFolded"
+        class="all-pages-zone"
+        :class="{ 'move-armed': SidebarMoveToArmed }"
+      >
         <div
           v-if="SidebarMoveToArmed"
           class="all-pages-overlay"
           aria-hidden="true"
         />
 
-        <DndController :tree="localTree" :indent="20" @node-moved="handleMove">
+        <DndController
+          :tree="privateTree"
+          :indent="20"
+          @node-moved="handleMove"
+        >
+          <template #row="{ item, level, hasChildren, isExpanded }">
+            <PageRowC
+              :page="item"
+              :level="level"
+              :data-page-id="item.id"
+              :has-children="hasChildren"
+              :is-active="pagesStore.currentPageId === item.id"
+              :is-expanded="isExpanded"
+              :show-plus="true"
+              :show-chevron="true"
+              :parent-key="pagesStore.getParentKey(item.parentId)"
+              :page-action-menu-id="overlayTopId"
+              :flash="String(recentlyMovedId) === String(item.id)"
+              :anchor-scope="'tree'"
+              :data-anchor-scope="'tree'"
+              @toggle-expand="handleToggleExpand"
+              @add-child="createNewPage(item.id)"
+            />
+          </template>
+        </DndController>
+      </div>
+
+      <div class="sidebar-header-pad">
+        <button
+          class="sidebar-section-header"
+          type="button"
+          :aria-expanded="!sidebarSharedFolded"
+          @click="ui.toggleSidebarSharedFolded()"
+        >
+          <span class="sidebar-section-icon">
+            <component
+              :is="sidebarSharedFolded ? ChevronRightIcon : ChevronDownIcon"
+              :size="14"
+            />
+          </span>
+          <span class="sidebar-title">Shared Pages</span>
+        </button>
+      </div>
+      <div
+        v-show="!sidebarSharedFolded"
+        class="all-pages-zone"
+        :class="{ 'move-armed': SidebarMoveToArmed }"
+      >
+        <div
+          v-if="SidebarMoveToArmed"
+          class="all-pages-overlay"
+          aria-hidden="true"
+        />
+
+        <DndController :tree="sharedTree" :indent="20" @node-moved="handleMove">
           <template #row="{ item, level, hasChildren, isExpanded }">
             <PageRowC
               :page="item"
@@ -363,6 +485,8 @@ watch(pendingSidebarScrollToPageId, async (pageId) => {
               :flash="String(recentlyMovedId) === String(item.id)"
               :anchor-scope="'tree'"
               :data-anchor-scope="'tree'"
+              :show-plus="false"
+              :show-chevron="false"
               @toggle-expand="handleToggleExpand"
               @add-child="createNewPage(item.id)"
             />
@@ -562,6 +686,31 @@ watch(pendingSidebarScrollToPageId, async (pageId) => {
   color: var(--text-secondary);
   margin-bottom: 10px;
   margin-top: 12px;
+}
+
+.sidebar-section-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sidebar-section-header:hover .sidebar-title {
+  color: var(--text-main);
+}
+
+.sidebar-section-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--text-secondary);
 }
 
 .page-list {

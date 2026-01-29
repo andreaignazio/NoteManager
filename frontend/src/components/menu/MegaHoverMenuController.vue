@@ -48,6 +48,7 @@ const props = defineProps({
   // context utile per azioni (tiptap / block)
   blockId: { type: String, default: "" },
   pageId: { type: String, default: "" },
+  docNodeId: { type: String, default: "" },
 
   // flags legacy (per root actions)
   enableCopyLink: { type: Boolean, default: false },
@@ -359,6 +360,7 @@ function buildCtx() {
     anchorKey: props.anchorKey,
     blockId: props.blockId || undefined,
     pageId: props.pageId || undefined,
+    docNodeId: props.docNodeId || undefined,
   };
 }
 
@@ -430,6 +432,11 @@ async function onNodeClick(node: HoverMenuNode) {
     }
     if (a.id === "move_to") {
       emitCommand(MENU_COMMANDS.BLOCK_MOVE_TO_PAGE);
+      close("api");
+      return;
+    }
+    if (a.id === "comment") {
+      emitCommand(MENU_COMMANDS.BLOCK_OPEN_COMMENT);
       close("api");
       return;
     }

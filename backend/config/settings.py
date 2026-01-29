@@ -31,12 +31,14 @@ if RENDER_EXTERNAL_HOSTNAME:
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'channels',
     'rest_framework',
     'rest_framework.authtoken',
     'djoser',
@@ -76,6 +78,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'config.wsgi.application'
+ASGI_APPLICATION = 'config.asgi.application'
 
 
 # Database
@@ -157,3 +160,17 @@ CSRF_TRUSTED_ORIGINS = [
     "https://notemanager-backend.onrender.com",
     "https://notemanager-au1g.onrender.com",
 ]
+
+REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")
+YJS_STORE_PATH = os.environ.get("YJS_STORE_PATH", str(BASE_DIR / "yjs.sqlite3"))
+YJS_DOCUMENT_TTL = int(os.environ.get("YJS_DOCUMENT_TTL", "604800"))
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [REDIS_URL],
+        },
+        "GROUP_EXPIRY": 60,
+    }
+}

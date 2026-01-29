@@ -1,44 +1,39 @@
 <script setup>
-import { ref, defineExpose } from 'vue'
-import { anchorKey, anchorKind } from '@/ui/anchorsKeyBind'
-import { useRegisterAnchors } from '@/composables/useRegisterAnchors';
+import { ref, defineExpose, computed } from "vue";
+import { anchorKey, anchorKind } from "@/ui/anchorsKeyBind";
+import { useRegisterAnchors } from "@/composables/useRegisterAnchors";
+import { getLangLabel } from "@/domain/codeLangs";
 
 const props = defineProps({
   // controlli visibilità/label dal parent
   blockId: { type: String, required: true },
   isCode: { type: Boolean, default: false },
-  languageLabel: { type: String, default: 'plaintext' },
+  languageLabel: { type: String, default: "plaintext" },
   wrapOn: { type: Boolean, default: true },
-})
+});
 
-const emit = defineEmits(['dots', 'lang', 'wrap'])
+const langLabelResolved = computed(() => getLangLabel(props.languageLabel));
 
-const dotsEl = ref(null)
-const langEl = ref(null)
-const wrapEl = ref(null)
+const emit = defineEmits(["dots", "lang", "wrap"]);
 
+const dotsEl = ref(null);
+const langEl = ref(null);
+const wrapEl = ref(null);
 
+const dots_key = anchorKey(
+  anchorKind("block", "dots", "blockRow", "codeToolbar"),
+  props.blockId,
+);
 
-const dots_key = anchorKey(anchorKind(
-  'block',
-  'dots',
-  'blockRow',
-  'codeToolbar'
-  ), props.blockId)
-
-const lang_key = anchorKey(anchorKind(
-  'block',
-  'lang',
-  'blockRow',
-  'codeToolbar'
-  ), props.blockId)
+const lang_key = anchorKey(
+  anchorKind("block", "lang", "blockRow", "codeToolbar"),
+  props.blockId,
+);
 
 useRegisterAnchors({
   [dots_key]: dotsEl,
   [lang_key]: langEl,
-})
-
-
+});
 
 defineExpose({
   getDotsEl: () => dotsEl.value,
@@ -46,58 +41,56 @@ defineExpose({
   getWrapEl: () => wrapEl.value,
   dots_key,
   lang_key,
-})
+});
 </script>
 
 <template>
- <div class="toolbar">
-  <div class="toolbar-group">
-    <!-- Language -->
-    <button
-      v-if="isCode"
-      ref="langEl"
-      class="toolbar-segment lang"
-      type="button"
-      @click.stop="emit('lang')"
-    >
-      {{ languageLabel }}
-      <span class="caret">▾</span>
-    </button>
+  <div v-if="isCode" class="toolbar">
+    <div class="toolbar-group">
+      <!-- Language -->
+      <button
+        v-if="isCode"
+        ref="langEl"
+        class="toolbar-segment lang"
+        type="button"
+        @click.stop="emit('lang')"
+      >
+        {{ langLabelResolved }}
+        <span class="caret">▾</span>
+      </button>
 
-    <!-- Separator -->
-    <div v-if="isCode" class="toolbar-separator"></div>
+      <!-- Separator -->
+      <div v-if="isCode" class="toolbar-separator"></div>
 
-    <!-- Wrap -->
-    <button
-      v-if="isCode"
-      ref="wrapEl"
-      class="toolbar-segment icon"
-      type="button"
-      :title="wrapOn ? 'Wrap: ON' : 'Wrap: OFF'"
-      @click.stop="emit('wrap')"
-    >
-      {{ wrapOn ? '↩︎' : '↔︎' }}
-    </button>
+      <!-- Wrap -->
+      <button
+        v-if="isCode"
+        ref="wrapEl"
+        class="toolbar-segment icon"
+        type="button"
+        :title="wrapOn ? 'Wrap: ON' : 'Wrap: OFF'"
+        @click.stop="emit('wrap')"
+      >
+        {{ wrapOn ? "↩︎" : "↔︎" }}
+      </button>
 
-    <!-- Dots -->
-    <button
-      ref="dotsEl"
-      class="toolbar-segment icon"
-      type="button"
-      title="Menu"
-      @click.stop="emit('dots')"
-    >
-      ⋯
-    </button>
+      <!-- Dots -->
+      <button
+        ref="dotsEl"
+        class="toolbar-segment icon"
+        type="button"
+        title="Menu"
+        @click.stop="emit('dots')"
+      >
+        ⋯
+      </button>
+    </div>
   </div>
-</div>
 </template>
 
 <style scoped>
 .toolbar {
   position: absolute;
-  top: var(--code-toolbar-top);
-  right: 0;
 
   opacity: 0;
   pointer-events: none;
@@ -137,7 +130,9 @@ defineExpose({
   font-size: 13px;
   color: var(--icon-secondary);
 
-  transition: background 120ms ease, color 120ms ease;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
 }
 
 .toolbar-segment.icon {
@@ -158,7 +153,7 @@ defineExpose({
 
 .caret {
   font-size: 11px;
-  opacity: .6;
+  opacity: 0.6;
   transform: translateY(-1px);
 }
 
@@ -168,5 +163,4 @@ defineExpose({
   background: var(--border-main);
   opacity: 0.6;
 }
-
 </style>

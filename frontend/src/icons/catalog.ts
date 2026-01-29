@@ -50,6 +50,7 @@ import {
 
   // utility / system
   Search,
+  Home,
   Settings,
   Trash2,
   Edit3,
@@ -222,6 +223,7 @@ export const ICONS: IconEntry[] = [
 
   // ===== Utility / System =====
   { id: "lucide:search", label: "Ricerca", icon: Search, category: "system" },
+  { id: "lucide:home", label: "Home", icon: Home, category: "system" },
   {
     id: "lucide:settings",
     label: "Impostazioni",

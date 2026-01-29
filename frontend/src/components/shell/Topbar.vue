@@ -12,11 +12,15 @@ import { anchorKind, anchorKey } from "@/ui/anchorsKeyBind";
 import { useRegisterAnchors } from "@/composables/useRegisterAnchors";
 import { useUIOverlayStore } from "@/stores/uioverlay";
 import { useAppActions } from "@/actions/useAppActions";
+import useDocStore from "@/stores/docstore";
+import useCollaborationStore from "@/stores/collaboration";
 
 const ui = useUiStore();
 const pagesStore = usePagesStore();
 const uiOverlay = useUIOverlayStore();
 const actions = useAppActions();
+const docStore = useDocStore();
+const collabStore = useCollaborationStore();
 const { currentPageId } = storeToRefs(pagesStore);
 
 const isHidden = computed(() => ui.sidebarMode === "hidden");
@@ -32,9 +36,22 @@ const isFavorite = computed(() => {
   const page = pagesStore.pagesById[currentPageId.value];
   return page ? page.favorite : false;
 });
+
+const isSaving = computed(() => {
+  if (!currentPageId.value) return false;
+  return docStore.isSavingForPage(currentPageId.value);
+});
+
+const liveCount = computed(() => {
+  if (!currentPageId.value) return 0;
+  return collabStore.presenceByPage[String(currentPageId.value)]?.count ?? 0;
+});
+
+const isLive = computed(() => liveCount.value > 1);
 // ===== Title Popover =====
 const titleBtnEl = ref(null);
 const dotsEl = ref(null);
+const shareEl = ref(null);
 
 const pageId = computed(() => currentPageId.value ?? null);
 
@@ -45,10 +62,15 @@ const key_dots = anchorKey(
   anchorKind("page", "dots", "topbar", "pageMenu"),
   currentPageId.value,
 );
+const key_share = anchorKey(
+  anchorKind("page", "share", "topbar", "pageShare"),
+  currentPageId.value,
+);
 
 useRegisterAnchors({
   [key_title]: titleBtnEl,
   [key_dots]: dotsEl,
+  [key_share]: shareEl,
 });
 
 /*
@@ -70,6 +92,18 @@ function openPageActions() {
   uiOverlay.requestOpen({
     menuId: "page.actions",
     anchorKey: key_dots,
+    payload: {
+      pageId: currentPageId.value,
+      placement: "bottom-end",
+    },
+  });
+}
+
+function openShare() {
+  if (!currentPageId.value) return;
+  uiOverlay.requestOpen({
+    menuId: "page.share",
+    anchorKey: key_share,
     payload: {
       pageId: currentPageId.value,
       placement: "bottom-end",
@@ -118,14 +152,27 @@ function handleToggleFavorite() {
 
     <!-- RIGHT -->
     <div class="right">
+      <span
+        v-if="isSaving"
+        class="save-indicator"
+        role="status"
+        aria-live="polite"
+        aria-label="Saving"
+        title="Saving"
+      ></span>
       <!--  <button class="icon-btn" type="button"  title="Mode (coming soon)" @click="handleToggleMode">*</button>-->
       <button
-        class="icon-btn"
+        class="icon-btn share-btn"
         type="button"
-        disabled
-        title="Share (coming soon)"
+        :title="isLive ? `Share · LIVE (${liveCount})` : 'Share'"
+        ref="shareEl"
+        @click="openShare"
       >
-        ⤴︎
+        <span class="share-icon">⤴︎</span>
+        <span v-if="isLive" class="share-live">
+          <span class="live-dot" aria-hidden="true"></span>
+          LIVE
+        </span>
       </button>
       <!-- <button class="icon-btn" type="button"   title="Favorite" @click="handleToggleFavorite"  >☆</button>-->
       <FavoriteButton
@@ -245,5 +292,45 @@ function handleToggleFavorite() {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.share-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  width: auto;
+}
+
+.share-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.share-live {
+  font-size: 11px;
+  font-weight: 700;
+  color: #10b981;
+  letter-spacing: 0.04em;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #22c55e;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.25);
+}
+
+.save-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #facc15;
+  box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.25);
+  display: inline-block;
 }
 </style>

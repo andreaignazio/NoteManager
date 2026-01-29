@@ -8,7 +8,8 @@ import {
 } from "vue-router";
 import LoginView from "../views/LoginView.vue";
 import AppShell from "../views/AppShell.vue";
-import PageView from "../views/PageView.vue";
+import SingleDocPageView from "../views/SingleDocPageView.vue";
+import HomeLandingView from "../views/HomeLandingView.vue";
 
 // ===========================
 // TYPE DEFINITIONS
@@ -42,9 +43,14 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
     children: [
       {
-        path: "/pages/:id",
+        path: "",
+        name: "home",
+        component: HomeLandingView,
+      },
+      {
+        path: "pages/:id",
         name: "pageDetail",
-        component: PageView,
+        component: SingleDocPageView,
         props: true,
       },
     ],

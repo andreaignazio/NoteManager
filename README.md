@@ -1,128 +1,274 @@
-# Architettura e Funzionamento dell’Applicazione
+# Notion-Style Editor — Fullstack README
 
-## Visione generale
+## Run locally (read before starting)
 
-L’applicazione è un **editor di documenti block-based**, ispirato a strumenti come Notion, costruito come **Single Page Application (SPA)**.
+This app requires **three services running in parallel**: Redis, the Django backend (Daphne/ASGI), and the Vite frontend. Before starting, make sure you have the prerequisites installed and the environment configured.
 
-Il concetto centrale non è la pagina web tradizionale, ma **lo stato applicativo sincronizzato** tra frontend e backend. L’utente interagisce con un’interfaccia estremamente reattiva: ogni modifica viene applicata immediatamente in memoria, mentre la persistenza sul server avviene in modo automatico e trasparente, senza interrompere il flusso di scrittura.
+### Prerequisites
 
----
+- Node.js (for Vite)
+- Python 3.10+ (for Django)
+- Redis (running locally or via Docker)
+- A Python virtual environment created under backend/venv (recommended)
 
-## Ruolo dei principali componenti
+### 1) Start Redis
 
-### Frontend – Vue 3 + Pinia
+- If you use Docker:
+  - `docker start redis`
+- If you use a local installation, start the Redis service for your OS.
 
-Il frontend è responsabile dell’intera esperienza utente.
+### 2) Start the backend (Daphne)
 
-- La UI è **ottimistica**: l’utente scrive e vede il risultato istantaneamente.
-- Lo stato delle pagine e dei blocchi è gestito centralmente tramite **Pinia**, che funge da *single source of truth* lato client.
-- Ogni blocco mantiene informazioni di sincronizzazione:
-  - `dirty`
-  - `saving`
-  - `error`
-  - `lastSavedAt`
+From backend/:
 
-Questi campi permettono di:
-- sapere se una modifica è già persistita
-- mostrare feedback visivo ("saving…", errore)
-- ritentare il salvataggio in caso di fallimento
+1. Activate the virtual environment.
+2. Ensure dependencies are installed from backend/requirements.txt.
+3. Run Daphne with the settings module:
+   - `set DJANGO_SETTINGS_MODULE=config.settings`
+   - `daphne config.asgi:application`
 
-La struttura del codice frontend riflette il dominio applicativo:
-- **Store Pinia** per Pages e Blocks
-- **Componenti Vue** per Page, Block Editor e singoli tipi di blocco
-- **Servizi API** (Axios) separati dalla logica di stato
+### 3) Start the frontend (Vite)
 
----
+From frontend/:
 
-### Backend – Django REST Framework
+1. Install dependencies (first time only):
+   - `npm install`
+2. Start the dev server:
+   - `npm run dev`
 
-Il backend rappresenta la **verità assoluta** dei dati.
+### Expected URLs
 
-Il suo ruolo non è gestire l’interattività, ma:
-- autenticare l’utente (token-based auth)
-- verificare che ogni risorsa appartenga al proprietario
-- validare e persistere i dati nel database
-
-Ogni operazione è atomica e sicura:
-- nessun blocco può essere modificato da un utente non autorizzato
-- le relazioni tra Page e Block sono sempre garantite dal modello dati
-
-La struttura del codice backend segue direttamente il dominio:
-- modelli `Page` e `Block`
-- serializer per la validazione
-- view REST per CRUD e aggiornamenti parziali (PATCH)
+- Frontend: http://localhost:5173 (default Vite)
+- Backend: http://localhost:8000 (default Daphne)
 
 ---
 
-### Database – PostgreSQL
+## Overview
 
-Sebbene l’interfaccia suggerisca un documento libero e destrutturato, il database è **fortemente relazionale**.
-
-Il concetto chiave è il **Block**:
-- ogni pagina è composta da una lista (potenzialmente annidata) di blocchi
-- ogni blocco è un’unità indipendente, ordinabile e persistente
-
-Questo approccio consente:
-- modifiche granulari
-- ordinamento efficiente
-- evoluzione naturale verso funzionalità avanzate (drag & drop, nesting)
+This project is a **block-based document editor** inspired by tools like Notion. It is built as a **Single Page Application (SPA)** with a Django backend. The core idea is **synchronized application state**: the UI updates instantly, while persistence happens automatically in the background.
 
 ---
 
-## Modello dati concettuale
+## Data structure (core domain)
+
+The data model is centered on **Pages** and a **Tiptap document per page**:
+
+- **Page** (backend) includes `parent`, `position`, `favorite`, `favorite_position`, and trash fields (see Page model). Pages can be nested by parent id.
+- **TiptapDocument** (backend) stores the editor JSON as `content` with a `version` field and one-to-one link to the page.
+- **DraggableItem** (frontend extension) is the block wrapper inside the Tiptap document. It carries attributes such as:
+  - `id`, `parentId`, `position` (ordering)
+  - `blockType`, `listType`, `listStart`, `todoChecked`
+  - visual metadata like `font`, `textColor`, `bgColor`
+
+Ordering is handled in the frontend using **fractional-indexing** via `posBetween()` in the domain helpers.
+
+---
+
+## Editor features
+
+The editor is built on **Tiptap/ProseMirror** and includes:
+
+- StarterKit base behavior (paragraphs, lists, etc.)
+- Headings, blockquotes, code blocks (lowlight), highlights, links, placeholders
+- Custom extensions for **draggable block rows** and **drag handles**
+- Paste handling that can split content into multiple blocks
+- Document outline navigation component
+
+---
+
+## Custom Tiptap node and block types
+
+The editor wraps each logical block in a **custom Tiptap node** called `draggableItem`.
+It stores block metadata as attributes (id, parentId, position, blockType, listType, listStart, todoChecked, font, textColor, bgColor, codeWrap) and enables nested, reorderable rows.
+
+Available block types (from the block type catalog) are:
+
+- `p` (Paragraph)
+- `h1`, `h2`, `h3` (Headings)
+- `ul` (Bulleted list)
+- `ol` (Numbered list)
+- `todo` (To‑do list item)
+- `quote` (Block quote)
+- `code` (Code block)
+- `divider` (Horizontal separator)
+
+List types map to `listType` (`bullet`/`ordered`) while the rendered block stays a paragraph wrapper with list styling.
+
+---
+
+## Pie menu
+
+The editor uses a **radial pie menu** for fast, context-aware actions. It is rendered as an overlay and positioned around the cursor, with separate pie variants for block types, text colors, and highlights.
+
+Key characteristics:
+
+- **Ring layout** with hover/selection previews (see `PieMenu` and `PieBlockTypeMenu`).
+- **Context-driven actions**: the menu dispatches commands through the unified command system (`MENU_COMMANDS` + `useMenuActionDispatcher`).
+- **Overlay-managed lifecycle**: the pie menu is mounted through the overlay stack, so it respects focus, close-on-outside, and z‑index ordering.
+
+---
+
+## UI and drag & drop
+
+The UI is designed to feel **lightweight and responsive** under constant editing.
+
+- **Editor drag & drop** uses the DraggableItem extension plus a custom drag-handle extension.
+- **Sidebar drag & drop** uses `DndController` to reorder pages, including favorites and nested trees.
+- Ordering uses fractional keys (`posBetween`) rather than array indices, which keeps reordering stable.
+- While dragging in realtime, the editor temporarily suspends Yjs awareness to avoid noisy presence updates.
+
+---
+
+## Sidebar lists and layout modes
+
+The sidebar renders **multiple lists** driven by store state:
+
+- **Favorites** (flat list, reorderable)
+- **Private Pages** (tree, nested)
+- **Shared Pages** (tree, nested)
+- **Trash** entry in the footer
+
+Layout modes are:
+
+- **Flyout (overlay)**: used when the sidebar is hidden; the flyout opens on hover and is managed via overlay layer bindings.
+- **Docked**: persistent sidebar with resize handle and stored width.
+
+This “double layout” allows a balance between maximum writing space and fast navigation.
+
+---
+
+## Global state management (Pinia)
+
+Pinia stores provide a **single source of truth** across the UI, including:
+
+- Pages, UI, overlays, documents, comments, and collaboration state
+
+Two cross-cutting systems are emphasized:
+
+- **Unified command system**: menu commands are defined in the menu domain and dispatched through a single handler (`useMenuActionDispatcher`) that routes to `useAppActions` and editor commands.
+- **Overlay binding manager**: overlays are registered/bound in the overlay store using binding composables (`useOverlayBinding`, `useOverlayBindingKeyed`) to keep menus and popovers in sync with state.
+
+---
+
+## Realtime collaboration
+
+Realtime is implemented via **Yjs** on top of Django Channels:
+
+- The editor connects to a Yjs websocket (`/ws/yjs`) using `WebsocketProvider`.
+- The backend persists Yjs updates via `YjsDocumentConsumer` and a SQLite-backed Yjs store.
+- Presence is read from Yjs awareness and stored in the collaboration store for UI display.
+
+---
+
+## Comment system (brief)
+
+Comments are tied to **document nodes** rather than whole pages:
+
+- Each thread is anchored by `doc_node_id` (from draggable items) and stored in `CommentThread`.
+- Comments are stored in `Comment` and loaded by page or node.
+- A comments websocket (`/ws/comments`) pushes `thread_created`, `comment_created`, and `thread_deleted` events to keep counts and badges live.
+
+---
+
+## Frontend (Vue 3 + Pinia)
+
+The frontend owns the entire user experience and maintains the local source of truth.
+
+### Key concepts
+
+- **Optimistic UI**: user edits appear immediately.
+- **Centralized state**: Pinia stores manage pages, documents, overlays, comments, and collaboration state.
+- **Doc-level sync state**: document loading/saving flags live in the doc store for per-page persistence.
+
+### Code structure highlights
+
+- Pinia stores: pages, docstore, UI, overlays, comments, collaboration
+- Vue components: page, editor, block types
+- API services: Axios-based HTTP layer, separated from state logic
+
+---
+
+## Backend (Django REST Framework + Channels)
+
+The backend is the **authoritative source of data**.
+
+### Responsibilities
+
+- Authentication and ownership checks
+- Validation and persistence of data
+- Atomic updates with safe, consistent relationships
+
+### Code structure highlights
+
+- Models: `Page`, `TiptapDocument`, comments, collaboration/invite entities
+- Serializers: input validation and API shaping
+- Views: RESTful CRUD + PATCH for incremental updates
+- Channels: realtime/collaboration plumbing (ASGI)
+
+---
+
+## Database
+
+Although the UI feels freeform, the database is **strongly relational** for pages, collaboration, and comments, while the editor content is stored as JSON in **TiptapDocument**.
+
+### Why this matters
+
+- The document can evolve without schema migrations for each block type
+- Pages and collaboration remain relational and safe
+- Comments remain anchored to stable doc node ids
+
+Realtime Yjs updates are persisted in a separate SQLite-backed Yjs store (`yjs.sqlite3`).
+
+---
+
+## Conceptual data model
 
 ### Page
-- appartiene a un singolo utente
-- ha un titolo modificabile
-- può avere una pagina padre (predisposta per pagine annidate)
 
-### Block
-- appartiene a una Page
-- può avere un `parent_block` (per blocchi annidati)
-- possiede un `type` che ne definisce il rendering
-- contiene `content` testuale o strutturato
-- ha una `position` che definisce l’ordine
+- Belongs to a user
+- Has a title
+- Can reference a parent page (nested pages)
 
-L’ordinamento è gestito tramite **fractional indexing**, che permette di inserire blocchi tra altri blocchi senza rinumerare l’intera lista. Questo rende naturale e performante il drag & drop.
+### TiptapDocument
 
----
+- One-to-one with a page
+- Stores editor JSON in `content`
+- Tracks `version`, `created_at`, `updated_at`
 
-## Flusso di una modifica
+### CommentThread + Comment
 
-Quando l’utente modifica un blocco:
-
-1. **Input utente** – l’utente digita.
-2. **Aggiornamento reattivo** – Vue aggiorna immediatamente la UI.
-3. **Aggiornamento store** – Pinia aggiorna lo stato e marca il blocco come `dirty`.
-4. **Auto-save con debounce** – dopo un breve intervallo senza input parte il salvataggio.
-5. **Persistenza backend** – il server valida, salva e aggiorna `updated_at`.
-6. **Sincronizzazione** – il frontend aggiorna `lastSavedAt` e rimuove lo stato `dirty`.
-
-Questo flusso garantisce massima fluidità senza sacrificare coerenza e sicurezza.
+- Thread anchored by `doc_node_id`
+- Comment body and author stored per thread
 
 ---
 
-## Relazione tra funzionalità e struttura del codice
+## Edit flow (end-to-end)
 
-Ogni scelta funzionale ha una diretta conseguenza architetturale:
+1. **User input** — the user types.
+2. **Reactive update** — Vue updates the UI instantly.
+3. **Doc state update** — the editor JSON is stored in the doc store.
+4. **Auto-save (debounced)** — the doc is patched to `/pages/:id/doc/`.
+5. **Backend persist** — the server updates `TiptapDocument`.
+6. **Sync feedback** — UI updates saving state from the doc store.
 
-- Editor a blocchi → modello `Block` indipendente
-- Contenuto annidato → `parent_block`
-- Auto-save → debounce frontend + PATCH backend
-- Drag & drop futuro → fractional indexing già in MVP
-- UI ottimistica → stato di sincronizzazione per ogni blocco
-- Scalabilità → separazione chiara tra dominio, API e stato
-
-Il codice cresce per **estensione naturale**, non per refactor forzati.
+This flow ensures responsiveness without sacrificing consistency.
 
 ---
 
-## Conclusione
+## Structure-to-feature mapping
 
-Questa applicazione dimostra come costruire un editor avanzato mantenendo:
-- UX fluida
-- struttura dati solida
-- architettura chiara e difendibile in sede di colloquio
+- Editor document → `TiptapDocument` + Tiptap JSON
+- Nested content → `draggableItem` attributes (`parentId`, `position`)
+- Auto-save → frontend debounce + backend PATCH to `/pages/:id/doc/`
+- Drag & drop → DraggableItem + drag handle extensions + fractional keys
+- Optimistic UI → editor state updates immediately, persistence async
+- Scale-ready design → clean separation of domain, API, state
 
-Ogni componente ha un ruolo preciso e ogni scelta è pensata per accompagnare l’evoluzione dall’MVP a un prodotto completo.
+---
 
+## Notes
+
+- For deeper technical notes, see:
+  - [ROADMAP.md](ROADMAP.md)
+  - [INTENTBYCONTEXT.md](INTENTBYCONTEXT.md)
+  - [BLOCKS_STORE_USAGE.md](BLOCKS_STORE_USAGE.md)

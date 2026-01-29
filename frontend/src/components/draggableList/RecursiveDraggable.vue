@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, onBeforeUnmount, nextTick } from "vue";
+import { ref, watch, onBeforeUnmount } from "vue";
 import { useDraggable } from "vue-draggable-plus";
 
 defineOptions({ name: "RecursiveDraggable" });
@@ -16,7 +16,7 @@ const listEl = ref(null);
 
 const emit = defineEmits(["addChildToggle"]);
 function addChildToggle(element) {
-  emit(addChildToggle, element);
+  emit("addChildToggle", element);
 }
 
 // in base alla versione, può essere un'istanza Sortable o una funzione cleanup
@@ -50,28 +50,8 @@ const bgScope = (el) => {
   else return "subtree";
 };
 
-import { useBlocksStore } from "@/stores/blocks";
-import { useAppActions } from "@/actions/useAppActions";
-const blocksStore = useBlocksStore();
-const actions = useAppActions();
-
 async function onCreateFirstToggleChild(toggleEl) {
-  const toggleId = String(toggleEl.id);
-
-  // assicura che sia aperto
-  actions.blocks.expandBlock(toggleId);
-  const block = blocksStore.blocksById[toggleId];
-  /*const newId = await blocksStore.addChildBlock(block.pageId, toggleId, { 
-    type: 'p',     // o 'p'
-    content: { text: '' },
-  })*/
-  const newId = await actions.blocks.addChildBlock(block.pageId, toggleId, {
-    type: "p",
-    content: { text: "" },
-  });
-
-  await nextTick();
-  actions.blocks.requestFocus(newId, 0);
+  addChildToggle(toggleEl);
 }
 </script>
 

@@ -32,6 +32,9 @@ interface UIStoreState {
   SidebarMoveToArmed: boolean;
   SidebarMoveToHoverPageId: string | number | null;
 
+  sidebarPrivateFolded: boolean;
+  sidebarSharedFolded: boolean;
+
   recentlyAddedPageId: string | number | null;
 
   pendingSidebarScrollToPageId: string | number | null;
@@ -48,6 +51,8 @@ interface StorageData {
   sidebarWidth?: number;
   themeMode?: string;
   lastOpenedPageId?: string;
+  sidebarPrivateFolded?: boolean;
+  sidebarSharedFolded?: boolean;
 }
 
 // ===========================
@@ -79,6 +84,9 @@ export const useUiStore = defineStore("ui", {
     SidebarMoveToArmed: false,
     SidebarMoveToHoverPageId: null,
 
+    sidebarPrivateFolded: false,
+    sidebarSharedFolded: false,
+
     recentlyAddedPageId: null,
 
     pendingSidebarScrollToPageId: null,
@@ -105,6 +113,15 @@ export const useUiStore = defineStore("ui", {
   },
 
   actions: {
+    // ===========================
+    // LAST OPENED PAGE
+    // ===========================
+
+    setLastOpenedPageId(id: string | number | null): void {
+      this.lastOpenedPageId = id != null ? String(id) : null;
+      this.persist();
+    },
+
     // ===========================
     // SIDEBAR MOVE-TO
     // ===========================
@@ -230,6 +247,24 @@ export const useUiStore = defineStore("ui", {
       this.persist();
     },
 
+    setSidebarPrivateFolded(v: boolean): void {
+      this.sidebarPrivateFolded = !!v;
+      this.persist();
+    },
+
+    toggleSidebarPrivateFolded(): void {
+      this.setSidebarPrivateFolded(!this.sidebarPrivateFolded);
+    },
+
+    setSidebarSharedFolded(v: boolean): void {
+      this.sidebarSharedFolded = !!v;
+      this.persist();
+    },
+
+    toggleSidebarSharedFolded(): void {
+      this.setSidebarSharedFolded(!this.sidebarSharedFolded);
+    },
+
     // ===========================
     // PERSISTENCE
     // ===========================
@@ -263,6 +298,12 @@ export const useUiStore = defineStore("ui", {
         if (typeof data?.lastOpenedPageId === "string") {
           this.lastOpenedPageId = data.lastOpenedPageId;
         }
+        if (typeof data?.sidebarPrivateFolded === "boolean") {
+          this.sidebarPrivateFolded = data.sidebarPrivateFolded;
+        }
+        if (typeof data?.sidebarSharedFolded === "boolean") {
+          this.sidebarSharedFolded = data.sidebarSharedFolded;
+        }
         this.applyTheme(this.themeMode);
       } catch {
         // ignore parsing errors
@@ -278,6 +319,8 @@ export const useUiStore = defineStore("ui", {
             sidebarWidth: this.sidebarWidth,
             themeMode: this.themeMode,
             lastOpenedPageId: this.lastOpenedPageId,
+            sidebarPrivateFolded: this.sidebarPrivateFolded,
+            sidebarSharedFolded: this.sidebarSharedFolded,
           }),
         );
       } catch {

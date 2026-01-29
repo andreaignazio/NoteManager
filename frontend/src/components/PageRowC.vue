@@ -1,160 +1,165 @@
 <script setup>
-import { ref, watch, nextTick, onMounted, onUnmounted, computed, toRef } from 'vue'
-import { getIconComponent } from '@/icons/catalog'
-import { useUiStore } from '@/stores/ui'
-import { anchorKey, anchorKind } from '@/ui/anchorsKeyBind'
-import { useRegisterAnchors } from '@/composables/useRegisterAnchors'
-import { useUIOverlayStore } from '@/stores/uioverlay'
-import {useAppActions} from '@/actions/useAppActions'
+import {
+  ref,
+  watch,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  computed,
+  toRef,
+} from "vue";
+import { getIconComponent } from "@/icons/catalog";
+import { useUiStore } from "@/stores/ui";
+import { anchorKey, anchorKind } from "@/ui/anchorsKeyBind";
+import { useRegisterAnchors } from "@/composables/useRegisterAnchors";
+import { useUIOverlayStore } from "@/stores/uioverlay";
+import { useAppActions } from "@/actions/useAppActions";
 
-const actions = useAppActions()
-const ui = useUiStore()
+const actions = useAppActions();
+const ui = useUiStore();
 
 const props = defineProps({
-
   page: { type: Object, required: true },
   level: { type: Number, default: 0 },
   hasChildren: { type: Boolean, default: false },
 
   isActive: { type: Boolean, default: false },
   isEditing: { type: Boolean, default: false },
-  draftTitle: { type: String, default: '' },
+  draftTitle: { type: String, default: "" },
 
   isExpanded: { type: Boolean, default: false },
 
-  
   pagesMenu: { type: Object },
 
   parentKey: { type: String },
   pageActionMenuId: { type: String },
   flash: { type: Boolean, default: false },
-  anchorScope: { type: String, default: 'tree' },
-})
+  anchorScope: { type: String, default: "tree" },
+  showPlus: { type: Boolean, default: true },
+  showChevron: { type: Boolean, default: true },
+});
 
 const emit = defineEmits([
-  'add-child',
-  'toggle-expand',
-  'delete',
-  'commit',
-  'cancel',
-  'update:draftTitle',
-  'open-menu',
-])
+  "add-child",
+  "toggle-expand",
+  "delete",
+  "commit",
+  "cancel",
+  "update:draftTitle",
+  "open-menu",
+]);
 
-const inputEl = ref(null)
-const editorEl = ref(null)
+const inputEl = ref(null);
+const editorEl = ref(null);
 
-const uiOverlay = useUIOverlayStore()
+const uiOverlay = useUIOverlayStore();
 
-const PageIcon = computed(() => getIconComponent(props.page?.icon))
+const PageIcon = computed(() => getIconComponent(props.page?.icon));
 
 const kind_title = anchorKind(
-  'page',
-  'title',
-  'sidebar',
-  String(props.anchorScope)
-)
+  "page",
+  "title",
+  "sidebar",
+  String(props.anchorScope),
+);
 const kind_dots = anchorKind(
-  'page',
-  'dots',
-  'sidebar',
-  String(props.anchorScope)
-)
+  "page",
+  "dots",
+  "sidebar",
+  String(props.anchorScope),
+);
 const kind_plus = anchorKind(
-  'page',
-  'plus',
-  'sidebar',
-  String(props.anchorScope)
-)
+  "page",
+  "plus",
+  "sidebar",
+  String(props.anchorScope),
+);
 
+const key_title = anchorKey(kind_title, props.page.id);
+const key_dots = anchorKey(kind_dots, props.page.id);
+const key_plus = anchorKey(kind_plus, props.page.id);
 
-const key_title = anchorKey(kind_title, props.page.id)
-const key_dots = anchorKey(kind_dots, props.page.id)
-const key_plus = anchorKey(kind_plus, props.page.id)
-
-const dotsEl = ref(null)
-const plusEl = ref(null)
-const titleEl = ref(null)
-
+const dotsEl = ref(null);
+const plusEl = ref(null);
+const titleEl = ref(null);
 
 useRegisterAnchors({
   [key_title]: titleEl,
   [key_dots]: dotsEl,
   [key_plus]: plusEl,
-})
-
+});
 
 function onOpen() {
-  console.log("Clicked on page:", props.page.id, "Title:", props.page.title)
-  actions.pages.redirectToPage(props.page.id)
+  console.log("Clicked on page:", props.page.id, "Title:", props.page.title);
+  actions.pages.redirectToPage(props.page.id);
 }
 
-
 function onToggleExpand() {
-  emit('toggle-expand', props.page.id)
+  emit("toggle-expand", props.page.id);
+}
+
+function onLeadingClick() {
+  if (!props.showChevron || !props.hasChildren) return;
+  onToggleExpand();
 }
 
 // autofocus in edit
 watch(
   () => props.isEditing,
   async (val) => {
-    if (!val) return
-    await nextTick()
-    inputEl.value?.focus?.()
-    inputEl.value?.select?.()
-  }
-)
+    if (!val) return;
+    await nextTick();
+    inputEl.value?.focus?.();
+    inputEl.value?.select?.();
+  },
+);
 
-
-const isHighlighted = ref(false)
-const pageActionMenuId = toRef(props, 'pageActionMenuId')
+const isHighlighted = ref(false);
+const pageActionMenuId = toRef(props, "pageActionMenuId");
 
 watch(
   pageActionMenuId,
   (newId) => {
     isHighlighted.value =
-      typeof newId === 'string' &&
+      typeof newId === "string" &&
       newId.includes(String(props.page.id)) &&
-      newId.includes(props.anchorScope)
+      newId.includes(props.anchorScope);
   },
-  { immediate: true }
-)
+  { immediate: true },
+);
 
 const isLastAddedPage = computed(() => {
- 
-  const lastAddedPageId = ui.getLastAddedPageId()
-  return lastAddedPageId === props.page.id
-})
-
-
+  const lastAddedPageId = ui.getLastAddedPageId();
+  return lastAddedPageId === props.page.id;
+});
 
 function onOpenMenu() {
-  console.log('Opening page actions menu for page:', props.page.id)
-  if (!dotsEl.value) return
+  console.log("Opening page actions menu for page:", props.page.id);
+  if (!dotsEl.value) return;
   uiOverlay.requestOpen({
-    menuId: 'page.actions',
+    menuId: "page.actions",
     anchorKey: key_dots,
     payload: {
       pageId: props.page.id,
-      placement: 'right',
-    }
-  })
-
-
+      placement: "right",
+    },
+  });
 }
 </script>
 
 <template>
   <div class="item-wrapper">
-  
     <div
       class="page-item"
-      :class="{ active: isActive, highlighted: isHighlighted,
+      :class="{
+        active: isActive,
+        highlighted: isHighlighted,
         'moved-flash': flash || isLastAddedPage,
-        'pie-drop-hover': ui.SidebarMoveToArmed && ui.SidebarMoveToHoverPageId === page.id
-         }"
+        'pie-drop-hover':
+          ui.SidebarMoveToArmed && ui.SidebarMoveToHoverPageId === page.id,
+      }"
       :data-id="page.id"
-      :data-page-id="page.id" 
+      :data-page-id="page.id"
       :data-parent="parentKey"
       @click="onOpen"
     >
@@ -165,7 +170,6 @@ function onOpenMenu() {
         @dblclick.stop="emit('start-edit', page)"
       >
         <div class="row-inner">
-         
           <button class="drag-handle" type="button" title="Drag" @click.stop>
             ⋮⋮
           </button>
@@ -174,38 +178,64 @@ function onOpenMenu() {
           <div
             class="leading"
             :class="{ 'has-children': hasChildren, expanded: isExpanded }"
-            @click.stop="onToggleExpand"
-            :title="isExpanded ? 'Collapse' : 'Expand'"
+            @click.stop="onLeadingClick"
+            :title="
+              showChevron && hasChildren
+                ? isExpanded
+                  ? 'Collapse'
+                  : 'Expand'
+                : ''
+            "
           >
-            <span class="chevron" 
-            :class="{active:isActive}"
-            aria-hidden="true" >
-              {{ isExpanded ? '▾' : '▸' }}
+            <span
+              v-if="showChevron && hasChildren"
+              class="chevron"
+              :class="{ active: isActive }"
+              aria-hidden="true"
+            >
+              {{ isExpanded ? "▾" : "▸" }}
             </span>
-            <span class="page-icon"
-            :class="{active:isActive}"
-            aria-hidden="true">
+            <span
+              class="page-icon"
+              :class="{ active: isActive }"
+              aria-hidden="true"
+            >
               <component :is="PageIcon" :size="16" />
             </span>
           </div>
 
           <!-- TITLE -->
-          <span ref="titleEl"
-          class="page-title-text"
+          <span
+            ref="titleEl"
+            class="page-title-text"
             :class="{ active: isActive }"
-           :title="page.title">
-            {{ String(page.title).trim() != '' ? page.title : 'Untitled' }}
+            :title="page.title"
+          >
+            {{ String(page.title).trim() != "" ? page.title : "Untitled" }}
           </span>
 
           <!-- debug opzionali -->
-         <!--<span class="debug">{{ page.position }}</span>
-          <span class="debug">{{ String(page.id).slice(0, 3) }}</span>--> 
+          <!--<span class="debug">{{ page.position }}</span>
+          <span class="debug">{{ String(page.id).slice(0, 3) }}</span>-->
         </div>
 
         <!-- ACTIONS -->
         <div class="row-actions" @click.stop>
-          <button ref="plusEl" class="icon-btn" @click="emit('add-child', page.id)">+</button>
-          <button ref="dotsEl" class="icon-btn menu-anchor" @click.stop="onOpenMenu">...</button>
+          <button
+            v-if="showPlus"
+            ref="plusEl"
+            class="icon-btn"
+            @click="emit('add-child', page.id)"
+          >
+            +
+          </button>
+          <button
+            ref="dotsEl"
+            class="icon-btn menu-anchor"
+            @click.stop="onOpenMenu"
+          >
+            ...
+          </button>
         </div>
       </div>
 
@@ -220,7 +250,9 @@ function onOpenMenu() {
         />
 
         <div class="row-actions" @click.stop>
-          <button class="icon-btn primary" @click="emit('commit', page.id)">Save</button>
+          <button class="icon-btn primary" @click="emit('commit', page.id)">
+            Save
+          </button>
           <button class="icon-btn" @click="emit('cancel')">Cancel</button>
         </div>
       </div>
@@ -230,8 +262,8 @@ function onOpenMenu() {
 
 <style scoped>
 :root {
-  --sidebar-row-pad-y: 6px;   /* spazio verticale interno */
-  --sidebar-row-gap: 4px;     /* spazio tra righe */
+  --sidebar-row-pad-y: 6px; /* spazio verticale interno */
+  --sidebar-row-gap: 4px; /* spazio tra righe */
   --sidebar-row-radius: 10px;
 }
 
@@ -245,7 +277,7 @@ function onOpenMenu() {
 
 .item-wrapper {
   width: 100%;
-  min-height: 32px; 
+  min-height: 32px;
   margin-bottom: var(--sidebar-row-gap);
   margin-top: var(--sidebar-row-gap);
 }
@@ -288,7 +320,7 @@ function onOpenMenu() {
   /* base */
   height: var(--sidebar-handle-h);
   border-radius: var(--sidebar-row-radius);
-  border: 0px solid rgba(0,0,0,.12);
+  border: 0px solid rgba(0, 0, 0, 0.12);
   background: var(--bg-icon-light);
   color: var(--icon-secondary);
   cursor: grab;
@@ -325,11 +357,13 @@ function onOpenMenu() {
   pointer-events: auto;
 }
 
-.drag-handle:active { cursor: grabbing; }
+.drag-handle:active {
+  cursor: grabbing;
+}
 
-
-
-.debug { font-size: 12px; }
+.debug {
+  font-size: 12px;
+}
 
 .page-item {
   width: 100%;
@@ -339,9 +373,15 @@ function onOpenMenu() {
   min-height: 34px;
 }
 
-.page-item:hover { background:var(--bg-hover); }
-.page-item.active { background: var(--bg-active); }
-.page-item.highlighted { background: rgba(0,0,0,.08); }
+.page-item:hover {
+  background: var(--bg-hover);
+}
+.page-item.active {
+  background: var(--bg-active);
+}
+.page-item.highlighted {
+  background: rgba(0, 0, 0, 0.08);
+}
 
 .page-row {
   display: flex;
@@ -368,7 +408,7 @@ function onOpenMenu() {
   color: var(--text-secondary);
   transform: translateX(2px);
 }
-.page-title-text.active{
+.page-title-text.active {
   color: var(--text-main);
 }
 
@@ -380,8 +420,8 @@ function onOpenMenu() {
   transition: opacity 120ms ease;
 }*/
 .row-actions {
-  position: absolute;          
-  right: var(--sidebar-row-pad-y);                
+  position: absolute;
+  right: var(--sidebar-row-pad-y);
   top: 50%;
   transform: translateY(-50%);
   display: flex;
@@ -415,7 +455,7 @@ function onOpenMenu() {
   height: 34px;
   padding: 0 10px;
   border-radius: 10px;
-  border: 1px solid rgba(0,0,0,.18);
+  border: 1px solid rgba(0, 0, 0, 0.18);
   background: #fff;
   outline: none;
 }
@@ -426,19 +466,22 @@ function onOpenMenu() {
   align-items: center;
   padding: 0 10px;
   border-radius: 8px;
-  border: 0px solid rgba(0,0,0,.12);
+  border: 0px solid rgba(0, 0, 0, 0.12);
   background: transparent;
   cursor: pointer;
   font-size: 12px;
-  opacity: .25;
+  opacity: 0.25;
   transition: opacity 120ms ease;
-  color:var(--icon-secondary)
+  color: var(--icon-secondary);
 }
 
 .icon-btn:hover {
-   background:  var(--bg-icon-hover); 
-   opacity: 1;}
-.icon-btn.primary { background: rgba(0,0,0,.12); }
+  background: var(--bg-icon-hover);
+  opacity: 1;
+}
+.icon-btn.primary {
+  background: rgba(0, 0, 0, 0.12);
+}
 
 /* leading: chevron/icon overlay */
 .leading {
@@ -461,40 +504,69 @@ function onOpenMenu() {
   align-items: center;
   justify-content: center;
   transition: opacity 120ms ease;
-  color:var(--text-secondary)
+  color: var(--text-secondary);
 }
 
 .leading .chevron.active {
-  color:var(--text-main)
-} 
-
-.leading .page-icon.active {
-  color:var(--text-main)
+  color: var(--text-main);
 }
 
-.leading .chevron { font-size: 14px; line-height: 1; }
+.leading .page-icon.active {
+  color: var(--text-main);
+}
 
-.page-icon :deep(svg) { display: block; }
+.leading .chevron {
+  font-size: 14px;
+  line-height: 1;
+}
 
-.leading .chevron { visibility: hidden; opacity: 0; }
-.leading .page-icon { visibility: visible; opacity: 1; }
+.page-icon :deep(svg) {
+  display: block;
+}
 
-.page-item:hover .leading.has-children .chevron { visibility: visible; opacity: 0.65; }
-.page-item:hover .leading.has-children .page-icon { visibility: hidden; opacity: 0; }
+.leading .chevron {
+  visibility: hidden;
+  opacity: 0;
+}
+.leading .page-icon {
+  visibility: visible;
+  opacity: 1;
+}
 
-.page-item .leading.has-children.expanded .chevron { visibility: visible; opacity: 1; }
-.page-item .leading.has-children.expanded .page-icon { visibility: hidden; opacity: 0; }
+.page-item:hover .leading.has-children .chevron {
+  visibility: visible;
+  opacity: 0.65;
+}
+.page-item:hover .leading.has-children .page-icon {
+  visibility: hidden;
+  opacity: 0;
+}
+
+.page-item .leading.has-children.expanded .chevron {
+  visibility: visible;
+  opacity: 1;
+}
+.page-item .leading.has-children.expanded .page-icon {
+  visibility: hidden;
+  opacity: 0;
+}
 
 .page-item.moved-flash {
   position: relative;
   outline: 2px solid rgba(35, 131, 226, 0.55);
-  background: rgba(35, 131, 226, 0.10);
+  background: rgba(35, 131, 226, 0.1);
   animation: movedPulse 900ms ease-out;
 }
 
 @keyframes movedPulse {
-  0%   { transform: scale(1);   }
-  35%  { transform: scale(1.01);}
-  100% { transform: scale(1);   }
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.01);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 </style>

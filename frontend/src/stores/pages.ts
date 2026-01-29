@@ -1,7 +1,6 @@
 import { defineStore } from "pinia";
 import api from "@/services/api";
 import { posBetween } from "@/domain/position";
-import { useBlocksStore } from "@/stores/blocks";
 import router from "@/router";
 
 // ===========================
@@ -18,6 +17,8 @@ interface Page {
   icon: string;
   favorite: boolean;
   favorite_position: string | null;
+  role?: "owner" | "editor" | "viewer" | null;
+  isShared?: boolean;
   deletedAt?: string | null;
   deletedBy?: string | number | null;
   trashedParentId?: string | number | null;
@@ -36,6 +37,8 @@ interface RawPage {
   icon: string;
   favorite: boolean;
   favorite_position: string | null;
+  role?: "owner" | "editor" | "viewer" | null;
+  is_shared?: boolean;
   deleted_at?: string | null;
   deleted_by?: string | number | null;
   trashed_parent?: string | number | null;
@@ -95,13 +98,6 @@ interface PageUndoEntry {
   createdAt?: number;
 }
 
-interface DuplicateBlockPayload {
-  type: string;
-  content: any;
-  position: string;
-  parentId: string | number | null;
-}
-
 // ===========================
 // HELPER FUNCTIONS
 // ===========================
@@ -117,6 +113,8 @@ function normalizePage(raw: RawPage): Page {
     icon: raw.icon,
     favorite: raw.favorite,
     favorite_position: raw.favorite_position,
+    role: raw.role ?? null,
+    isShared: raw.is_shared ?? false,
     deletedAt: raw.deleted_at ?? null,
     deletedBy: raw.deleted_by ?? null,
     trashedParentId: raw.trashed_parent ?? null,
@@ -959,13 +957,64 @@ export const usePagesStore = defineStore("pagesStore", {
 
       // Optimistic update
       page.favorite = newFavoriteStatus;
+      if (!newFavoriteStatus) page.favorite_position = null;
+
       try {
-        await this.patchPage(id, { favorite: newFavoriteStatus });
+        await this.setFavorite(id, newFavoriteStatus);
       } catch (error) {
         // Revert in case of error
         page.favorite = !newFavoriteStatus;
         console.error("Error toggling favorite status:", error);
       }
+    },
+
+    async setFavorite(
+      pageId: string | number,
+      favorite: boolean,
+      position?: string | null,
+    ): Promise<{ favorite: boolean; favorite_position: string | null }> {
+      const id = String(pageId);
+      const page = this.pagesById[id];
+
+      if (!favorite) {
+        await api.delete(`/pages/${id}/favorite/`);
+        if (page) {
+          page.favorite = false;
+          page.favorite_position = null;
+        }
+        return { favorite: false, favorite_position: null };
+      }
+
+      const payload: Record<string, any> = { favorite: true };
+      if (position !== undefined) payload.position = position;
+      const res = await api.post(`/pages/${id}/favorite/`, payload);
+      const data = res.data as {
+        favorite: boolean;
+        favorite_position: string | null;
+      };
+      if (page) {
+        page.favorite = !!data.favorite;
+        page.favorite_position = data.favorite_position ?? null;
+      }
+      return data;
+    },
+
+    async setFavoritePosition(
+      pageId: string | number,
+      position: string,
+    ): Promise<{ favorite: boolean; favorite_position: string | null }> {
+      const id = String(pageId);
+      const page = this.pagesById[id];
+      const res = await api.patch(`/pages/${id}/favorite/`, { position });
+      const data = res.data as {
+        favorite: boolean;
+        favorite_position: string | null;
+      };
+      if (page) {
+        page.favorite = !!data.favorite;
+        page.favorite_position = data.favorite_position ?? null;
+      }
+      return data;
     },
 
     hasFavoritePages(): boolean {
@@ -1072,88 +1121,18 @@ export const usePagesStore = defineStore("pagesStore", {
     async duplicatePageDeep(
       sourcePageId: string | number,
     ): Promise<string | number> {
-      const blocksStore = useBlocksStore();
+      const res = await api.post(`/pages/${sourcePageId}/duplicate-deep/`, {
+        include_children: true,
+      });
 
-      const src = this.pagesById[String(sourcePageId)];
-      if (!src) throw new Error("Source page not found");
-
-      // 1) compute new page position (immediately after)
-      const parentId = src.parentId ?? null;
-      const parentKey = parentKeyOf(parentId);
-      const siblings = [...(this.childrenByParentId[parentKey] ?? [])].map(
-        String,
-      );
-
-      const idx = siblings.indexOf(String(sourcePageId));
-      const nextId = idx >= 0 ? (siblings[idx + 1] ?? null) : null;
-
-      const nextPos = nextId
-        ? ((this.pagesById[String(nextId)]?.position ?? null) as string | null)
-        : null;
-      const newPos = posBetween(src.position ?? null, nextPos);
-
-      // 2) create new page
-      const payload: PagePayload = {
-        title: `Copy of ${src.title || "Untitled"}`,
-        icon: src.icon ?? "",
-        parent: parentId,
-        position: newPos,
-      };
-
-      const created = await api.post("/pages/", payload);
-      const newPage = created.data as RawPage;
-      const newPageId = String(newPage.id);
-
-      // insert page into store
-      this.pagesById[newPageId] = normalizePage(newPage);
-      if (idx >= 0) {
-        const nextSibs = siblings.slice();
-        nextSibs.splice(idx + 1, 0, newPageId);
-        this.childrenByParentId[parentKey] = nextSibs as any;
-      }
-
-      // 3) fetch blocks for source page
-      await blocksStore.fetchBlocksForPage(String(sourcePageId));
-
-      // 4) get preorder rows
-      const rows = blocksStore.renderRowsForPage(String(sourcePageId));
-
-      // 5) clone blocks preserving parent mapping
-      const idMap = new Map<string, string>();
-
-      for (const row of rows) {
-        const b = row.block;
-        const oldId = String(b.id);
-        const oldParentId = b.parentId != null ? String(b.parentId) : null;
-        const newParentId = oldParentId
-          ? (idMap.get(oldParentId) ?? null)
-          : null;
-
-        const createPayload: DuplicateBlockPayload = {
-          type: b.type,
-          content: b.content,
-          position: b.position,
-          parentId: newParentId,
-        };
-
-        const res = await api.post(
-          `/pages/${newPageId}/blocks/`,
-          createPayload,
-        );
-        const newBlock = res.data;
-        idMap.set(oldId, String(newBlock.id));
-      }
-
-      // 6) fetch blocks for new page
-      await blocksStore.fetchBlocksForPage(newPageId);
-
+      const newPageId = res.data.new_page_id;
+      await this.fetchPages();
       return newPageId;
     },
 
     async duplicatePageTransactional(
       sourcePageId: string | number,
     ): Promise<string | number> {
-      const blocksStore = useBlocksStore();
       console.log("DUPLICATE PAGE TRANSACTIONAL:", sourcePageId);
 
       const res = await api.post(`/pages/${sourcePageId}/duplicate-deep/`, {
@@ -1163,7 +1142,6 @@ export const usePagesStore = defineStore("pagesStore", {
       const newPageId = res.data.new_page_id;
 
       await this.fetchPages();
-      await blocksStore.fetchBlocksForPage(newPageId);
       return res.data.new_page_id;
     },
   },

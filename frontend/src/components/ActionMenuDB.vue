@@ -376,6 +376,7 @@ const maxHeightStyle = computed(() => {
               :data-menu-item-id="it.id"
               :class="{ active: it.id === activeId, danger: !!it.danger }"
               :disabled="!!it.disabled"
+              :aria-label="it.ariaLabel || it.label"
               type="button"
               role="menuitem"
               @click="pick(it)"

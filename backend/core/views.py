@@ -2,38 +2,119 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
-from django.db.models import Prefetch
+from django.db.models import Q
 from rest_framework.exceptions import ValidationError
-from .serializers import TransferSubtreeSerializer, DuplicatePageDeepSerializer, PageSerializer,  DuplicateBlockSubtreeSerializer
-from .serializers import BlockBatchCreateSerializer
+from .serializers import DuplicatePageDeepSerializer
 from django.db import transaction, IntegrityError
-from fractional_indexing import generate_key_between, generate_n_keys_between
-from core.utils.tree import flatten_tree
+from fractional_indexing import generate_key_between
 from collections import defaultdict
 from django.utils import timezone
+from datetime import timedelta
+from django.http import Http404
+from django.contrib.auth import get_user_model
+import json
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 
 
 import uuid
 
-from .models import Page, Block
+from .models import (
+    Page,
+    TiptapDocument,
+    PageCollaborator,
+    PageFavorite,
+    PageInvite,
+    PageAuditLog,
+    CollaborationRole,
+    InviteStatus,
+    CommentThread,
+    Comment,
+)
 from .serializers import (
-    PageSerializer, 
-    PageDetailSerializer, 
-    BlockSerializer, 
-    BlockCreateSerializer,
+    PageSerializer,
+    PageDetailSerializer,
+    TiptapDocumentSerializer,
     TrashPageSerializer,
     RestorePageSerializer,
     PurgePageSerializer,
+    PageCollaboratorSerializer,
+    PageInviteSerializer,
+    PageAuditLogSerializer,
+    UserSummarySerializer,
+    CommentThreadSerializer,
+    CommentSerializer,
 )
+from django.conf import settings
+from .utils.yjs_compact import compact_room
+
+User = get_user_model()
+
+
+def get_page_role(page: Page, user) -> str | None:
+    if not user or not user.is_authenticated:
+        return None
+    if page.owner_id == user.id:
+        return CollaborationRole.OWNER
+    collab = PageCollaborator.objects.filter(page=page, user=user).only("role").first()
+    return collab.role if collab else None
+
+
+def require_page_role(page: Page, user, allowed_roles: set[str]) -> str:
+    role = get_page_role(page, user)
+    if role is None or role not in allowed_roles:
+        raise PermissionDenied("access denied")
+    return role
+
+
+def log_audit(page: Page, actor, action: str, target_user=None, role_before=None, role_after=None, meta=None):
+    PageAuditLog.objects.create(
+        page=page,
+        actor=actor,
+        target_user=target_user,
+        action=action,
+        role_before=role_before,
+        role_after=role_after,
+        meta=meta or {},
+    )
 
 class PageViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self):
+        lookup_value = self.kwargs.get(self.lookup_field or "pk")
+        page = Page.objects.filter(pk=lookup_value).first()
+        if not page:
+            raise Http404
+
+        role = get_page_role(page, self.request.user)
+        if role is None:
+            raise PermissionDenied("access denied")
+
+        include_trashed = self.request.query_params.get("include_trashed") in {
+            "1",
+            "true",
+            "yes",
+        }
+        if (
+            page.deleted_at
+            and not include_trashed
+            and self.action not in {"restore", "purge", "trash", "trash_list"}
+        ):
+            raise PermissionDenied("access denied")
+
+        return page
 
     def get_queryset(self):
         if not getattr(self.request, "user", None) or not self.request.user.is_authenticated:
             return Page.objects.none()
 
-        qs = Page.objects.filter(owner=self.request.user)
+        if self.action == "trash_list":
+            qs = Page.objects.filter(owner=self.request.user)
+        else:
+            qs = Page.objects.filter(
+                Q(owner=self.request.user) | Q(collaborators__user=self.request.user)
+            ).distinct()
 
         include_trashed = self.request.query_params.get("include_trashed") in {
             "1",
@@ -44,15 +125,6 @@ class PageViewSet(viewsets.ModelViewSet):
         if not include_trashed and self.action not in {"restore", "purge", "trash_list"}:
             qs = qs.filter(deleted_at__isnull=True)
 
-        if self.action == "retrieve":
-            qs = qs.prefetch_related(
-                Prefetch(
-                    "blocks",  # Deve matchare related_name='blocks' nel model Block
-                    queryset=Block.objects.order_by("parent_block_id", "position"),
-                )
-            )
-            
-       
         return qs.order_by('-created_at')
 
     def _collect_descendant_ids(self, root_id):
@@ -186,6 +258,11 @@ class PageViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
+    def update(self, request, *args, **kwargs):
+        page = self.get_object()
+        require_page_role(page, request.user, {CollaborationRole.OWNER, CollaborationRole.EDITOR})
+        return super().update(request, *args, **kwargs)
+
     def get_serializer_class(self):
         if self.action == 'retrieve':
             return PageDetailSerializer
@@ -193,6 +270,7 @@ class PageViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         page = self.get_object()
+        require_page_role(page, request.user, {CollaborationRole.OWNER})
         ser = TrashPageSerializer(data=request.data or {})
         ser.is_valid(raise_exception=True)
         include_children = ser.validated_data.get("include_children", True)
@@ -217,6 +295,7 @@ class PageViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="trash")
     def trash(self, request, pk=None):
         page = self.get_object()
+        require_page_role(page, request.user, {CollaborationRole.OWNER})
         ser = TrashPageSerializer(data=request.data or {})
         ser.is_valid(raise_exception=True)
         include_children = ser.validated_data.get("include_children", True)
@@ -235,6 +314,7 @@ class PageViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="restore")
     def restore(self, request, pk=None):
         page = self.get_object()
+        require_page_role(page, request.user, {CollaborationRole.OWNER})
         ser = RestorePageSerializer(data=request.data or {})
         ser.is_valid(raise_exception=True)
         include_children = ser.validated_data.get("include_children", True)
@@ -253,6 +333,7 @@ class PageViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["delete"], url_path="purge")
     def purge(self, request, pk=None):
         page = self.get_object()
+        require_page_role(page, request.user, {CollaborationRole.OWNER})
         ser = PurgePageSerializer(data=request.data or {})
         ser.is_valid(raise_exception=True)
         include_children = ser.validated_data.get("include_children", True)
@@ -265,151 +346,11 @@ class PageViewSet(viewsets.ModelViewSet):
 
         Page.objects.filter(owner=request.user, id__in=ids).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-    
-    @action(detail=True, methods=["post"], url_path="blocks")
-    def create_block(self, request, pk=None):
-        page = self.get_object() # Carica la pagina e verifica che sia tua (grazie al queryset)
-
-       
-        serializer = BlockCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        parent = serializer.validated_data.get("parent_block")
-
-        if parent and parent.page_id != page.id:
-            raise ValidationError({
-                "parent_block": "parent_block must belong to the same page"
-            })
-        
-        block = serializer.save(page=page)
-        return Response(BlockSerializer(block).data, status=status.HTTP_201_CREATED)
-    
-    @action(detail=True, methods=["post"], url_path="transfer-subtree")
-    def transfer_subtree(self, request, pk=None):
-        """
-        POST /pages/<from_page_uuid>/transfer-subtree/
-        Body:
-          {
-            "root_id": "<block_uuid>",
-            "to_page_id": "<page_uuid>",
-            "to_parent_block": "<block_uuid|null>",
-            "after_block_id": "<block_uuid|null>"
-          }
-        """
-        from_page = self.get_object()  # garantisce ownership
-        ser = TransferSubtreeSerializer(data=request.data)
-        ser.is_valid(raise_exception=True)
-        data = ser.validated_data
-
-        root_id = data["root_id"]
-        to_page_id = data["to_page_id"]
-        to_parent_block_id = data.get("to_parent_block")
-        after_block_id = data.get("after_block_id")
-
-        # carica target page (ownership)
-        try:
-            to_page = Page.objects.get(id=to_page_id, owner=request.user)
-        except Page.DoesNotExist:
-            raise ValidationError({"to_page_id": "Target page not found (or not owned by user)."})
-
-        with transaction.atomic():
-            # lock root (e valida che stia nella from_page)
-            try:
-                root = Block.objects.select_for_update().get(id=root_id, page=from_page)
-            except Block.DoesNotExist:
-                raise ValidationError({"root_id": "Root block not found in source page."})
-
-            # valida to_parent_block (se presente) appartiene a to_page
-            target_parent = None
-            if to_parent_block_id is not None:
-                try:
-                    target_parent = Block.objects.select_for_update().get(id=to_parent_block_id, page=to_page)
-                except Block.DoesNotExist:
-                    raise ValidationError({"to_parent_block": "Target parent must belong to target page."})
-
-            # ---- costruisci subtree ids (DFS) leggendo tutti i blocchi della from_page
-            rows = list(
-                Block.objects
-                .select_for_update()
-                .filter(page=from_page)
-                .values_list("id", "parent_block_id")
-            )
-
-            children = {}
-            for bid, pid in rows:
-                children.setdefault(pid, []).append(bid)
-
-            subtree_ids = []
-            stack = [root.id]
-            seen = set()
-            while stack:
-                cur = stack.pop()
-                if cur in seen:
-                    continue
-                seen.add(cur)
-                subtree_ids.append(cur)
-                for ch in children.get(cur, []):
-                    stack.append(ch)
-
-            if after_block_id is not None and after_block_id in seen:
-                raise ValidationError({
-                    "after_block_id": "Cannot insert relative to a block inside the moved subtree."
-                })
-            
-            # prevenzione: non puoi attaccare il subtree dentro se stesso
-            if target_parent and target_parent.id in seen:
-                raise ValidationError({"to_parent_block": "Cannot move subtree inside its own descendant."})
-
-            # ---- calcola new position per root nella target (stesso parent target_parent)
-            siblings_qs = Block.objects.select_for_update().filter(
-                page=to_page,
-                parent_block=target_parent
-            ).order_by("position", "id")
-
-            if after_block_id is not None:
-                # after deve essere sibling (stesso parent) nella target
-                try:
-                    after = siblings_qs.get(id=after_block_id)
-                except Block.DoesNotExist:
-                    raise ValidationError({"after_block_id": "after_block_id must be a sibling under target parent in target page."})
-
-                prev_pos = after.position
-
-                # prossimo sibling = primo con position > prev_pos
-                nxt = siblings_qs.filter(position__gt=prev_pos).first()
-                next_pos = nxt.position if nxt else None
-
-                new_root_pos = generate_key_between(prev_pos, next_pos)
-            else:
-                # append in coda
-                last = siblings_qs.last()
-                prev_pos = last.position if last else None
-                new_root_pos = generate_key_between(prev_pos, None)
-
-            # ---- sposta tutti i nodi del subtree nella nuova pagina
-            Block.objects.filter(id__in=subtree_ids).update(page=to_page)
-
-            # ---- aggiorna root: parent_block + position
-            root.parent_block = target_parent
-            root.position = new_root_pos
-            root.save(update_fields=["parent_block", "position"])
-
-            moved_blocks = Block.objects.filter(id__in=subtree_ids).order_by("parent_block_id", "position")
-            return Response(
-            {
-                "ok": True,
-                "from_page_id": str(from_page.id),
-                "to_page_id": str(to_page.id),
-                "root_id": str(root.id),
-                "new_root_position": new_root_pos,
-                "blocks": BlockSerializer(moved_blocks, many=True).data
-            },
-            status=status.HTTP_200_OK
-            )
 
     @action(detail=True, methods=["post"], url_path="duplicate-deep")
     def duplicate_deep(self, request, pk=None):
         src = self.get_object()  # ownership ok
+        require_page_role(src, request.user, {CollaborationRole.OWNER, CollaborationRole.EDITOR})
         ser = DuplicatePageDeepSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         include_children = ser.validated_data.get("include_children", False)
@@ -484,64 +425,27 @@ class PageViewSet(viewsets.ModelViewSet):
                     Page.objects.bulk_create(to_create, batch_size=500)
 
             # -------------------------
-            # 4) duplica i blocks per tutte le pagine copiate (root + eventualmente disc)
-            #    - preserva position identica
-            #    - preserva gerarchia parent_block
-            #    - performante: bulk_create + bulk_update parent
+            # 4) duplica i tiptap docs per tutte le pagine copiate (root + eventualmente disc)
             # -------------------------
-            # prendi tutti i blocks delle pagine sorgenti coinvolte
             src_page_ids = [p.id for p in src_pages]
-            all_src_blocks = list(
-                Block.objects.select_for_update()
+            docs = list(
+                TiptapDocument.objects.select_for_update()
                 .filter(page_id__in=src_page_ids)
-                .values(
-                    "id", "page_id", "parent_block_id", "kind", "type",
-                    "content", "props", "layout", "width", "position", "version"
-                )
+                .values("page_id", "content", "version")
             )
-
-            # prepara mapping old_block_id -> new_block_id
-            block_id_map = {}
-            new_blocks = []
-
-            # pre-assegna id nuovi (così puoi rimappare parent dopo)
-            for b in all_src_blocks:
-                block_id_map[b["id"]] = uuid.uuid4()
-
-            # crea righe nuove con parent temporaneamente NULL (poi bulk_update)
-            for b in all_src_blocks:
-                new_blocks.append(Block(
-                    id=block_id_map[b["id"]],
-                    page_id=page_id_map[b["page_id"]],
-                    parent_block_id=None,  # set dopo
-                    kind=b["kind"],
-                    type=b["type"],
-                    content=b["content"] or {},
-                    props=b["props"] or {},
-                    layout=b["layout"] or {},
-                    width=b["width"],
-                    position=b["position"],     # ✅ ordine preservato
-                    version=1,                  # opzionale: reset
+            new_docs = []
+            for doc in docs:
+                new_page_id = page_id_map.get(doc["page_id"])
+                if not new_page_id:
+                    continue
+                new_docs.append(TiptapDocument(
+                    id=uuid.uuid4(),
+                    page_id=new_page_id,
+                    content=doc["content"] or {},
+                    version=doc["version"] or 1,
                 ))
-
-            if new_blocks:
-                Block.objects.bulk_create(new_blocks, batch_size=1000)
-
-                # ora setti parent_block rimappato (solo se parent era dentro lo stesso set)
-                # NB: parent_block dei blocks è sempre nella stessa pagina, quindi è presente nel mapping.
-                to_update = []
-                for b in all_src_blocks:
-                    old_parent = b["parent_block_id"]
-                    if old_parent is None:
-                        continue
-                    new_id = block_id_map[b["id"]]
-                    new_parent_id = block_id_map.get(old_parent)
-                    if new_parent_id is None:
-                        continue
-                    to_update.append(Block(id=new_id, parent_block_id=new_parent_id))
-
-                if to_update:
-                    Block.objects.bulk_update(to_update, ["parent_block"], batch_size=1000)
+            if new_docs:
+                TiptapDocument.objects.bulk_create(new_docs, batch_size=500)
 
             return Response(
                 {
@@ -554,177 +458,13 @@ class PageViewSet(viewsets.ModelViewSet):
             )
 
     
-
-    @action(detail=True, methods=["post"], url_path="blocks/batch")
-    def batch_create_blocks(self, request, pk=None):
-        page = self.get_object()
-
-        ser = BlockBatchCreateSerializer(data=request.data)
-        ser.is_valid(raise_exception=True)
-        data = ser.validated_data
-
-        parent_id = data.get("parent_block", None)
-        after_id = data.get("after_block_id", None)
-        tree_items = data["blocks"]  # adesso è tree
-
-        with transaction.atomic():
-            # 1) resolve/lock parent esterno (se presente)
-            target_parent_id = None
-            if parent_id is not None:
-                try:
-                    target_parent_id = str(
-                        Block.objects.select_for_update().get(id=parent_id, page=page).id
-                    )
-                except Block.DoesNotExist:
-                    raise ValidationError({"parent_block": "parent_block must belong to the same page"})
-
-            # 2) flatten tree
-            flat = flatten_tree(tree_items)  # lista di dict con _parent_temp
-
-            # 3) alloc UUIDs + map tempId -> uuid
-            temp_map = {}
-            node_ids = []
-            for it in flat:
-                bid = uuid.uuid4()
-                node_ids.append(bid)
-                tid = it.get("tempId")
-                if tid:
-                    # opzionale: valida unicità tempId
-                    if tid in temp_map:
-                        raise ValidationError({"blocks": f"Duplicate tempId: {tid}"})
-                    temp_map[tid] = str(bid)
-
-            # 4) resolve parent_block_id per ogni node
-            #    - se _parent_temp è presente => parent è un blocco nuovo (lookup in temp_map)
-            #    - altrimenti => parent è target_parent_id (può essere None)
-            for idx, it in enumerate(flat):
-                ptemp = it.get("_parent_temp")
-                if ptemp:
-                    pid = temp_map.get(ptemp)
-                    if not pid:
-                        raise ValidationError({"blocks": f"Unknown parent tempId: {ptemp}"})
-                    it["_parent_id"] = pid
-                else:
-                    it["_parent_id"] = target_parent_id  # None ok
-
-            # 5) per ogni parent_id: lock siblings + calcola positions
-            #    manteniamo l'ordine di input per ogni gruppo
-            groups = defaultdict(list)  # parent_id -> list of node indexes
-            for idx, it in enumerate(flat):
-                groups[it["_parent_id"]].append(idx)
-
-            positions_by_idx = {}
-
-            # ✅ LOCK ONCE: tutti i siblings di tutti i parent che toccheremo
-            parent_ids_to_lock = set(groups.keys())
-            
-            # Separa None dai veri parent_ids (ORM non supporta None in __in)
-            from django.db.models import Q
-            parent_ids_nonnull = {pid for pid in parent_ids_to_lock if pid is not None}
-            
-            query = Q(page=page)
-            if parent_ids_nonnull:
-                query &= Q(parent_block_id__in=parent_ids_nonnull)
-                if None in parent_ids_to_lock:
-                    query |= Q(page=page, parent_block_id__isnull=True)
-            else:
-                query &= Q(parent_block_id__isnull=True)
-            
-            all_siblings = list(
-                Block.objects.select_for_update()
-                .filter(query)
-                .values_list("id", "parent_block_id", "position")
-                .order_by("parent_block_id", "position", "id")
-            )
-
-            # Organizza siblings per parent
-            siblings_by_parent = defaultdict(list)
-            for bid, pid, pos in all_siblings:
-                siblings_by_parent[pid].append((bid, pos))
-
-            # 5a) gruppo root: usa after_id come prima
-            root_pid = target_parent_id
-            if root_pid in groups:
-                siblings = siblings_by_parent.get(root_pid, [])
-
-                if after_id is not None:
-                    # Trova after_id nei siblings
-                    after_pos = next((pos for bid, pos in siblings if bid == after_id), None)
-                    if after_pos is None:
-                        raise ValidationError({"after_block_id": "after_block_id must be a sibling under target parent"})
-                    prev_pos = after_pos
-                    nxt = next((pos for bid, pos in siblings if pos > prev_pos), None)
-                    next_pos = nxt
-                else:
-                    last_pos = siblings[-1][1] if siblings else None
-                    prev_pos = last_pos
-                    next_pos = None
-
-                idxs = groups[root_pid]
-                pos_list = generate_n_keys_between(prev_pos, next_pos, n=len(idxs))
-                for j, idx in enumerate(idxs):
-                    positions_by_idx[idx] = pos_list[j]
-
-            # 5b) gruppi figli: append sotto parent nuovo
-            for pid, idxs in groups.items():
-                if pid == root_pid:
-                    continue
-                siblings = siblings_by_parent.get(pid, [])
-                last_pos = siblings[-1][1] if siblings else None
-                prev_pos = last_pos
-                next_pos = None
-
-                pos_list = generate_n_keys_between(prev_pos, next_pos, n=len(idxs))
-                for j, idx in enumerate(idxs):
-                    positions_by_idx[idx] = pos_list[j]
-
-            print("FLAT:", [(x.get("type"), x.get("tempId"), x.get("_parent_temp"), x.get("_parent_id")) for x in flat])
-
-            # 6) bulk create
-            to_create = []
-            for i, it in enumerate(flat):
-                bid = node_ids[i]
-                to_create.append(Block(
-                    id=bid,
-                    page=page,
-                    parent_block_id=it["_parent_id"],  # string uuid or None
-                    kind=it["kind"],
-                    type=it["type"],
-                    content=it.get("content") or {},
-                    props=it.get("props") or {},
-                    layout=it.get("layout") or {},
-                    width=it.get("width"),
-                    position=positions_by_idx[i],
-                    version=1,
-                ))
-
-            Block.objects.bulk_create(to_create, batch_size=1000)
-
-            # 7) top-level ids (utile al client)
-            top_level_ids = []
-            for idx, it in enumerate(flat):
-                if it.get("_parent_temp") is None:
-                    top_level_ids.append(str(node_ids[idx]))
-
-            return Response(
-                {
-                    "ok": True,
-                    "map": temp_map,  # tempId -> uuid
-                    "ids": [str(x) for x in node_ids],
-                    "topLevelIds": top_level_ids,
-                },
-                status=status.HTTP_201_CREATED,
-            )
-
-    def _append_favorite_position(self, owner, parent_id=None):
-       
-        qs = Page.objects.select_for_update().filter(
-            owner=owner,
-            favorite=True
-        ).exclude(favorite_position__isnull=True).order_by("favorite_position")
+    def _append_favorite_position(self, user):
+        qs = PageFavorite.objects.select_for_update().filter(
+            user=user,
+        ).exclude(position__isnull=True).order_by("position")
 
         last = qs.last()
-        prev_pos = last.favorite_position if last else None
+        prev_pos = last.position if last else None
         return generate_key_between(prev_pos, None)
 
     def perform_update(self, serializer):
@@ -744,209 +484,559 @@ class PageViewSet(viewsets.ModelViewSet):
             # se metto favorite e non ho pos -> append in coda
             if (not old_fav) and updated.favorite:
                 if not updated.favorite_position:
-                    updated.favorite_position = self._append_favorite_position(owner=self.request.user)
+                    updated.favorite_position = self._append_favorite_position(user=self.request.user)
                     updated.save(update_fields=["favorite_position"])
 
-class BlockViewSet(viewsets.ModelViewSet):
-    permission_classes = [permissions.IsAuthenticated]
+    @action(detail=True, methods=["post", "delete", "patch"], url_path="favorite")
+    def favorite(self, request, pk=None):
+        page = self.get_object()
+        role = get_page_role(page, request.user)
+        if role is None:
+            raise PermissionDenied("access denied")
 
-    def get_queryset(self):
-        if not getattr(self.request, "user", None) or not self.request.user.is_authenticated:
-            return Block.objects.none()
-        return Block.objects.filter(page__owner=self.request.user)
+        user = request.user
+        favorite = request.data.get("favorite", None)
+        position = request.data.get("position", None)
 
-    def get_serializer_class(self):
-        if self.action == "create":
-            return BlockCreateSerializer
-        return BlockSerializer
-
-    def perform_create(self, serializer):
-     
-        page = serializer.validated_data["page"]
-        if page.owner_id != self.request.user.id:
-            raise PermissionDenied("Non puoi creare blocchi su una pagina non tua.")
-
-        parent = serializer.validated_data.get("parent_block")
-
-        if parent and parent.page_id != page.id:
-            raise ValidationError({
-                "parent_block": "parent_block must belong to the same page"
-            })
-
-        
-
-        serializer.save()
-
-    @action(detail=True, methods=["post"], url_path="duplicate-subtree")
-    def duplicate_subtree(self, request, pk=None):
-        """
-        POST /blocks/<block_uuid>/duplicate-subtree/
-        Body (optional):
-          {
-            "to_parent_block": "<uuid|null>",   # default: stesso parent dell’originale
-            "after_block_id": "<uuid|null>"     # default: dopo l’originale (se stesso parent)
-          }
-
-        Duplica un blocco + tutti i suoi discendenti nella STESSA pagina.
-        Operazione atomica (transaction).
-        """
-        src_root = self.get_object()  # ownership ok via queryset
-        page = src_root.page
-
-        ser = DuplicateBlockSubtreeSerializer(data=request.data)
-        ser.is_valid(raise_exception=True)
-        data = ser.validated_data
-
-        with transaction.atomic():
-            # ------------------------------------------------------------
-            # 1) Lock + costruisci children map per tutta la pagina
-            # ------------------------------------------------------------
-            rows = list(
-                Block.objects.select_for_update()
-                .filter(page=page)
-                .values_list("id", "parent_block_id", "position")
+        if request.method == "DELETE" or favorite is False:
+            PageFavorite.objects.filter(page=page, user=user).delete()
+            return Response(
+                {"favorite": False, "favorite_position": None},
+                status=status.HTTP_200_OK,
             )
 
-            children = {}
-            for bid, pid, _pos in rows:
-                children.setdefault(pid, []).append(bid)
+        fav = PageFavorite.objects.filter(page=page, user=user).first()
+        if not fav:
+            if not position:
+                position = self._append_favorite_position(user=user)
+            fav = PageFavorite.objects.create(page=page, user=user, position=position)
+        else:
+            if position is not None:
+                fav.position = position
+                fav.save(update_fields=["position"])
 
-            # ------------------------------------------------------------
-            # 2) DFS per ottenere subtree_ids + set "seen"
-            # ------------------------------------------------------------
-            subtree_ids = []
-            seen = set()
-            stack = [src_root.id]
-            while stack:
-                cur = stack.pop()
-                if cur in seen:
-                    continue
-                seen.add(cur)
-                subtree_ids.append(cur)
-                for ch in children.get(cur, []):
-                    stack.append(ch)
+        return Response(
+            {"favorite": True, "favorite_position": fav.position},
+            status=status.HTTP_200_OK,
+        )
 
-            # ------------------------------------------------------------
-            # 3) Preload in 1 query tutti i blocchi del subtree
-            # ------------------------------------------------------------
-            src_blocks = {
-                b.id: b
-                for b in Block.objects.select_for_update().filter(id__in=subtree_ids)
+    @action(detail=True, methods=["get", "put", "patch"], url_path="doc")
+    def doc(self, request, pk=None):
+        page = self.get_object()
+        role = get_page_role(page, request.user)
+        if role is None:
+            raise PermissionDenied("access denied")
+
+        if request.method in {"PUT", "PATCH"}:
+            if role not in {CollaborationRole.OWNER, CollaborationRole.EDITOR}:
+                raise PermissionDenied("access denied")
+
+        doc, _ = TiptapDocument.objects.get_or_create(page=page)
+
+        if request.method == "GET":
+            return Response(TiptapDocumentSerializer(doc).data, status=status.HTTP_200_OK)
+
+        serializer = TiptapDocumentSerializer(
+            doc,
+            data=request.data,
+            partial=(request.method == "PATCH"),
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save(page=page)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="doc/compact")
+    def doc_compact(self, request, pk=None):
+        page = self.get_object()
+        role = get_page_role(page, request.user)
+        if role is None or role not in {CollaborationRole.OWNER, CollaborationRole.EDITOR}:
+            raise PermissionDenied("access denied")
+
+        room_name = f"page:{page.id}"
+        ok = compact_room(room_name, str(settings.YJS_STORE_PATH))
+        return Response({"compacted": ok}, status=status.HTTP_200_OK)
+
+    # ===========================
+    # COMMENTS
+    # ===========================
+
+    @action(detail=True, methods=["get", "post"], url_path="comments/threads")
+    def comment_threads(self, request, pk=None):
+        page = self.get_object()
+        role = get_page_role(page, request.user)
+        if role is None:
+            raise PermissionDenied("access denied")
+
+        if request.method == "GET":
+            doc_node_id = request.query_params.get("doc_node_id")
+            qs = CommentThread.objects.filter(page=page)
+            if doc_node_id:
+                qs = qs.filter(doc_node_id=str(doc_node_id))
+            qs = qs.order_by("-updated_at")
+            return Response(CommentThreadSerializer(qs, many=True).data)
+
+        # POST: create thread (and first comment) or add comment to existing thread
+        require_page_role(page, request.user, {CollaborationRole.OWNER, CollaborationRole.EDITOR})
+
+        doc_node_id = request.data.get("doc_node_id")
+        body = (request.data.get("body") or "").strip()
+
+        if not doc_node_id:
+            raise ValidationError({"doc_node_id": "required"})
+        if not body:
+            raise ValidationError({"body": "required"})
+
+        thread = CommentThread.objects.filter(
+            page=page, doc_node_id=str(doc_node_id), resolved=False
+        ).order_by("-updated_at").first()
+        if not thread:
+            thread = CommentThread.objects.create(
+                page=page,
+                doc_node_id=str(doc_node_id),
+                created_by=request.user,
+            )
+
+        Comment.objects.create(thread=thread, author=request.user, body=body)
+        thread.refresh_from_db()
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            payload = {
+                "type": "thread_created",
+                "thread": CommentThreadSerializer(thread).data,
             }
-
-            # ------------------------------------------------------------
-            # 4) Target parent (default: stesso parent del root originale)
-            # ------------------------------------------------------------
-            if "to_parent_block" in data:
-                to_parent_block_id = data.get("to_parent_block")
-            else:
-                to_parent_block_id = src_root.parent_block_id
-
-            target_parent = None
-            if to_parent_block_id is not None:
-                try:
-                    target_parent = Block.objects.select_for_update().get(
-                        id=to_parent_block_id,
-                        page=page,
-                    )
-                except Block.DoesNotExist:
-                    raise ValidationError({"to_parent_block": "Target parent must belong to the same page."})
-
-            # Non permettere di inserire dentro un discendente del subtree
-            if target_parent and target_parent.id in seen:
-                raise ValidationError({"to_parent_block": "Cannot duplicate subtree inside its own descendant."})
-
-            # ------------------------------------------------------------
-            # 5) after_block_id default:
-            #    - se non specificato e stiamo duplicando nello stesso parent del root,
-            #      default = dopo l’originale
-            # ------------------------------------------------------------
-            if "after_block_id" in data:
-                after_block_id = data.get("after_block_id")
-            else:
-                same_parent = (
-                    (target_parent is None and src_root.parent_block_id is None) or
-                    (target_parent is not None and src_root.parent_block_id == target_parent.id)
-                )
-                after_block_id = src_root.id if same_parent else None
-
-            # after_block non può essere dentro subtree
-            #if after_block_id is not None and after_block_id in seen:
-             #   raise ValidationError({"after_block_id": "Cannot insert relative to a block inside the duplicated subtree."})
-
-            # ------------------------------------------------------------
-            # 6) Calcola nuova position del root duplicato nel target_parent
-            # ------------------------------------------------------------
-            siblings_qs = (
-                Block.objects.select_for_update()
-                .filter(page=page, parent_block=target_parent)
-                .order_by("position", "id")
+            payload = json.loads(json.dumps(payload, default=str))
+            async_to_sync(channel_layer.group_send)(
+                f"comments_page_{page.id}",
+                {"type": "comments.event", "payload": payload},
             )
+        return Response(CommentThreadSerializer(thread).data, status=status.HTTP_201_CREATED)
 
-            if after_block_id is not None:
-                try:
-                    after = siblings_qs.get(id=after_block_id)
-                except Block.DoesNotExist:
-                    raise ValidationError({"after_block_id": "after_block_id must be a sibling under target parent in this page."})
+    @action(
+        detail=True,
+        methods=["get", "post"],
+        url_path=r"comments/threads/(?P<thread_id>[^/.]+)/comments",
+    )
+    def comment_items(self, request, pk=None, thread_id=None):
+        page = self.get_object()
+        role = get_page_role(page, request.user)
+        if role is None:
+            raise PermissionDenied("access denied")
 
-                prev_pos = after.position
-                nxt = siblings_qs.filter(position__gt=prev_pos).first()
-                next_pos = nxt.position if nxt else None
-                new_root_pos = generate_key_between(prev_pos, next_pos)
-            else:
-                last = siblings_qs.last()
-                prev_pos = last.position if last else None
-                new_root_pos = generate_key_between(prev_pos, None)
+        thread = CommentThread.objects.filter(page=page, pk=thread_id).first()
+        if not thread:
+            raise Http404
 
-            # ------------------------------------------------------------
-            # 7) Pre-assegna nuovi UUID per tutti i nodi duplicati
-            # ------------------------------------------------------------
-            id_map = {old_id: uuid.uuid4() for old_id in subtree_ids}
+        if request.method == "GET":
+            items = thread.comments.order_by("created_at")
+            return Response(CommentSerializer(items, many=True).data)
 
-            # ------------------------------------------------------------
-            # 8) bulk_create dei duplicati (parent già rimappato)
-            # ------------------------------------------------------------
-            to_create = []
+        require_page_role(page, request.user, {CollaborationRole.OWNER, CollaborationRole.EDITOR})
+        body = (request.data.get("body") or "").strip()
+        if not body:
+            raise ValidationError({"body": "required"})
 
-            for old_id in subtree_ids:
-                old = src_blocks[old_id]
-                new_id = id_map[old_id]
+        comment = Comment.objects.create(thread=thread, author=request.user, body=body)
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            payload = {
+                "type": "comment_created",
+                "thread_id": str(thread.id),
+                "doc_node_id": thread.doc_node_id,
+                "page_id": str(page.id),
+                "comment": CommentSerializer(comment).data,
+            }
+            payload = json.loads(json.dumps(payload, default=str))
+            async_to_sync(channel_layer.group_send)(
+                f"comments_page_{page.id}",
+                {"type": "comments.event", "payload": payload},
+            )
+        return Response(CommentSerializer(comment).data, status=status.HTTP_201_CREATED)
 
-                if old_id == src_root.id:
-                    new_parent_id = target_parent.id if target_parent else None
-                    new_pos = new_root_pos
-                else:
-                    # parent del figlio è sempre dentro subtree => rimappa
-                    new_parent_id = id_map.get(old.parent_block_id)
-                    new_pos = old.position  # copia per preservare ordering tra siblings duplicati
+    @action(
+        detail=True,
+        methods=["patch"],
+        url_path=r"comments/threads/(?P<thread_id>[^/.]+)/resolve",
+    )
+    def comment_thread_resolve(self, request, pk=None, thread_id=None):
+        page = self.get_object()
+        require_page_role(page, request.user, {CollaborationRole.OWNER})
 
-                to_create.append(Block(
-                    id=new_id,
-                    page=page,
-                    parent_block_id=new_parent_id,
-                    kind=old.kind,
-                    type=old.type,
-                    content=old.content or {},
-                    props=old.props or {},
-                    layout=old.layout or {},
-                    width=old.width,
-                    position=new_pos,
-                    version=1,
-                ))
+        thread = CommentThread.objects.filter(page=page, pk=thread_id).first()
+        if not thread:
+            raise Http404
 
-            Block.objects.bulk_create(to_create, batch_size=1000)
+        doc_node_id = thread.doc_node_id
+        thread.comments.all().delete()
+        thread.delete()
 
-            new_root_id = id_map[src_root.id]
-            new_blocks = Block.objects.filter(id__in=id_map.values()).order_by(
-                "parent_block_id", "position"
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            payload = {
+                "type": "thread_deleted",
+                "thread_id": str(thread_id),
+                "doc_node_id": doc_node_id,
+                "page_id": str(page.id),
+            }
+            payload = json.loads(json.dumps(payload, default=str))
+            async_to_sync(channel_layer.group_send)(
+                f"comments_page_{page.id}",
+                {"type": "comments.event", "payload": payload},
             )
 
         return Response(
             {
-                "ok": True,
-                "new_root_id": str(new_root_id),
-                "duplicated_count": len(subtree_ids),
-                "blocks": BlockSerializer(new_blocks, many=True).data,
+                "deleted": True,
+                "thread_id": str(thread_id),
+                "doc_node_id": doc_node_id,
             },
-            status=status.HTTP_201_CREATED,
+            status=status.HTTP_200_OK,
         )
+
+    @action(detail=True, methods=["get", "patch"], url_path="collaborators")
+    def collaborators(self, request, pk=None):
+        page = self.get_object()
+        role = get_page_role(page, request.user)
+        if role is None:
+            raise PermissionDenied("access denied")
+
+        if request.method == "GET":
+            collabs = PageCollaborator.objects.filter(page=page).select_related("user")
+            items = PageCollaboratorSerializer(collabs, many=True).data
+
+            # include page owner as collaborator
+            owner_item = {
+                "id": f"owner:{page.owner_id}",
+                "page": str(page.id),
+                "user": UserSummarySerializer(page.owner).data,
+                "role": CollaborationRole.OWNER,
+                "created_at": page.created_at,
+                "updated_at": page.updated_at,
+            }
+            return Response([owner_item, *items], status=status.HTTP_200_OK)
+
+        # PATCH: update collaborator role
+        require_page_role(page, request.user, {CollaborationRole.OWNER})
+        user_id = request.data.get("user_id")
+        next_role = request.data.get("role")
+        if not user_id or not next_role:
+            raise ValidationError({"detail": "user_id and role are required"})
+        if next_role not in CollaborationRole.values:
+            raise ValidationError({"role": "invalid role"})
+
+        if str(page.owner_id) == str(user_id):
+            raise ValidationError({"user_id": "owner role is implicit for page owner"})
+
+        collab = PageCollaborator.objects.filter(page=page, user_id=user_id).first()
+        if not collab:
+            raise ValidationError({"user_id": "collaborator not found"})
+
+        prev_role = collab.role
+        if prev_role == next_role:
+            return Response(PageCollaboratorSerializer(collab).data, status=status.HTTP_200_OK)
+
+        collab.role = next_role
+        collab.save(update_fields=["role", "updated_at"])
+
+        log_audit(
+            page,
+            actor=request.user,
+            action="role_changed",
+            target_user=collab.user,
+            role_before=prev_role,
+            role_after=next_role,
+        )
+
+        return Response(PageCollaboratorSerializer(collab).data, status=status.HTTP_200_OK)
+
+    @action(
+        detail=True,
+        methods=["delete"],
+        url_path=r"collaborators/(?P<user_id>[^/.]+)",
+    )
+    def remove_collaborator(self, request, pk=None, user_id=None):
+        page = self.get_object()
+        require_page_role(page, request.user, {CollaborationRole.OWNER})
+
+        if str(page.owner_id) == str(user_id):
+            raise ValidationError({"user_id": "cannot remove page owner"})
+
+        collab = PageCollaborator.objects.filter(page=page, user_id=user_id).first()
+        if not collab:
+            raise ValidationError({"user_id": "collaborator not found"})
+
+        prev_role = collab.role
+        target_user = collab.user
+        collab.delete()
+
+        log_audit(
+            page,
+            actor=request.user,
+            action="collaborator_removed",
+            target_user=target_user,
+            role_before=prev_role,
+        )
+        return Response({"ok": True}, status=status.HTTP_200_OK)
+
+
+class UserLookupViewSet(viewsets.ViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def list(self, request):
+        q = (request.query_params.get("q") or "").strip()
+        if not q:
+            return Response([], status=status.HTTP_200_OK)
+
+        users = (
+            User.objects.filter(
+                Q(username__icontains=q)
+                | Q(first_name__icontains=q)
+                | Q(last_name__icontains=q)
+                | Q(email__icontains=q)
+            )
+            .order_by("username")
+            .distinct()[:10]
+        )
+
+        return Response(UserSummarySerializer(users, many=True).data, status=status.HTTP_200_OK)
+
+
+class PageInviteViewSet(viewsets.ViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def list(self, request):
+        page_id = request.query_params.get("page") or request.query_params.get("page_id")
+        if not page_id:
+            return Response([], status=status.HTTP_200_OK)
+
+        try:
+            page = Page.objects.get(id=page_id)
+        except Page.DoesNotExist:
+            raise ValidationError({"page": "page not found"})
+
+        require_page_role(page, request.user, {CollaborationRole.OWNER, CollaborationRole.EDITOR})
+
+        invites = PageInvite.objects.filter(page=page).select_related("inviter", "invitee")
+        return Response(PageInviteSerializer(invites, many=True).data, status=status.HTTP_200_OK)
+
+    def create(self, request):
+        page_id = request.data.get("page_id") or request.data.get("page")
+        user_id = request.data.get("user_id")
+        role = request.data.get("role", CollaborationRole.EDITOR)
+
+        if not page_id or not user_id:
+            raise ValidationError({"detail": "page_id and user_id are required"})
+        if role not in CollaborationRole.values:
+            raise ValidationError({"role": "invalid role"})
+
+        try:
+            page = Page.objects.get(id=page_id)
+        except Page.DoesNotExist:
+            raise ValidationError({"page_id": "page not found"})
+
+        require_page_role(page, request.user, {CollaborationRole.OWNER, CollaborationRole.EDITOR})
+
+        if str(page.owner_id) == str(user_id):
+            raise ValidationError({"user_id": "user is already owner"})
+
+        invitee = User.objects.filter(id=user_id).first()
+        if not invitee:
+            raise ValidationError({"user_id": "user not found"})
+
+        if PageCollaborator.objects.filter(page=page, user=invitee).exists():
+            raise ValidationError({"user_id": "user is already a collaborator"})
+
+        existing = PageInvite.objects.filter(
+            page=page,
+            invitee=invitee,
+            status=InviteStatus.PENDING,
+        ).first()
+
+        if existing:
+            if existing.is_expired():
+                existing.status = InviteStatus.EXPIRED
+                existing.responded_at = timezone.now()
+                existing.save(update_fields=["status", "responded_at", "updated_at"])
+            else:
+                return Response(PageInviteSerializer(existing).data, status=status.HTTP_200_OK)
+
+        expires_at = timezone.now() + timedelta(days=7)
+        invite = PageInvite.objects.create(
+            page=page,
+            inviter=request.user,
+            invitee=invitee,
+            role=role,
+            expires_at=expires_at,
+        )
+
+        log_audit(
+            page,
+            actor=request.user,
+            action="invite_sent",
+            target_user=invitee,
+            role_after=role,
+        )
+
+        return Response(PageInviteSerializer(invite).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["get"], url_path="inbox")
+    def inbox(self, request):
+        now = timezone.now()
+        invites = PageInvite.objects.filter(
+            invitee=request.user,
+            status=InviteStatus.PENDING,
+        ).select_related("inviter", "page")
+
+        expired_ids = []
+        for inv in invites:
+            if inv.is_expired():
+                expired_ids.append(inv.id)
+
+        if expired_ids:
+            PageInvite.objects.filter(id__in=expired_ids).update(
+                status=InviteStatus.EXPIRED,
+                responded_at=now,
+                updated_at=now,
+            )
+            invites = invites.exclude(id__in=expired_ids)
+
+        return Response(PageInviteSerializer(invites, many=True).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="accept")
+    def accept(self, request, pk=None):
+        try:
+            invite = PageInvite.objects.select_related("page", "invitee").get(pk=pk)
+        except PageInvite.DoesNotExist:
+            raise ValidationError({"invite": "not found"})
+        if invite.invitee_id != request.user.id:
+            raise PermissionDenied("access denied")
+        if invite.status != InviteStatus.PENDING:
+            raise ValidationError({"status": "invite not pending"})
+        if invite.is_expired():
+            invite.status = InviteStatus.EXPIRED
+            invite.responded_at = timezone.now()
+            invite.save(update_fields=["status", "responded_at", "updated_at"])
+            raise ValidationError({"status": "invite expired"})
+
+        collab, created = PageCollaborator.objects.get_or_create(
+            page=invite.page,
+            user=request.user,
+            defaults={"role": invite.role, "invited_by": invite.inviter},
+        )
+        if not created and collab.role != invite.role:
+            collab.role = invite.role
+            collab.save(update_fields=["role", "updated_at"])
+
+        invite.status = InviteStatus.ACCEPTED
+        invite.responded_at = timezone.now()
+        invite.save(update_fields=["status", "responded_at", "updated_at"])
+
+        log_audit(
+            invite.page,
+            actor=request.user,
+            action="invite_accepted",
+            target_user=request.user,
+            role_after=invite.role,
+        )
+
+        return Response(PageInviteSerializer(invite).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="decline")
+    def decline(self, request, pk=None):
+        try:
+            invite = PageInvite.objects.select_related("page", "invitee").get(pk=pk)
+        except PageInvite.DoesNotExist:
+            raise ValidationError({"invite": "not found"})
+        if invite.invitee_id != request.user.id:
+            raise PermissionDenied("access denied")
+        if invite.status != InviteStatus.PENDING:
+            raise ValidationError({"status": "invite not pending"})
+
+        invite.status = InviteStatus.DECLINED
+        invite.responded_at = timezone.now()
+        invite.save(update_fields=["status", "responded_at", "updated_at"])
+
+        log_audit(
+            invite.page,
+            actor=request.user,
+            action="invite_declined",
+            target_user=request.user,
+            role_after=invite.role,
+        )
+
+        return Response(PageInviteSerializer(invite).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="cancel")
+    def cancel(self, request, pk=None):
+        try:
+            invite = PageInvite.objects.select_related("page", "inviter").get(pk=pk)
+        except PageInvite.DoesNotExist:
+            raise ValidationError({"invite": "not found"})
+        if invite.status != InviteStatus.PENDING:
+            raise ValidationError({"status": "invite not pending"})
+
+        page = invite.page
+        role = get_page_role(page, request.user)
+        if request.user.id not in {invite.inviter_id, page.owner_id} and role != CollaborationRole.OWNER:
+            raise PermissionDenied("access denied")
+
+        invite.status = InviteStatus.CANCELLED
+        invite.responded_at = timezone.now()
+        invite.save(update_fields=["status", "responded_at", "updated_at"])
+
+        log_audit(
+            page,
+            actor=request.user,
+            action="invite_cancelled",
+            target_user=invite.invitee,
+            role_after=invite.role,
+        )
+
+        return Response(PageInviteSerializer(invite).data, status=status.HTTP_200_OK)
+
+
+class PageAuditLogViewSet(viewsets.ViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def list(self, request):
+        page_id = request.query_params.get("page") or request.query_params.get("page_id")
+        if not page_id:
+            return Response([], status=status.HTTP_200_OK)
+
+        try:
+            page = Page.objects.get(id=page_id)
+        except Page.DoesNotExist:
+            raise ValidationError({"page": "page not found"})
+
+        require_page_role(page, request.user, {CollaborationRole.OWNER, CollaborationRole.EDITOR})
+
+        logs = PageAuditLog.objects.filter(page=page).select_related("actor", "target_user").order_by("-created_at")[:200]
+        return Response(PageAuditLogSerializer(logs, many=True).data, status=status.HTTP_200_OK)
+
+class TiptapDocumentViewSet(viewsets.ModelViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = TiptapDocumentSerializer
+
+    def get_queryset(self):
+        if not getattr(self.request, "user", None) or not self.request.user.is_authenticated:
+            return TiptapDocument.objects.none()
+        return TiptapDocument.objects.select_related("page").filter(
+            Q(page__owner=self.request.user) | Q(page__collaborators__user=self.request.user)
+        ).distinct()
+
+    def perform_create(self, serializer):
+        page = serializer.validated_data.get("page")
+        if not page:
+            raise ValidationError({"page": "page is required"})
+
+        require_page_role(page, self.request.user, {CollaborationRole.OWNER, CollaborationRole.EDITOR})
+
+        if hasattr(page, "tiptap_doc"):
+            raise ValidationError({"page": "tiptap_doc already exists for this page."})
+
+        serializer.save()
+
+    def perform_update(self, serializer):
+        instance = self.get_object()
+        require_page_role(instance.page, self.request.user, {CollaborationRole.OWNER, CollaborationRole.EDITOR})
+        serializer.save()
+

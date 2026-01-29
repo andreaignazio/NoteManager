@@ -4,31 +4,22 @@ import router from "@/router";
 import { storeToRefs } from "pinia";
 import useAuthStore from "@/stores/auth";
 import usePagesStore from "@/stores/pages";
-import useBlocksStore from "@/stores/blocks";
 import { useUiStore } from "@/stores/ui";
 import { useOverlayStore } from "@/stores/overlay";
 import { useOverlayLayer } from "@/composables/useOverlayLayer";
-import { useOverlayBinding } from "@/composables/useOverlayBinding";
 import PieMenu from "@/components/menu/PieMenu.vue";
 import PieColorMenu from "@/components/menu/PieColorMenu.vue";
 import PieHighlightMenu from "@/components/menu/PieHighlightMenu.vue";
 import PieBlockTypeMenu from "@/components/menu/PieBlockTypeMenu.vue";
-import { usePieMenuPolicy } from "@/composables/usePieMenuPolicy";
-import { usePieMenuController } from "@/composables/usePieMenuController";
 import FlyoutSidebar from "@/components/shell/FlyoutSidebar.vue";
 import PagesSidebar from "@/components/shell/PagesSidebar.vue";
 import Topbar from "@/components/shell/Topbar.vue";
-import { computeFloatingPosition } from "@/utils/computeFloatingPosition";
 import { useAppActions } from "@/actions/useAppActions";
 import OverlayHost from "@/components/shell/OverlayHost.vue";
-
-import { anchorKey, anchorKind } from "@/ui/anchorsKeyBind";
-import { MENU_COMMANDS } from "@/domain/menuActions";
-import { useMenuActionDispatcher } from "@/composables/useMenuActionDispatcher";
+import usePieMenuShell from "@/composables/usePieMenuShell";
 
 const authStore = useAuthStore();
 const pagesStore = usePagesStore();
-const blocksStore = useBlocksStore();
 const ui = useUiStore();
 const overlay = useOverlayStore();
 const actions = useAppActions();
@@ -133,8 +124,7 @@ async function _init() {
   console.log("Last opened page id:", lastOpenedPageId);
   if (lastOpenedPageId && pagesStore.pagesById[lastOpenedPageId]) {
     actions.pages.redirectToPage(lastOpenedPageId);
-  }
-  if (pagesStore.anyPage) {
+  } else if (pagesStore.anyPage) {
     const firstPageId = pagesStore.childrenByParentId[null]?.[0] ?? null;
     if (firstPageId) {
       actions.pages.redirectToPage(firstPageId);
@@ -347,431 +337,31 @@ const isLoginRoute = computed(
 );
 
 // ====== PIE MENU CONTROLLER ======
-
-import {
-  BG_TOKENS,
+const {
   TEXT_TOKENS,
-  labelForBgToken,
-  labelForTextToken,
-  styleForBgToken,
-  styleForTextToken,
-} from "../theme/colorsCatalog";
-
-const pieOpen = ref(false);
-const pieKind = ref("context");
-const pieMode = ref("block"); // 'block' | 'ai'
-const pieArea = ref("main"); // 'main' | 'sidebar'
-const pieX = ref(0);
-const pieY = ref(0);
-const pieContext = ref(null);
-
-const mainMenuRef = ref(null);
-const colorPieRef = ref(null);
-const highlightPieRef = ref(null);
-
-function getMainMenuRef() {
-  return mainMenuRef.value;
-}
-
-function getColorMenuRef() {
-  return colorPieRef;
-}
-
-const pieRAD_MAP = {
-  hole: 26,
-  main_outer: 92,
-  color_inner: 66,
-  color_outer: 106,
-};
-
-const pieAnchorX = ref(0);
-const pieAnchorY = ref(0);
-
-let PIE_MAX_DIAM = computed(() => {
-  const max = Math.max(...Object.values(pieRAD_MAP));
-  return max * 2;
-});
-PIE_MAX_DIAM = 260; //fisso per ora
-
-const pieCenter = computed(() => {
-  if (!pieOpen.value) return { x: pieAnchorX.value, y: pieAnchorY.value };
-  return computeFloatingPosition({
-    x: pieAnchorX.value,
-    y: pieAnchorY.value,
-    w: PIE_MAX_DIAM,
-    h: PIE_MAX_DIAM,
-    tx: 0.5,
-    ty: 0.5,
-    margin: 10,
-  });
-});
-
-function openPie({ kind = "context", mode, area, x, y, context }) {
-  console.log("pieCenter before open:", pieCenter.value);
-  pieKind.value = kind;
-  pieMode.value = mode;
-  pieArea.value = area;
-
-  pieAnchorX.value = x;
-  pieAnchorY.value = y;
-
-  // lascia anche pieX/pieY se ti serve, ma meglio usarli come anchor
-  pieX.value = x;
-  pieY.value = y;
-
-  pieContext.value = context ?? { area };
-  pieContext.value = {
-    ...(context ?? { area }),
-    lastHighlightColor: ui.lastHighlightColor,
-  };
-  pieOpen.value = true;
-}
-
-function closePie() {
-  pieOpen.value = false;
-}
-
-// ---- central policy: rightclick opens pie ----
-usePieMenuPolicy({
-  isOpen: () => pieOpen.value,
-  close: closePie,
-  open: openPie,
-
-  // (optional) override context extraction if you want more data
-  // getContextAt: (e) => ({ area: ..., blockId: ... })
-});
-
-function isInvertKey(ctx) {
-  return ctx?.mods?.alt;
-}
-
-const { dispatchMenuAction } = useMenuActionDispatcher();
-
-function dispatchCommand(command, ctx, payload) {
-  return dispatchMenuAction({
-    type: "command",
-    ctx,
-    command,
-    payload,
-  });
-}
-
-function dispatchOpenMenu({ ctx, menuId, anchorKey, payload }) {
-  return dispatchMenuAction({
-    type: "openMenu",
-    ctx,
-    menuId,
-    anchorKey,
-    payload,
-  });
-}
-
-async function onPieAction(actionId, ctxFromEvent) {
-  const ctx = ctxFromEvent ?? pieContext.value ?? {};
-  console.log("[PIE] action:", actionId, ctx);
-
-  // route by area
-  if (ctx.area === "sidebar") {
-    const pageId = ctx.pageId;
-    switch (actionId) {
-      case "share":
-        const BASE_URL = "http://localhost:5173";
-        const URL = BASE_URL + `/pages/${pageId}`;
-        await dispatchCommand(
-          MENU_COMMANDS.COPY_TO_CLIPBOARD,
-          { pageId },
-          {
-            text: URL,
-          },
-        );
-        break;
-      case "ai":
-        console.log("[PIE][sidebar] ai tools", ctx);
-        break;
-      case "newPage":
-        await dispatchCommand(MENU_COMMANDS.PAGE_CREATE_AFTER, { pageId });
-        break;
-      case "renamePage":
-        const kind_title = anchorKind(
-          "page",
-          "title",
-          "sidebar",
-          ctx.anchorScope,
-        );
-        const key_title = anchorKey(kind_title, pageId);
-        await dispatchOpenMenu({
-          ctx: { pageId, anchorKey: key_title },
-          menuId: "page.titlePopover",
-          anchorKey: key_title,
-          payload: { pageId },
-        });
-        break;
-      case "duplicatePage":
-        await dispatchCommand(MENU_COMMANDS.PAGE_DUPLICATE, { pageId });
-        break;
-      case "deletePage":
-        await dispatchCommand(MENU_COMMANDS.PAGE_DELETE, { pageId });
-        break;
-      default:
-        console.log("[PIE][sidebar] action:", actionId, ctx);
-    }
-    return;
-  }
-
-  // main (blocks)
-  const blockId = ctx.blockId;
-  if (!blockId) {
-    console.log("[PIE][main] no blockId, ignore", actionId, ctx);
-    return;
-  }
-
-  const pageId = blocksStore.blocksById[blockId]?.pageId ?? null;
-
-  switch (actionId) {
-    case "duplicate":
-      await dispatchCommand(MENU_COMMANDS.BLOCK_DUPLICATE, { blockId, pageId });
-      break;
-
-    case "color":
-      // NON apri qui il color menu: lo fa il controller via dwell stack
-      console.log("[PIE][main] color", blockId);
-      break;
-
-    case "highlight":
-      await dispatchCommand(
-        MENU_COMMANDS.EDITOR_TOGGLE_HIGHLIGHT,
-        { blockId, pageId },
-        { color: ui.lastHighlightColor, unset: isInvertKey(ctx) },
-      );
-      break;
-
-    case "moveTo":
-      await dispatchCommand(MENU_COMMANDS.BLOCK_MOVE_TO_PAGE, {
-        blockId,
-        pageId,
-      });
-      break;
-
-    case "changeType":
-      console.log("[PIE][main] changeType", blockId);
-      break;
-
-    // ai preset
-    case "ai":
-      console.log("[PIE][main] ai tools", blockId);
-      break;
-    case "share":
-      console.log("[PIE][main] share", blockId);
-      break;
-
-    case "copy":
-      await dispatchCommand(MENU_COMMANDS.EDITOR_COPY, { blockId, pageId });
-      break;
-    case "paste":
-      await dispatchCommand(MENU_COMMANDS.EDITOR_PASTE, { blockId, pageId });
-      break;
-
-    case "bold":
-      await dispatchCommand(MENU_COMMANDS.EDITOR_BOLD, { blockId, pageId });
-      break;
-
-    case "italic":
-      await dispatchCommand(MENU_COMMANDS.EDITOR_ITALIC, { blockId, pageId });
-      break;
-
-    case "strike":
-      await dispatchCommand(MENU_COMMANDS.EDITOR_STRIKE, { blockId, pageId });
-      break;
-
-    case "underline":
-      await dispatchCommand(MENU_COMMANDS.EDITOR_UNDERLINE, {
-        blockId,
-        pageId,
-      });
-      break;
-
-    case "link":
-      if (ctx?.mods?.alt) {
-        await dispatchCommand(MENU_COMMANDS.EDITOR_REMOVE_LINK, {
-          blockId,
-          pageId,
-        });
-        break;
-      }
-      await dispatchCommand(MENU_COMMANDS.EDITOR_OPEN_LINK, {
-        blockId,
-        pageId,
-      });
-      break;
-
-    default:
-      console.log("[PIE][main] action:", actionId, blockId, ctx);
-  }
-}
-
-const pieController = usePieMenuController({
+  BG_TOKENS,
   pieOpen,
-  pieKind,
   pieMode,
   pieArea,
-  pieX,
-  pieY,
+  pieAnchorX,
+  pieAnchorY,
+  pieCenter,
   pieContext,
-  closePie,
-
-  mainMenuRef: getMainMenuRef,
-  colorMenuRef: getColorMenuRef,
-  highlightMenuRef: () => highlightPieRef.value,
-  dwellMs: 300,
-  submenuIds: computed(() =>
-    pieMode.value === "block" ? ["color", "highlight", "changeType"] : [],
-  ).value,
-
-  dwellMoveToId: "moveTo",
-
-  onAction: async (id, ctx) => {
-    // moveTo commit
-    if (id === "moveToCommit") {
-      const targetPageId = ctx?.targetPageId;
-      const blockId = ctx?.blockId;
-      const fromPageId = blockId
-        ? (blocksStore.blocksById[blockId]?.pageId ?? null)
-        : null;
-      if (blockId && targetPageId && fromPageId) {
-        await actions.blocks.moveBlockTreeToPage(
-          String(blockId),
-          String(targetPageId),
-        );
-      }
-      return;
-    }
-
-    // tutte le altre azioni pie main
-    await onPieAction(id, ctx);
-  },
-
-  onSetTextToken: async (token, ctx) => {
-    const blockId = ctx?.blockId;
-    if (!blockId) return;
-    await dispatchCommand(
-      MENU_COMMANDS.BLOCK_SET_TEXT_COLOR,
-      { blockId },
-      { token: String(token) },
-    );
-  },
-
-  onSetBgToken: async (token, ctx) => {
-    const blockId = ctx?.blockId;
-    if (!blockId) return;
-    await dispatchCommand(
-      MENU_COMMANDS.BLOCK_SET_BG_COLOR,
-      { blockId },
-      { token: String(token) },
-    );
-  },
-  onSetHighlightColor: async (color, ctx) => {
-    await dispatchCommand(
-      MENU_COMMANDS.EDITOR_SET_HIGHLIGHT,
-      { blockId: ctx?.blockId },
-      { color },
-    );
-  },
-  onSetBlockType: async (blockType, ctx) => {
-    const blockId = ctx?.blockId;
-    if (!blockId) return;
-    await dispatchCommand(
-      MENU_COMMANDS.BLOCK_APPLY_TYPE,
-      { blockId },
-      { blockType },
-    );
-  },
-});
-
-const currentBg = computed(() => {
-  const blockId = pieContext.value?.blockId;
-  if (!blockId) return null;
-  return blocksStore.blocksById[blockId]?.props?.style?.bgColor ?? null;
-});
-
-const currentText = computed(() => {
-  const blockId = pieContext.value?.blockId;
-  if (!blockId) return null;
-  return blocksStore.blocksById[blockId]?.props?.style?.textColor ?? null;
-});
-
-const currentBlockType = computed(() => {
-  const blockId = pieContext.value?.blockId;
-  if (!blockId) return null;
-  return blocksStore.blocksById[blockId]?.type ?? null;
-});
-
-const labelForBg = (t) => BG_TOKENS.map((t) => labelForBgToken(t));
-const labelForText = (t) => TEXT_TOKENS.map((t) => labelForTextToken(t));
-const letterStyleForText = (token) => styleForTextToken(token);
-const swatchStyleForBg = (token) => styleForBgToken(token);
-
-const pieTop = pieController.top;
-
-function getPieMenuEl() {
-  // 1) se mainMenuRef è un HTMLElement diretto:
-  // return mainMenuRef.value
-
-  // 2) se è un componente Vue:
-  const mainEl = mainMenuRef.value?.$el ?? null;
-  const colorEl = colorPieRef.value?.$el ?? null;
-  // usa quello visibile in base a pieTop
-  return (pieTop.value === "color" ? colorEl : mainEl) ?? null;
-}
-
-function getPieMenuInteractionScope() {
-  console.log(
-    "getPieMenuInteractionScope:",
-    pieController.interactionScope.value,
-  );
-  return pieController.interactionScope.value;
-}
-
-useOverlayBinding({
-  id: "pie",
-  kind: "pie",
-  priority: 180,
-  behaviour: "exclusiveKinds",
-  exclusiveKinds: ["hoverbar", "dropdown"],
-  // dropdown opzionale
-  isOpen: () => pieOpen.value,
-  requestClose: (reason) => {
-    closePie();
-  },
-  canOpen: () => {
-    const top = overlay.top;
-    if (!top) return true;
-    const topP = top.priority ?? 0;
-    return topP <= 3;
-  },
-  getMenuEl: () => getPieMenuEl(),
-
-  getInteractionScope: () => pieController.interactionScope.value,
-
-  options: {
-    closeOnOutside: true,
-    closeOnEsc: true,
-    restoreFocus: true,
-    stopPointerOutside: true,
-    allowAnchorClick: false, // di solito per pie non serve
-    lockScroll: false,
-  },
-});
-
-const HIGHLIGHT_COLORS = [
-  "#FFEE58",
-  "#FFD54F",
-  "#FFAB91",
-  "#F48FB1",
-  "#CE93D8",
-  "#90CAF9",
-  "#80DEEA",
-  "#A5D6A7",
-];
+  pieTop,
+  pieController,
+  mainMenuRef,
+  colorPieRef,
+  highlightPieRef,
+  typePieRef,
+  currentText,
+  currentBg,
+  currentBlockType,
+  labelForBg,
+  labelForText,
+  letterStyleForText,
+  swatchStyleForBg,
+  HIGHLIGHT_COLORS,
+} = usePieMenuShell();
 </script>
 
 <template>

@@ -12,8 +12,18 @@ body {
   overflow: hidden; /* ✅ il body non deve scrollare */
 }
 
+.ProseMirror a {
+  color: var(--text-link);
+  text-decoration: underline;
+}
+
+.ProseMirror a:hover {
+  color: color-mix(in srgb, var(--text-link) 80%, var(--text-main));
+}
+
 /*VALORI PER ALLINEAMENTO TIOTLI/BLOCCHI*/
 :root {
+  /*--doc-gutter: 44px; /* spazio sinistro blocco contenuto */
   --font-default: "Inter var", system-ui;
   --font-serif: "Source Serif 4", serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -41,13 +51,14 @@ body {
   --code-toolbar-h: 32px; /* altezza top bar */
   --code-toolbar-top: 0px; /* offset top */
   --code-toolbar-gap: 0px;
-  --block-row-btn: 23px;
+  --block-row-btn: 30px;
   --block-list-gutter: 26px;
 
   --text-main: #2c2c2b;
   --c-text-default: #2c2c2b;
   --text-secondary: #5f5f5c;
   --text-danger: #eb5857;
+  --text-link: #2563eb;
 
   --bg-main: #fff;
   --bg-secondary: #f9f8f7;
@@ -64,9 +75,14 @@ body {
 
   --border-menu: rgba(0, 0, 0, 0.1);
   --border-menu-focus: #3e7ec1;
+  --border-menu-hover: rgba(0, 0, 0, 0.12);
 
   --border-main: rgba(0, 0, 0, 0.06);
+  --border-divider: rgba(0, 0, 0, 0.2);
   --border-todo: rgba(0, 0, 0, 0.24);
+  --todo-checked-bg: #3b82f6;
+  --todo-checked-border: #3b82f6;
+  --todo-checked-color: #ffffff;
 
   --border-pie: rgba(0, 0, 0, 0.06);
   --pie-mix: black; /* in light scurisci un pelo */
@@ -157,6 +173,7 @@ html[data-theme="dark"] {
 
   --border-menu: rgba(201, 201, 201, 0.066);
   --border-menu-focus: #3e7ec1;
+  --border-menu-hover: rgba(13, 13, 13, 0.24);
   --border-todo: rgba(255, 255, 255, 0.24);
 
   --border-pie: rgba(202, 202, 202, 0.06);
@@ -169,8 +186,13 @@ html[data-theme="dark"] {
 
   --text-secondary: #9a9a9b;
   --text-danger: #eb5857;
+  --text-link: #60a5fa;
 
-  --border-main: rgba(201, 201, 201, 0.04);
+  --border-main: rgba(201, 201, 201, 0.08);
+  --border-divider: rgba(255, 255, 255, 0.08);
+  --todo-checked-bg: #3b82f6;
+  --todo-checked-border: #3b82f6;
+  --todo-checked-color: #ffffff;
 
   --bg-hover: rgba(126, 126, 126, 0.096);
   --bg-active: rgba(126, 126, 126, 0.15);

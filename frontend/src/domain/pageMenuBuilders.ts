@@ -5,11 +5,15 @@ export type PageActionsMenuItem =
       label: string;
       iconId?: string;
       disabled?: boolean;
+      ariaLabel?: string;
       danger?: boolean;
     }
   | { type: "separator"; id: string };
 
-export function buildPageActionsMenu(): PageActionsMenuItem[] {
+export function buildPageActionsMenu(opts?: {
+  canDelete?: boolean;
+}): PageActionsMenuItem[] {
+  const canDelete = opts?.canDelete ?? true;
   return [
     { type: "item", id: "rename", label: "Rename", iconId: "lucide:edit-3" },
     {
@@ -30,7 +34,6 @@ export function buildPageActionsMenu(): PageActionsMenuItem[] {
       id: "share",
       label: "Share…",
       iconId: "lucide:link",
-      disabled: true,
     },
     { type: "separator", id: "sep:2" },
     {
@@ -38,6 +41,8 @@ export function buildPageActionsMenu(): PageActionsMenuItem[] {
       id: "delete",
       label: "Delete",
       iconId: "lucide:trash-2",
+      disabled: !canDelete,
+      ariaLabel: !canDelete ? "only owners can delete pages" : undefined,
       danger: true,
     },
   ];
