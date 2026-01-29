@@ -1,4 +1,4 @@
-# Notion-Style Editor — Fullstack README
+# Note Manager — Fullstack README
 
 ## Run locally (read before starting)
 
@@ -45,7 +45,7 @@ From frontend/:
 
 ## Overview
 
-This project is a **block-based document editor** inspired by tools like Notion. It is built as a **Single Page Application (SPA)** with a Django backend. The core idea is **synchronized application state**: the UI updates instantly, while persistence happens automatically in the background.
+This project is **Note Manager**, a modern note-taking and document management app. It is built as a **Single Page Application (SPA)** with a Django backend. The core idea is **synchronized application state**: the UI updates instantly, while persistence happens automatically in the background.
 
 ---
 
